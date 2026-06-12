@@ -1,4 +1,20 @@
+import type { Metadata } from "next";
 import LegalPageLayout, { type LegalSection } from "@/components/LegalPageLayout";
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Privacy Policy",
+  description:
+    "Learn how FulfillMesh collects, uses, shares, and protects your personal data. Read our Privacy Policy covering information collection, data security, your rights, cookies, and more.",
+  path: "/legal/privacy",
+  keywords: [
+    "FulfillMesh privacy policy",
+    "data protection",
+    "personal data",
+    "privacy practices",
+    "GDPR",
+  ],
+});
 
 const icon = (path: React.ReactNode) => (
   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

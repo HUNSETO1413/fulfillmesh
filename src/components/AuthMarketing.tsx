@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   Eye,
@@ -13,6 +14,7 @@ import {
   User,
   Building2,
   Phone,
+  Loader2,
 } from "lucide-react";
 
 const features = [
@@ -56,9 +58,88 @@ function AppleIcon() {
 }
 
 export default function AuthMarketing({ defaultTab = "login" }: { defaultTab?: "login" | "register" }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<"login" | "register">(defaultTab);
   const [showPassword, setShowPassword] = useState(false);
   const [showRegPassword, setShowRegPassword] = useState(false);
+
+  // Login form state
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [loginLoading, setLoginLoading] = useState(false);
+
+  // Register form state
+  const [regFirstName, setRegFirstName] = useState("");
+  const [regLastName, setRegLastName] = useState("");
+  const [regEmail, setRegEmail] = useState("");
+  const [regCompany, setRegCompany] = useState("");
+  const [regPhone, setRegPhone] = useState("");
+  const [regPassword, setRegPassword] = useState("");
+  const [regConfirm, setRegConfirm] = useState("");
+  const [regError, setRegError] = useState<string | null>(null);
+  const [regLoading, setRegLoading] = useState(false);
+
+  async function handleLogin(e: React.FormEvent) {
+    e.preventDefault();
+    setLoginError(null);
+    setLoginLoading(true);
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: loginEmail, password: loginPassword }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setLoginError(data?.error || "Unable to log in. Please try again.");
+        return;
+      }
+      const next = searchParams.get("next");
+      router.push(next || "/dashboard");
+      router.refresh();
+    } catch {
+      setLoginError("Something went wrong. Please try again.");
+    } finally {
+      setLoginLoading(false);
+    }
+  }
+
+  async function handleRegister(e: React.FormEvent) {
+    e.preventDefault();
+    setRegError(null);
+
+    if (regPassword !== regConfirm) {
+      setRegError("Passwords do not match.");
+      return;
+    }
+    if (regPassword.length < 8) {
+      setRegError("Password must be at least 8 characters.");
+      return;
+    }
+
+    setRegLoading(true);
+    try {
+      const name = `${regFirstName} ${regLastName}`.trim();
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email: regEmail, password: regPassword }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setRegError(data?.error || "Unable to create account. Please try again.");
+        return;
+      }
+      router.push("/dashboard");
+      router.refresh();
+    } catch {
+      setRegError("Something went wrong. Please try again.");
+    } finally {
+      setRegLoading(false);
+    }
+  }
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row">
@@ -166,11 +247,19 @@ export default function AuthMarketing({ defaultTab = "login" }: { defaultTab?: "
             <div className="p-8">
               {tab === "login" ? (
                 <>
-                  <form className="space-y-4" onSubmit={(e) => e.preventDefault()}>
+                  <form className="space-y-4" onSubmit={handleLogin}>
                     <div>
                       <div className="relative">
                         <Mail className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#CBD5E0]" />
-                        <input type="email" className={inputBase + " pr-10"} placeholder="Email address" />
+                        <input
+                          type="email"
+                          required
+                          autoComplete="email"
+                          value={loginEmail}
+                          onChange={(e) => setLoginEmail(e.target.value)}
+                          className={inputBase + " pr-10"}
+                          placeholder="Email address"
+                        />
                       </div>
                     </div>
                     <div>
@@ -178,6 +267,10 @@ export default function AuthMarketing({ defaultTab = "login" }: { defaultTab?: "
                         <Lock className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#CBD5E0]" />
                         <input
                           type={showPassword ? "text" : "password"}
+                          required
+                          autoComplete="current-password"
+                          value={loginPassword}
+                          onChange={(e) => setLoginPassword(e.target.value)}
                           className={inputBase + " pr-10"}
                           placeholder="Password"
                         />
@@ -195,12 +288,24 @@ export default function AuthMarketing({ defaultTab = "login" }: { defaultTab?: "
                         Forgot password?
                       </Link>
                     </div>
+                    {loginError && (
+                      <p className="text-sm text-red-600" role="alert">
+                        {loginError}
+                      </p>
+                    )}
                     <button
                       type="submit"
-                      className="w-full py-3 rounded bg-[#2563EB] text-white text-base font-medium hover:bg-[#0046B8] transition-colors"
+                      disabled={loginLoading}
+                      className="w-full py-3 rounded bg-[#2563EB] text-white text-base font-medium hover:bg-[#0046B8] transition-colors disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
                     >
-                      Log in
+                      {loginLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                      {loginLoading ? "Logging in…" : "Log in"}
                     </button>
+                    <p className="text-center text-xs text-[#718096]">
+                      Try the demo account:{" "}
+                      <span className="font-medium text-[#1A365D]">admin@fulfillmesh.com</span>{" "}
+                      / <span className="font-medium text-[#1A365D]">demo1234</span>
+                    </p>
                   </form>
 
                   <div className="relative my-6">
@@ -222,37 +327,74 @@ export default function AuthMarketing({ defaultTab = "login" }: { defaultTab?: "
                 </>
               ) : (
                 <>
-                  <form className="space-y-4" onSubmit={(e) => e.preventDefault()}>
+                  <form className="space-y-4" onSubmit={handleRegister}>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <div className="relative">
                           <User className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#CBD5E0]" />
-                          <input type="text" className={inputBase + " pr-10"} placeholder="First name" />
+                          <input
+                            type="text"
+                            required
+                            autoComplete="given-name"
+                            value={regFirstName}
+                            onChange={(e) => setRegFirstName(e.target.value)}
+                            className={inputBase + " pr-10"}
+                            placeholder="First name"
+                          />
                         </div>
                       </div>
                       <div>
                         <div className="relative">
                           <User className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#CBD5E0]" />
-                          <input type="text" className={inputBase + " pr-10"} placeholder="Last name" />
+                          <input
+                            type="text"
+                            autoComplete="family-name"
+                            value={regLastName}
+                            onChange={(e) => setRegLastName(e.target.value)}
+                            className={inputBase + " pr-10"}
+                            placeholder="Last name"
+                          />
                         </div>
                       </div>
                     </div>
                     <div>
                       <div className="relative">
                         <Mail className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#CBD5E0]" />
-                        <input type="email" className={inputBase + " pr-10"} placeholder="Email" />
+                        <input
+                          type="email"
+                          required
+                          autoComplete="email"
+                          value={regEmail}
+                          onChange={(e) => setRegEmail(e.target.value)}
+                          className={inputBase + " pr-10"}
+                          placeholder="Email"
+                        />
                       </div>
                     </div>
                     <div>
                       <div className="relative">
                         <Building2 className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#CBD5E0]" />
-                        <input type="text" className={inputBase + " pr-10"} placeholder="Company" />
+                        <input
+                          type="text"
+                          autoComplete="organization"
+                          value={regCompany}
+                          onChange={(e) => setRegCompany(e.target.value)}
+                          className={inputBase + " pr-10"}
+                          placeholder="Company"
+                        />
                       </div>
                     </div>
                     <div>
                       <div className="relative">
                         <Phone className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#CBD5E0]" />
-                        <input type="tel" className={inputBase + " pr-10"} placeholder="Phone" />
+                        <input
+                          type="tel"
+                          autoComplete="tel"
+                          value={regPhone}
+                          onChange={(e) => setRegPhone(e.target.value)}
+                          className={inputBase + " pr-10"}
+                          placeholder="Phone"
+                        />
                       </div>
                     </div>
                     <div>
@@ -260,6 +402,10 @@ export default function AuthMarketing({ defaultTab = "login" }: { defaultTab?: "
                         <Lock className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#CBD5E0]" />
                         <input
                           type={showRegPassword ? "text" : "password"}
+                          required
+                          autoComplete="new-password"
+                          value={regPassword}
+                          onChange={(e) => setRegPassword(e.target.value)}
                           className={inputBase + " pr-10"}
                           placeholder="Password"
                         />
@@ -275,14 +421,29 @@ export default function AuthMarketing({ defaultTab = "login" }: { defaultTab?: "
                     <div>
                       <div className="relative">
                         <Lock className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#CBD5E0]" />
-                        <input type="password" className={inputBase + " pr-10"} placeholder="Confirm password" />
+                        <input
+                          type="password"
+                          required
+                          autoComplete="new-password"
+                          value={regConfirm}
+                          onChange={(e) => setRegConfirm(e.target.value)}
+                          className={inputBase + " pr-10"}
+                          placeholder="Confirm password"
+                        />
                       </div>
                     </div>
+                    {regError && (
+                      <p className="text-sm text-red-600" role="alert">
+                        {regError}
+                      </p>
+                    )}
                     <button
                       type="submit"
-                      className="w-full py-3 rounded bg-[#2563EB] text-white text-base font-medium hover:bg-[#0046B8] transition-colors"
+                      disabled={regLoading}
+                      className="w-full py-3 rounded bg-[#2563EB] text-white text-base font-medium hover:bg-[#0046B8] transition-colors disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
                     >
-                      Create account
+                      {regLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                      {regLoading ? "Creating account…" : "Create account"}
                     </button>
                   </form>
 

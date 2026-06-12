@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -21,6 +22,21 @@ import {
   Headphones,
   Check,
 } from "lucide-react";
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Help Center: Guides, FAQs & Support",
+  description:
+    "Get answers on getting started, orders and shipments, warehousing, billing, integrations, and returns — plus how-to articles to help you scale with FulfillMesh.",
+  path: "/resources/help-center",
+  keywords: [
+    "FulfillMesh help center",
+    "fulfillment support",
+    "shipping FAQ",
+    "order management help",
+    "integration guides",
+  ],
+});
 
 const popularTags = ["Supplier Vetting", "Shipping Rates", "Customs & Compliance", "API Integration"];
 

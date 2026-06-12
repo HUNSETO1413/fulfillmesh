@@ -285,19 +285,17 @@ export default function UsersRolesPage() {
               <div className="relative w-[140px] h-[140px]">
                 <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
                   <circle cx="50" cy="50" r="40" fill="none" stroke="#F1F5F9" strokeWidth="12" />
-                  {(() => {
-                    let off = 0;
-                    return roleDistribution.map((r, i) => {
-                      const pct = (r.count / totalDist) * 100;
-                      const dash = `${(pct / 100) * circumference} ${circumference - (pct / 100) * circumference}`;
-                      const el = (
-                        <circle key={i} cx="50" cy="50" r="40" fill="none" stroke={r.color} strokeWidth="12"
-                          strokeDasharray={dash} strokeDashoffset={-(off / 100) * circumference} />
-                      );
-                      off += pct;
-                      return el;
-                    });
-                  })()}
+                  {roleDistribution.map((r, i) => {
+                    const off = roleDistribution
+                      .slice(0, i)
+                      .reduce((s, x) => s + (x.count / totalDist) * 100, 0);
+                    const pct = (r.count / totalDist) * 100;
+                    const dash = `${(pct / 100) * circumference} ${circumference - (pct / 100) * circumference}`;
+                    return (
+                      <circle key={i} cx="50" cy="50" r="40" fill="none" stroke={r.color} strokeWidth="12"
+                        strokeDasharray={dash} strokeDashoffset={-(off / 100) * circumference} />
+                    );
+                  })}
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
                   <p className="text-[20px] font-bold text-text-primary">128</p>
@@ -665,7 +663,7 @@ function RoleDetail({ onBack }: { onBack: () => void }) {
           <Card className="p-5">
             <h3 className="text-[14px] font-semibold text-text-primary mb-3">Quick Actions</h3>
             <div className="space-y-2">
-              {[["Edit Role", Edit2], ["Assign Users", UserPlus], ["Duplicate Role", Copy]].map(([label, Icon]: any) => (
+              {([["Edit Role", Edit2], ["Assign Users", UserPlus], ["Duplicate Role", Copy]] as [string, typeof Edit2][]).map(([label, Icon]) => (
                 <button key={label} className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-text-primary border border-border-soft rounded-lg hover:bg-soft-bg">
                   <Icon className="w-4 h-4 text-text-muted" /> {label}
                 </button>

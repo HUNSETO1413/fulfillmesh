@@ -266,17 +266,13 @@ export default function ExceptionReportsPage() {
               <div className="relative w-[120px] h-[120px] shrink-0">
                 <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
                   <circle cx="50" cy="50" r="40" fill="none" stroke="#E6EDF5" strokeWidth="13" />
-                  {(() => {
-                    let off = 0;
-                    return summary.map((s, i) => {
-                      const dash = `${s.pct * 2.51327} ${251.327 - s.pct * 2.51327}`;
-                      const el = (
-                        <circle key={i} cx="50" cy="50" r="40" fill="none" stroke={s.color} strokeWidth="13" strokeDasharray={dash} strokeDashoffset={-off * 2.51327} />
-                      );
-                      off += s.pct;
-                      return el;
-                    });
-                  })()}
+                  {summary.map((s, i) => {
+                    const off = summary.slice(0, i).reduce((acc, x) => acc + x.pct, 0);
+                    const dash = `${s.pct * 2.51327} ${251.327 - s.pct * 2.51327}`;
+                    return (
+                      <circle key={i} cx="50" cy="50" r="40" fill="none" stroke={s.color} strokeWidth="13" strokeDasharray={dash} strokeDashoffset={-off * 2.51327} />
+                    );
+                  })}
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
                   <span className="text-[20px] font-bold text-text-primary leading-none">312</span>

@@ -1,9 +1,25 @@
+import type { Metadata } from "next";
 import SolutionDetailLayout from "@/components/SolutionDetailLayout";
 import {
   MapPin, Truck, FileCheck, MonitorCheck, BarChart3, AlertTriangle,
   CheckCircle2, Globe, Warehouse, Ship, Package,
   DollarSign, Zap,
 } from "lucide-react";
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Shipping & Logistics for Global E-commerce",
+  description:
+    "Global shipping and logistics from China with vetted carriers, smart route optimization, customs clearance, and real-time tracking for fast, reliable on-time delivery.",
+  path: "/solutions/shipping-logistics",
+  keywords: [
+    "china shipping logistics",
+    "freight forwarding",
+    "ecommerce shipping",
+    "customs clearance",
+    "international shipping carriers",
+  ],
+});
 
 export default function ShippingLogisticsPage() {
   return (

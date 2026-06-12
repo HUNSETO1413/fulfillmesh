@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -5,6 +6,27 @@ import {
   Rocket, Users, TrendingUp, Laptop, Wallet, HeartPulse, CalendarClock, GraduationCap, Plane,
   ClipboardList, UsersRound, FileCheck2, Handshake,
 } from "lucide-react";
+import { pageMetadata } from "@/lib/seo";
+
+// Humanize a URL slug into a readable title for metadata.
+function titleFromSlug(slug: string): string {
+  return slug
+    .split("-")
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+  return pageMetadata({
+    title: `${titleFromSlug(slug)} | Careers at FulfillMesh`,
+    description:
+      "Join FulfillMesh and help build the future of global fulfillment. Explore our mission, culture, benefits, open roles, and hiring process across a remote-first team.",
+    path: `/co-build-future/${slug}`,
+    keywords: ["FulfillMesh careers", "fulfillment jobs", "remote-first team", "supply chain careers"],
+  });
+}
 
 const heroBadges = [
   { label: "Global Impact", style: "bg-[#E0F7FA] text-[#00695C]" },

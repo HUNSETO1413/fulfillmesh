@@ -3,7 +3,11 @@
 import { useMemo } from "react";
 import { geoNaturalEarth1, geoPath, geoGraticule10 } from "d3-geo";
 import { feature } from "topojson-client";
+import type { Topology, GeometryCollection } from "topojson-specification";
+import type { Feature, Geometry, GeoJsonProperties } from "geojson";
 import worldTopo from "@/data/countries-110m.json";
+
+type CountryFeature = Feature<Geometry, GeoJsonProperties>;
 
 /* ── canvas ── */
 const WIDTH = 760;
@@ -37,19 +41,19 @@ function MapPin({ x, y, h, fill }: { x: number; y: number; h: number; fill: stri
 
 /* ── component ── */
 export default function WorldMap() {
-  const countries = useMemo(() => {
-    const topo = worldTopo as any;
-    const geo = feature(topo, topo.objects.countries) as any;
-    return (geo.features ?? []) as any[];
+  const countries = useMemo<CountryFeature[]>(() => {
+    const topo = worldTopo as unknown as Topology<{ countries: GeometryCollection }>;
+    const geo = feature(topo, topo.objects.countries);
+    return geo.features;
   }, []);
 
   const { pathGen, projection } = useMemo(() => {
     const proj = geoNaturalEarth1();
-    proj.fitExtent([[6, 14], [WIDTH - 6, HEIGHT - 14]], { type: "Sphere" } as any);
+    proj.fitExtent([[6, 14], [WIDTH - 6, HEIGHT - 14]], { type: "Sphere" });
     return { projection: proj, pathGen: geoPath().projection(proj) };
   }, []);
 
-  const spherePath = useMemo(() => pathGen({ type: "Sphere" } as any) ?? "", [pathGen]);
+  const spherePath = useMemo(() => pathGen({ type: "Sphere" }) ?? "", [pathGen]);
   const graticulePath = useMemo(() => pathGen(geoGraticule10()) ?? "", [pathGen]);
   const chinaXY = projection(CHINA_COORD);
 
@@ -99,7 +103,7 @@ export default function WorldMap() {
         )}
 
         {/* countries */}
-        {countries.map((c: any, i: number) => {
+        {countries.map((c, i) => {
           const d = pathGen(c);
           if (!d) return null;
           const isChina = String(c.id) === CHINA_ID;

@@ -250,19 +250,15 @@ export default function AuditLogsPage() {
               <div className="relative w-[140px] h-[140px]">
                 <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
                   <circle cx="50" cy="50" r="40" fill="none" stroke="#F1F5F9" strokeWidth="12" />
-                  {(() => {
-                    let off = 0;
-                    return eventSummary.map((e, i) => {
-                      const pct = (e.count / total) * 100;
-                      const dash = `${(pct / 100) * circumference} ${circumference - (pct / 100) * circumference}`;
-                      const el = (
-                        <circle key={i} cx="50" cy="50" r="40" fill="none" stroke={e.color} strokeWidth="12"
-                          strokeDasharray={dash} strokeDashoffset={-(off / 100) * circumference} />
-                      );
-                      off += pct;
-                      return el;
-                    });
-                  })()}
+                  {eventSummary.map((e, i) => {
+                    const pct = (e.count / total) * 100;
+                    const off = eventSummary.slice(0, i).reduce((s, x) => s + (x.count / total) * 100, 0);
+                    const dash = `${(pct / 100) * circumference} ${circumference - (pct / 100) * circumference}`;
+                    return (
+                      <circle key={i} cx="50" cy="50" r="40" fill="none" stroke={e.color} strokeWidth="12"
+                        strokeDasharray={dash} strokeDashoffset={-(off / 100) * circumference} />
+                    );
+                  })}
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
                   <p className="text-[20px] font-bold text-text-primary">24,856</p>

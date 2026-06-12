@@ -1,6 +1,22 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { ArrowRight, Search, Check, Plug, ChevronDown } from "lucide-react";
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Integration Marketplace",
+  description:
+    "Connect FulfillMesh with the tools you already use — Shopify, WooCommerce, Amazon, eBay, Salesforce, ShipStation, Slack, Zapier, and more. Sync data, automate workflows, and scale your operations.",
+  path: "/integrations",
+  keywords: [
+    "FulfillMesh integrations",
+    "Shopify fulfillment integration",
+    "WooCommerce integration",
+    "Amazon fulfillment integration",
+    "e-commerce integrations",
+  ],
+});
 
 // Real brand logo marks (inline SVG, full color) keyed by integration name.
 const brandLogos: Record<string, ReactNode> = {
@@ -278,7 +294,7 @@ export default function IntegrationsPage() {
         <div className="max-w-[1200px] mx-auto px-8 pt-12 pb-6">
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-bold text-[#1e293b]">Featured Integrations</h2>
-            <Link href="#" className="text-sm font-semibold text-[#3b82f6] hover:underline">View all</Link>
+            <Link href="/integrations" className="text-sm font-semibold text-[#3b82f6] hover:underline">View all</Link>
           </div>
           <div className="mt-6 grid md:grid-cols-2 lg:grid-cols-4 gap-6">
             {featured.map((item) => (

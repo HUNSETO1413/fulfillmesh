@@ -1,21 +1,14 @@
-"use client";
-
 import Link from "next/link";
-import Image from "next/image";
+import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import {
   ArrowLeft, Calendar, Bell, MoreHorizontal, ChevronDown,
   Pencil, FileText, Box, Lock, CheckCircle2, AlertTriangle,
   Clock, Tag, TrendingUp,
 } from "lucide-react";
-
-const metrics = [
-  { label: "On Hand", value: "8,432", unit: "units", icon: Box, iconBg: "bg-[#3B82F6]/10", iconColor: "text-[#3B82F6]" },
-  { label: "Reserved", value: "1,245", unit: "units", icon: Lock, iconBg: "bg-[#F59E0B]/10", iconColor: "text-[#F59E0B]" },
-  { label: "Available", value: "7,187", unit: "units", icon: CheckCircle2, iconBg: "bg-[#10B981]/10", iconColor: "text-[#10B981]" },
-  { label: "Reorder Point", value: "1,500", unit: "units", icon: AlertTriangle, iconBg: "bg-[#8B5CF6]/10", iconColor: "text-[#8B5CF6]" },
-  { label: "Lead Time", value: "12", unit: "days", icon: Clock, iconBg: "bg-[#3B82F6]/10", iconColor: "text-[#3B82F6]" },
-  { label: "Unit Cost", value: "$5.45", unit: "per unit", icon: Tag, iconBg: "bg-[#10B981]/10", iconColor: "text-[#10B981]" },
-];
+import { inventory as inventoryRepo } from "@/lib/repositories";
+import { StatusBadge } from "@/components/dashboard/StatusBadge";
+import { formatNumber } from "@/lib/format";
 
 const tabs = ["Overview", "Stock & Movements", "Purchase Orders", "Allocations", "Adjustments", "Forecast & Replenishment", "Activity Log"];
 
@@ -68,7 +61,25 @@ function Badge({ text }: { text: string }) {
 const card = "bg-white rounded-xl border border-[#E2E8F0] shadow-[0_1px_3px_rgba(0,0,0,0.1)]";
 const thCls = "text-left text-[11px] font-medium text-[#94A3B8] uppercase tracking-wider px-4 py-2.5";
 
-export default function InventoryDetailPage() {
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const { id } = await params;
+  return { title: `Inventory ${id}` };
+}
+
+export default async function InventoryDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const item = inventoryRepo.get(id);
+  if (!item) notFound();
+
+  const metrics = [
+    { label: "On Hand", value: formatNumber(item.onHand), unit: "units", icon: Box, iconBg: "bg-[#3B82F6]/10", iconColor: "text-[#3B82F6]" },
+    { label: "Reserved", value: formatNumber(item.reserved), unit: "units", icon: Lock, iconBg: "bg-[#F59E0B]/10", iconColor: "text-[#F59E0B]" },
+    { label: "Available", value: formatNumber(item.available), unit: "units", icon: CheckCircle2, iconBg: "bg-[#10B981]/10", iconColor: "text-[#10B981]" },
+    { label: "Reorder Point", value: formatNumber(item.reorderPoint), unit: "units", icon: AlertTriangle, iconBg: "bg-[#8B5CF6]/10", iconColor: "text-[#8B5CF6]" },
+    { label: "Lead Time", value: "12", unit: "days", icon: Clock, iconBg: "bg-[#3B82F6]/10", iconColor: "text-[#3B82F6]" },
+    { label: "Unit Cost", value: "$5.45", unit: "per unit", icon: Tag, iconBg: "bg-[#10B981]/10", iconColor: "text-[#10B981]" },
+  ];
+
   return (
     <div className="space-y-5">
       {/* Back link */}
@@ -103,26 +114,20 @@ export default function InventoryDetailPage() {
         <div className="flex gap-6">
           {/* Product image */}
           <div className="shrink-0 self-start">
-            <div className="relative w-[72px] h-[96px] rounded-lg bg-[#F8FAFC] border border-[#E2E8F0] overflow-hidden">
-              <Image
-                src="/images/photo-1602143407151-7111542de6e8.jpg"
-                alt="FM Stainless Steel Water Bottle - 750ml"
-                fill
-                sizes="72px"
-                className="object-cover"
-              />
+            <div className="w-[72px] h-[96px] rounded-lg bg-gradient-to-br from-[#3B82F6] to-[#6366F1] border border-[#E2E8F0] flex items-center justify-center overflow-hidden">
+              <span className="text-[20px] font-bold text-white">FM</span>
             </div>
           </div>
           {/* Product details */}
           <div className="min-w-[260px]">
-            <h2 className="text-[16px] font-semibold text-[#1E293B] mb-3">FM Stainless Steel Water Bottle - 750ml</h2>
+            <h2 className="text-[16px] font-semibold text-[#1E293B] mb-3">{item.name}</h2>
             <dl className="space-y-1.5 text-[12px]">
               {[
-                ["SKU", "FM-BTL-750-STL"],
+                ["SKU", item.sku],
                 ["Barcode", "697541236987"],
-                ["Category", "Drinkware"],
+                ["Warehouse", item.warehouse],
+                ["Location", item.location ?? "—"],
                 ["Brand", "FulfillMesh"],
-                ["Supplier", "Shenzhen Hydrate Co."],
               ].map(([k, v]) => (
                 <div key={k} className="flex gap-3">
                   <dt className="text-[#94A3B8] w-[64px] shrink-0">{k}</dt>
@@ -131,7 +136,7 @@ export default function InventoryDetailPage() {
               ))}
               <div className="flex gap-3 items-center">
                 <dt className="text-[#94A3B8] w-[64px] shrink-0">Status</dt>
-                <dd><Badge text="Healthy" /></dd>
+                <dd><StatusBadge status={item.status} /></dd>
               </div>
               <div className="flex gap-3 items-center">
                 <dt className="text-[#94A3B8] w-[64px] shrink-0">Tags</dt>

@@ -1,9 +1,25 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import {
   BarChart3, FileText, Target, Truck, RotateCcw, Users, ArrowRight, CheckCircle2,
   Database, LineChart, Lightbulb, Settings, TrendingUp, ShieldCheck, Zap, Globe,
-  ChevronDown, Layers, Eye, BarChart2,
+  ChevronDown, Layers, BarChart2,
 } from "lucide-react";
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Fulfillment Analytics & Reporting",
+  description:
+    "Turn fulfillment data into action with real-time dashboards, custom reports, and KPI tracking across orders, shipping, returns, inventory, and supplier performance.",
+  path: "/solutions/analytics-reporting",
+  keywords: [
+    "fulfillment analytics",
+    "supply chain reporting",
+    "ecommerce KPI dashboard",
+    "shipping performance metrics",
+    "supplier performance reporting",
+  ],
+});
 
 const heroStats = [
   { label: "Total Orders", value: "12,842", delta: "+12%" },

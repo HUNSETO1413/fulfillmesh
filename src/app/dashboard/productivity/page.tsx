@@ -180,16 +180,12 @@ export default function ProductivityPage() {
             <div className="relative w-[160px] h-[160px] shrink-0">
               <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
                 <circle cx="50" cy="50" r="40" fill="none" stroke="#F1F5F9" strokeWidth="12" />
-                {(() => {
-                  let off = 0;
-                  return overview.map((o, i) => {
-                    const p = parseFloat(o.pct);
-                    const dash = `${p * 2.51327} ${251.327 - p * 2.51327}`;
-                    const el = <circle key={i} cx="50" cy="50" r="40" fill="none" stroke={o.color} strokeWidth="12" strokeDasharray={dash} strokeDashoffset={-off * 2.51327} />;
-                    off += p;
-                    return el;
-                  });
-                })()}
+                {overview.map((o, i) => {
+                  const p = parseFloat(o.pct);
+                  const off = overview.slice(0, i).reduce((s, x) => s + parseFloat(x.pct), 0);
+                  const dash = `${p * 2.51327} ${251.327 - p * 2.51327}`;
+                  return <circle key={i} cx="50" cy="50" r="40" fill="none" stroke={o.color} strokeWidth="12" strokeDasharray={dash} strokeDashoffset={-off * 2.51327} />;
+                })}
               </svg>
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="text-center">

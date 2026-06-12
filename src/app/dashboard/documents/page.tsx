@@ -93,7 +93,6 @@ function TypeIcon({ type }: { type: DocType }) {
 }
 
 export default function DocumentsPage() {
-  let offset = 0;
   const C = 2 * Math.PI * 40;
 
   return (
@@ -240,10 +239,9 @@ export default function DocumentsPage() {
                 <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
                   <circle cx="50" cy="50" r="40" fill="none" stroke="#F1F5F9" strokeWidth="12" />
                   {byCategory.map((c, i) => {
+                    const offset = byCategory.slice(0, i).reduce((s, x) => s + x.pct, 0);
                     const dash = `${(c.pct / 100) * C} ${C - (c.pct / 100) * C}`;
-                    const el = <circle key={i} cx="50" cy="50" r="40" fill="none" stroke={c.color} strokeWidth="12" strokeDasharray={dash} strokeDashoffset={-(offset / 100) * C} />;
-                    offset += c.pct;
-                    return el;
+                    return <circle key={i} cx="50" cy="50" r="40" fill="none" stroke={c.color} strokeWidth="12" strokeDasharray={dash} strokeDashoffset={-(offset / 100) * C} />;
                   })}
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">

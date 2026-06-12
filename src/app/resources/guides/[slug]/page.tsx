@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -16,6 +17,27 @@ import {
   Lightbulb,
   Mail,
 } from "lucide-react";
+import { pageMetadata } from "@/lib/seo";
+
+// Humanize a URL slug into a readable, title-cased phrase for metadata.
+function titleFromSlug(slug: string): string {
+  return slug
+    .split("-")
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+  return pageMetadata({
+    title: `${titleFromSlug(slug)} | Fulfillment Guide`,
+    description:
+      "A practical fulfillment guide with step-by-step strategies and a framework to reduce costs, improve delivery speed, and scale your supply chain with confidence.",
+    path: `/resources/guides/${slug}`,
+    keywords: ["fulfillment guide", "supply chain strategy", "logistics best practices", "e-commerce operations"],
+  });
+}
 
 // Social share icons using inline SVGs (matching blog detail pattern)
 function FacebookIcon({ className }: { className?: string }) {

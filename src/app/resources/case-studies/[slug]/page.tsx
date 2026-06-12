@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -16,6 +17,27 @@ import {
   BarChart3,
   XCircle,
 } from "lucide-react";
+import { pageMetadata } from "@/lib/seo";
+
+// Humanize a URL slug (e.g. "peak-supplies") into a readable brand/title phrase.
+function titleFromSlug(slug: string): string {
+  return slug
+    .split("-")
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+  return pageMetadata({
+    title: `${titleFromSlug(slug)} Case Study`,
+    description:
+      "See how this brand cut lead times, lowered logistics costs, and improved on-time delivery by unifying inventory, routing, and supplier management with FulfillMesh.",
+    path: `/resources/case-studies/${slug}`,
+    keywords: ["fulfillment case study", "supply chain results", "lead time reduction", "e-commerce logistics"],
+  });
+}
 
 const meta = ["Peak Supplies", "Industrial & Manufacturing", "May 5, 2025", "3 min read"];
 

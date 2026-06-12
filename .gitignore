@@ -32,6 +32,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -49,6 +50,20 @@ next-env.d.ts
 
 # design mockups (large binary files)
 /设计稿/
+设计稿.zip
+*.zip
 
 # claude session files
 /.claude/
+
+# local SQLite database (seeded at runtime)
+/data/*.db
+/data/*.db-shm
+/data/*.db-wal
+
+# temp artifacts & debug captures
+*.b64
+dev-server*.log
+/diff-report*.json
+/screenshot_*.png
+/blog_full_mockup.png

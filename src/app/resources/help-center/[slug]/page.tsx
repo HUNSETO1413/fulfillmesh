@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import type { Metadata } from "next";
 import {
   ArrowRight,
   ChevronRight,
@@ -14,6 +15,27 @@ import {
   Mail,
   ExternalLink,
 } from "lucide-react";
+import { pageMetadata } from "@/lib/seo";
+
+// Humanize a URL slug into a readable help-article title for metadata.
+function titleFromSlug(slug: string): string {
+  return slug
+    .split("-")
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+  return pageMetadata({
+    title: `${titleFromSlug(slug)} | Help Center`,
+    description:
+      "A step-by-step FulfillMesh help article to set up integrations, sync orders and inventory, and troubleshoot common issues so you can run fulfillment smoothly.",
+    path: `/resources/help-center/${slug}`,
+    keywords: ["FulfillMesh help", "integration setup", "order sync", "fulfillment support"],
+  });
+}
 
 const toc = [
   { label: "Overview", n: null },

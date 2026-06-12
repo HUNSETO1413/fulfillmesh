@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import {
   ArrowLeft,
   Copy,
@@ -16,6 +18,9 @@ import {
   Tag,
   ArrowRight,
 } from "lucide-react";
+import { customers as customersRepo } from "@/lib/repositories";
+import { StatusBadge } from "@/components/dashboard/StatusBadge";
+import { formatCurrency, formatDate, formatNumber } from "@/lib/format";
 
 const recentOrders = [
   { id: "ORD-10468", date: "May 16, 2025", status: "Delivered", total: "$1,248.00" },
@@ -66,7 +71,7 @@ const timeline = [
   { icon: Phone, color: "#00B894", title: "Customer Note Added", date: "May 14, 2025", desc: "Account manager logged a call" },
 ];
 
-function StatusBadge({ status }: { status: string }) {
+function MiniStatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     Delivered: "bg-[#00B894]/10 text-[#00B894]",
     "In Transit": "bg-[#0057D8]/10 text-[#0057D8]",
@@ -84,7 +89,19 @@ function StatusBadge({ status }: { status: string }) {
 
 const tabs = ["Overview", "Orders", "Shipments", "Returns", "Support", "Notes & Activity"];
 
-export default function CustomerDetailPage() {
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const { id } = await params;
+  return { title: `Customer ${id}` };
+}
+
+export default async function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const customer = customersRepo.get(id);
+  if (!customer) notFound();
+
+  const initials = customer.name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+  const avgOrder = customer.orders > 0 ? customer.totalSpent / customer.orders : 0;
+
   return (
     <div className="space-y-5">
       {/* Back link + header buttons */}
@@ -121,31 +138,31 @@ export default function CustomerDetailPage() {
         <div className="bg-white rounded-xl border border-[#E6EDF5] shadow-[0_1px_3px_rgba(0,0,0,0.1)] p-5">
           <div className="flex items-start gap-4">
             <div className="w-14 h-14 rounded-full bg-[#0057D8]/10 flex items-center justify-center shrink-0">
-              <span className="text-[18px] font-bold text-[#0057D8]">JS</span>
+              <span className="text-[18px] font-bold text-[#0057D8]">{initials}</span>
             </div>
             <div className="min-w-0">
-              <span className="inline-flex px-2 py-0.5 text-[11px] font-medium rounded bg-[#00B894]/10 text-[#00B894] mb-1">Active</span>
-              <h2 className="text-[18px] font-bold text-[#061A3D]">James Smith</h2>
+              <span className="mb-1 inline-block"><StatusBadge status={customer.status} /></span>
+              <h2 className="text-[18px] font-bold text-[#061A3D]">{customer.name}</h2>
               <div className="flex items-center gap-1.5 text-[12px] text-[#4A5A73] mt-1">
-                james.smith@example.com <Copy className="w-3 h-3 text-[#9AA8B8]" />
+                {customer.email} <Copy className="w-3 h-3 text-[#9AA8B8]" />
               </div>
               <div className="flex items-center gap-1.5 text-[12px] text-[#4A5A73] mt-0.5">
-                +1 (415) 555-0198 <Copy className="w-3 h-3 text-[#9AA8B8]" />
+                {customer.phone ?? "—"} <Copy className="w-3 h-3 text-[#9AA8B8]" />
               </div>
             </div>
           </div>
           <div className="grid grid-cols-3 gap-2 mt-4 pt-4 border-t border-[#E6EDF5]">
             <div>
               <p className="text-[11px] text-[#9AA8B8]">Customer ID</p>
-              <p className="text-[12px] font-medium text-[#061A3D] mt-0.5">CUST-100245</p>
+              <p className="text-[12px] font-medium text-[#061A3D] mt-0.5 font-mono">{customer.id}</p>
             </div>
             <div>
               <p className="text-[11px] text-[#9AA8B8]">Joined</p>
-              <p className="text-[12px] font-medium text-[#061A3D] mt-0.5">Jan 28, 2023</p>
+              <p className="text-[12px] font-medium text-[#061A3D] mt-0.5">{customer.joinedDate ? formatDate(customer.joinedDate) : "—"}</p>
             </div>
             <div>
-              <p className="text-[11px] text-[#9AA8B8]">Type</p>
-              <p className="text-[12px] font-medium text-[#061A3D] mt-0.5">Business</p>
+              <p className="text-[11px] text-[#9AA8B8]">Country</p>
+              <p className="text-[12px] font-medium text-[#061A3D] mt-0.5">{customer.country ?? "—"}</p>
             </div>
           </div>
         </div>
@@ -153,7 +170,7 @@ export default function CustomerDetailPage() {
         {/* Lifetime value card */}
         <div className="bg-white rounded-xl border border-[#E6EDF5] shadow-[0_1px_3px_rgba(0,0,0,0.1)] p-5">
           <p className="text-[13px] text-[#66758C]">Lifetime Value</p>
-          <p className="text-[26px] font-bold text-[#061A3D] mt-1">$128,450.75</p>
+          <p className="text-[26px] font-bold text-[#061A3D] mt-1">{formatCurrency(customer.totalSpent)}</p>
           <div className="flex items-center gap-1 mt-1">
             <ArrowUpRight className="w-3.5 h-3.5 text-[#00B894]" />
             <span className="text-[12px] font-medium text-[#00B894]">18.4%</span>
@@ -162,15 +179,15 @@ export default function CustomerDetailPage() {
           <div className="grid grid-cols-3 gap-2 mt-4 pt-4 border-t border-[#E6EDF5]">
             <div>
               <p className="text-[11px] text-[#9AA8B8]">Total Orders</p>
-              <p className="text-[15px] font-bold text-[#061A3D] mt-0.5">58</p>
+              <p className="text-[15px] font-bold text-[#061A3D] mt-0.5">{formatNumber(customer.orders)}</p>
             </div>
             <div>
               <p className="text-[11px] text-[#9AA8B8]">Total Spent</p>
-              <p className="text-[15px] font-bold text-[#061A3D] mt-0.5">$128.4K</p>
+              <p className="text-[15px] font-bold text-[#061A3D] mt-0.5">{formatCurrency(customer.totalSpent)}</p>
             </div>
             <div>
               <p className="text-[11px] text-[#9AA8B8]">Avg Order</p>
-              <p className="text-[15px] font-bold text-[#061A3D] mt-0.5">$2,214</p>
+              <p className="text-[15px] font-bold text-[#061A3D] mt-0.5">{formatCurrency(avgOrder)}</p>
             </div>
           </div>
         </div>
@@ -248,17 +265,17 @@ export default function CustomerDetailPage() {
           <div className="space-y-4">
             <div>
               <p className="text-[11px] font-medium text-[#9AA8B8] uppercase tracking-wider mb-1">Billing Address</p>
-              <p className="text-[12px] text-[#061A3D]">James Smith</p>
+              <p className="text-[12px] text-[#061A3D]">{customer.name}</p>
               <p className="text-[12px] text-[#4A5A73]">123 Market Street, Suite 400</p>
               <p className="text-[12px] text-[#4A5A73]">San Francisco, CA 94103</p>
-              <p className="text-[12px] text-[#4A5A73]">United States</p>
+              <p className="text-[12px] text-[#4A5A73]">{customer.country ?? "United States"}</p>
             </div>
             <div>
               <p className="text-[11px] font-medium text-[#9AA8B8] uppercase tracking-wider mb-1">Shipping Address</p>
-              <p className="text-[12px] text-[#061A3D]">James Smith</p>
+              <p className="text-[12px] text-[#061A3D]">{customer.name}</p>
               <p className="text-[12px] text-[#4A5A73]">88 Industrial Way, Dock 12</p>
               <p className="text-[12px] text-[#4A5A73]">Oakland, CA 94607</p>
-              <p className="text-[12px] text-[#4A5A73]">United States</p>
+              <p className="text-[12px] text-[#4A5A73]">{customer.country ?? "United States"}</p>
             </div>
             <div>
               <p className="text-[11px] font-medium text-[#9AA8B8] uppercase tracking-wider mb-1">Payment Method</p>
@@ -291,7 +308,7 @@ export default function CustomerDetailPage() {
                 <tr key={o.id} className="border-b border-[#F1F5F9] last:border-b-0">
                   <td className="py-2.5 text-[12px] font-medium text-[#0057D8]">{o.id}</td>
                   <td className="py-2.5 text-[12px] text-[#4A5A73]">{o.date}</td>
-                  <td className="py-2.5"><StatusBadge status={o.status} /></td>
+                  <td className="py-2.5"><MiniStatusBadge status={o.status} /></td>
                   <td className="py-2.5 text-[12px] font-medium text-[#061A3D] text-right">{o.total}</td>
                 </tr>
               ))}
@@ -319,7 +336,7 @@ export default function CustomerDetailPage() {
                 <tr key={s.id} className="border-b border-[#F1F5F9] last:border-b-0">
                   <td className="py-2.5 text-[12px] font-medium text-[#0057D8]">{s.id}</td>
                   <td className="py-2.5 text-[12px] text-[#4A5A73]">{s.carrier}</td>
-                  <td className="py-2.5"><StatusBadge status={s.status} /></td>
+                  <td className="py-2.5"><MiniStatusBadge status={s.status} /></td>
                   <td className="py-2.5 text-[12px] text-[#4A5A73] text-right">{s.eta}</td>
                 </tr>
               ))}
@@ -381,7 +398,7 @@ export default function CustomerDetailPage() {
                   <td className="py-2.5 text-[12px] font-medium text-[#0057D8]">{r.id}</td>
                   <td className="py-2.5 text-[12px] text-[#4A5A73]">{r.date}</td>
                   <td className="py-2.5 text-[12px] text-[#061A3D]">{r.reason}</td>
-                  <td className="py-2.5 text-right"><StatusBadge status={r.status} /></td>
+                  <td className="py-2.5 text-right"><MiniStatusBadge status={r.status} /></td>
                 </tr>
               ))}
             </tbody>
@@ -408,7 +425,7 @@ export default function CustomerDetailPage() {
                 <tr key={t.id} className="border-b border-[#F1F5F9] last:border-b-0">
                   <td className="py-2.5 text-[12px] font-medium text-[#0057D8]">{t.id}</td>
                   <td className="py-2.5 text-[12px] text-[#061A3D]">{t.subject}</td>
-                  <td className="py-2.5"><StatusBadge status={t.status} /></td>
+                  <td className="py-2.5"><MiniStatusBadge status={t.status} /></td>
                   <td className="py-2.5 text-[12px] text-[#4A5A73] text-right">{t.date}</td>
                 </tr>
               ))}

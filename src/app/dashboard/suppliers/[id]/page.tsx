@@ -1,17 +1,12 @@
-"use client";
-
 import Link from "next/link";
+import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import {
   ChevronRight, ShieldCheck, Star, FileText, ClipboardCheck, Award,
   MoreVertical, MapPin, CheckCircle, TrendingDown,
 } from "lucide-react";
-
-const metricCards = [
-  { label: "On-Time Delivery", value: "99%", color: "text-[#10B981]" },
-  { label: "Quality Rating", value: "94%", color: "text-[#10B981]" },
-  { label: "Customer Rating", value: "4.8/5", color: "text-[#3B82F6]" },
-  { label: "Active Orders", value: "133", color: "text-[#3B82F6]" },
-];
+import { suppliers as suppliersRepo } from "@/lib/repositories";
+import { formatNumber } from "@/lib/format";
 
 const keyStrengths = [
   "High-volume production capacity",
@@ -123,27 +118,44 @@ function Radar() {
   );
 }
 
-export default function SupplierDetailPage() {
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const { id } = await params;
+  return { title: `Supplier ${id}` };
+}
+
+export default async function SupplierDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const supplier = suppliersRepo.get(id);
+  if (!supplier) notFound();
+
+  const monogram = supplier.name.replace(/[^A-Za-z ]/g, "").split(/\s+/).map((w) => w[0]).join("").slice(0, 4).toUpperCase() || "SUP";
+  const metricCards = [
+    { label: "Rating", value: `${supplier.rating.toFixed(1)}/5`, color: "text-[#3B82F6]" },
+    { label: "Lead Time", value: supplier.leadTimeDays != null ? `${supplier.leadTimeDays} days` : "—", color: "text-[#10B981]" },
+    { label: "Products Supplied", value: supplier.productsSupplied != null ? formatNumber(supplier.productsSupplied) : "—", color: "text-[#10B981]" },
+    { label: "Status", value: supplier.status, color: "text-[#3B82F6]" },
+  ];
+
   return (
     <div className="space-y-5">
       {/* Breadcrumb */}
       <div className="flex items-center gap-1.5 text-[14px]">
         <Link href="/dashboard/suppliers" className="text-[#64748B] hover:text-[#3B82F6] font-medium">Suppliers</Link>
         <ChevronRight className="w-3.5 h-3.5 text-[#94A3B8]" />
-        <span className="text-[#64748B]">China</span>
+        <span className="text-[#64748B]">{supplier.country}</span>
         <ChevronRight className="w-3.5 h-3.5 text-[#94A3B8]" />
-        <span className="text-[#1E293B] font-medium">Shenzhen Nova Manufacturing</span>
+        <span className="text-[#1E293B] font-medium">{supplier.name}</span>
       </div>
 
       {/* Header */}
       <div className="flex items-start justify-between flex-wrap gap-4">
         <div>
           <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-[20px] font-semibold text-[#1E293B]">Shenzhen Nova Manufacturing</h1>
+            <h1 className="text-[20px] font-semibold text-[#1E293B]">{supplier.name}</h1>
             <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[12px] font-medium bg-[#F59E0B] text-white"><ShieldCheck className="w-3.5 h-3.5" />Verified Supplier</span>
             <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[12px] font-medium bg-[#10B981] text-white"><Star className="w-3.5 h-3.5" />Preferred Partner</span>
           </div>
-          <p className="text-[13px] text-[#64748B] mt-1.5 flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5" />Electronics Manufacturing · OEM/ODM · Shenzhen, Guangdong, China</p>
+          <p className="text-[13px] text-[#64748B] mt-1.5 flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5" />{supplier.category ?? "General"} · OEM/ODM · {supplier.country}</p>
         </div>
         <div className="flex items-center gap-2">
           <button className="inline-flex items-center gap-2 px-4 py-2 bg-[#3B82F6] text-white rounded-lg text-[14px] font-medium hover:bg-[#2563EB] shadow-[0_1px_3px_rgba(0,0,0,0.1)]"><FileText className="w-4 h-4" />Request Quote</button>
@@ -157,7 +169,7 @@ export default function SupplierDetailPage() {
       <div className="bg-[#F1F5F9] rounded-xl p-4">
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
           <div className="bg-white rounded-lg p-4 shadow-[0_1px_2px_rgba(0,0,0,0.05)] flex items-center justify-center">
-            <div className="w-16 h-16 rounded-xl border border-[#E2E8F0] bg-[#3B82F6]/10 flex items-center justify-center text-[#3B82F6] text-[13px] font-bold tracking-wide">NOVA</div>
+            <div className="w-16 h-16 rounded-xl border border-[#E2E8F0] bg-[#3B82F6]/10 flex items-center justify-center text-[#3B82F6] text-[13px] font-bold tracking-wide">{monogram}</div>
           </div>
           {metricCards.map((m) => (
             <div key={m.label} className="bg-white rounded-lg p-4 shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
@@ -177,11 +189,11 @@ export default function SupplierDetailPage() {
           {/* Supplier Information */}
           <div className="mb-4">
             <h4 className="text-[13px] font-semibold text-[#1E293B] mb-2">Supplier Information</h4>
-            <p className="text-[13px] font-semibold text-[#1E293B]">Shenzhen Nova Manufacturing</p>
+            <p className="text-[13px] font-semibold text-[#1E293B]">{supplier.name}</p>
             <div className="mt-1.5 space-y-1">
-              <p className="text-[12px] text-[#64748B]">Established: 2015</p>
-              <p className="text-[12px] text-[#64748B]">Location: Shenzhen, China</p>
-              <p className="text-[12px] text-[#64748B]">Contact: sales@novamanufacturing.com</p>
+              <p className="text-[12px] text-[#64748B]">Category: {supplier.category ?? "General"}</p>
+              <p className="text-[12px] text-[#64748B]">Location: {supplier.country}</p>
+              <p className="text-[12px] text-[#64748B]">Contact: {supplier.contact ?? supplier.email ?? "—"}</p>
             </div>
           </div>
 

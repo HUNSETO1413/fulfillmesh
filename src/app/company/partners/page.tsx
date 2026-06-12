@@ -1,5 +1,21 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight, Handshake, ShieldCheck, BarChart3, Globe, Users, Zap, CheckCircle2 } from "lucide-react";
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Partner Programs",
+  description:
+    "Grow your business with FulfillMesh. Join our ecosystem of technology, logistics, agency, and supplier partners with co-marketing, qualified leads, referral commissions, and dedicated support.",
+  path: "/company/partners",
+  keywords: [
+    "FulfillMesh partners",
+    "fulfillment partner program",
+    "logistics partnership",
+    "technology integration partner",
+    "supplier partner program",
+  ],
+});
 
 const programs = [
   {

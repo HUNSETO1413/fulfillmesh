@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -5,7 +6,6 @@ import {
   ChevronRight,
   Clock3,
   Share2,
-  Link2,
   ClipboardList,
   Building2,
   Factory,
@@ -15,7 +15,6 @@ import {
   MessageCircle,
   Lightbulb,
   AlertTriangle,
-  HelpCircle,
   CheckCircle2,
   Download,
   FileText,
@@ -23,6 +22,21 @@ import {
   Calendar,
   BookOpen,
 } from "lucide-react";
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Supplier Playbooks: Vetting & Sourcing Frameworks",
+  description:
+    "Practical, step-by-step playbooks to vet and select reliable suppliers in China — checklists, scorecards, red flags, and questions to reduce risk and improve quality.",
+  path: "/resources/supplier-playbooks",
+  keywords: [
+    "supplier playbooks",
+    "supplier vetting checklist",
+    "China sourcing",
+    "supplier evaluation scorecard",
+    "quality management",
+  ],
+});
 
 // Social share icons using inline SVGs (matching guide detail pattern)
 function FacebookIcon({ className }: { className?: string }) {

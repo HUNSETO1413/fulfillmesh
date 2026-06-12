@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -12,9 +13,23 @@ import {
   Search,
   DollarSign,
   Mail,
-  CheckCircle2,
   Check,
 } from "lucide-react";
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Fulfillment Resources: Guides, Case Studies & Tools",
+  description:
+    "Expert guides, real customer case studies, and practical tools to help e-commerce brands streamline sourcing, quality control, and shipping from China.",
+  path: "/resources",
+  keywords: [
+    "fulfillment resources",
+    "China sourcing guides",
+    "e-commerce logistics",
+    "supply chain tools",
+    "shipping insights",
+  ],
+});
 
 const topics = [
   { icon: BookOpen, title: "Guides", desc: "Step-by-step guides to optimize every part of your supply chain.", cta: "Browse guides", href: "/resources/guides" },

@@ -1,4 +1,20 @@
+import type { Metadata } from "next";
 import LegalPageLayout, { type LegalSection } from "@/components/LegalPageLayout";
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Data Processing Agreement",
+  description:
+    "Review the FulfillMesh Data Processing Agreement (DPA) covering the processing of personal data, data security, sub-processors, data subject rights, breach notification, and international transfers.",
+  path: "/legal/data-processing",
+  keywords: [
+    "FulfillMesh DPA",
+    "data processing agreement",
+    "data processor",
+    "sub-processors",
+    "data subject rights",
+  ],
+});
 
 const icon = (path: React.ReactNode) => (
   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

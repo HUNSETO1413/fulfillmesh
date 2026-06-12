@@ -1,8 +1,24 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import {
   FileText, Tag, Boxes, ScanLine, ShieldCheck, Sparkles,
   Users, Box, Layers, Package, CheckCircle2, ArrowRight, ChevronDown,
 } from "lucide-react";
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Custom Packaging & Labeling Services",
+  description:
+    "Custom packaging, private labeling, and branded inserts for e-commerce brands. Accurate barcode, FNSKU, and compliance labeling plus premium unboxing — sourced and prepped for you.",
+  path: "/solutions/packaging-labeling",
+  keywords: [
+    "custom packaging",
+    "private label packaging",
+    "fnsku barcode labeling",
+    "branded packaging",
+    "ecommerce packaging services",
+  ],
+});
 
 const benefits = [
   { icon: Users, title: "Save Weeks of Time", desc: "Skip the endless search. We handle sourcing, printing, and preparation from start to finish." },

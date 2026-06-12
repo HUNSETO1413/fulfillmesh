@@ -1,9 +1,25 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import {
-  Truck, DollarSign, Share2, Box, Globe, CheckCircle2,
+  Truck, DollarSign, Box, Globe, CheckCircle2,
   Users, ShieldCheck, PieChart, FileCheck, RefreshCw, Warehouse, BarChart3,
   Package, ArrowRight, ChevronDown,
 } from "lucide-react";
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Overseas Warehousing & Global Fulfillment",
+  description:
+    "Store inventory closer to your customers with vetted overseas warehouses. Cut cross-border shipping costs, speed up local delivery, and scale into new global markets.",
+  path: "/solutions/overseas-warehousing",
+  keywords: [
+    "overseas warehousing",
+    "global fulfillment warehouse",
+    "bonded warehouse",
+    "international 3PL",
+    "cross-border fulfillment",
+  ],
+});
 
 const benefits = [
   { icon: Globe, title: "Store Closer to Customers", desc: "Position inventory in key markets so your products arrive faster and cheaper." },

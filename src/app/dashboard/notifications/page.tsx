@@ -81,7 +81,6 @@ export default function NotificationsPage() {
   const [active, setActive] = useState("All");
   const [prefs, setPrefs] = useState(preferences);
 
-  let offset = 0;
   const C = 2 * Math.PI * 40;
 
   return (
@@ -223,8 +222,9 @@ export default function NotificationsPage() {
                 <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
                   <circle cx="50" cy="50" r="40" fill="none" stroke="#F1F5F9" strokeWidth="12" />
                   {summary.map((s, i) => {
+                    const offset = summary.slice(0, i).reduce((acc, x) => acc + x.pct, 0);
                     const dash = `${(s.pct / 100) * C} ${C - (s.pct / 100) * C}`;
-                    const el = (
+                    return (
                       <circle
                         key={i}
                         cx="50"
@@ -237,8 +237,6 @@ export default function NotificationsPage() {
                         strokeDashoffset={-(offset / 100) * C}
                       />
                     );
-                    offset += s.pct;
-                    return el;
                   })}
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">

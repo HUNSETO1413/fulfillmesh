@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -9,6 +10,22 @@ import {
   Users,
   ShieldCheck,
 } from "lucide-react";
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Compliance & Security",
+  description:
+    "FulfillMesh adheres to the highest standards of security and compliance. We comply with ISO 27001, SOC 2, GDPR, HIPAA, PCI DSS, and CCPA, with data encryption, access control, and 24/7 monitoring.",
+  path: "/compliance",
+  keywords: [
+    "FulfillMesh compliance",
+    "data security",
+    "ISO 27001",
+    "SOC 2",
+    "GDPR compliance",
+    "PCI DSS",
+  ],
+});
 
 const certifications = [
   {

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -15,6 +16,21 @@ import {
   Check,
   Mail,
 } from "lucide-react";
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Shipping Insights: Freight Rates, Capacity & Transit Times",
+  description:
+    "Data-driven China–US ocean freight analysis — rate movements, capacity shifts, and transit time trends — to help e-commerce shippers plan and save in 2025.",
+  path: "/resources/shipping-insights",
+  keywords: [
+    "shipping insights",
+    "China US freight rates",
+    "ocean freight trends",
+    "transit times",
+    "container shipping capacity",
+  ],
+});
 
 // Social share icons using inline SVGs (matching blog/guide detail pattern)
 function FacebookIcon({ className }: { className?: string }) {
@@ -348,7 +364,7 @@ export default function ShippingInsightsPage() {
                 <p className="text-sm text-text-body leading-relaxed">
                   Rates are highly sensitive to capacity, regional, and seasonal demand—monitor weekly and lock in contracts ahead of the next peak.
                 </p>
-                <Link href="#" className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-action-blue hover:underline">
+                <Link href="/book-a-demo" className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-action-blue hover:underline">
                   Get personalized recommendations <ArrowRight className="w-3.5 h-3.5" />
                 </Link>
               </div>

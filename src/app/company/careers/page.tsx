@@ -1,5 +1,21 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight, MapPin, Briefcase, Clock, Users, Globe, Rocket, Heart } from "lucide-react";
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Careers",
+  description:
+    "Help us build the future of China-powered fulfillment for global e-commerce brands. Explore open roles across engineering, design, operations, customer success, sales, and marketing at FulfillMesh.",
+  path: "/company/careers",
+  keywords: [
+    "FulfillMesh careers",
+    "fulfillment jobs",
+    "remote logistics jobs",
+    "supply chain careers",
+    "e-commerce startup jobs",
+  ],
+});
 
 const perks = [
   { icon: Globe, title: "Remote-First", desc: "Work from anywhere. Our team spans multiple time zones and countries." },

@@ -1,13 +1,26 @@
-"use client";
-
-import { useState } from "react";
+import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
 import {
-  Mail, MapPin, ChevronDown, ArrowRight, Clock, Calendar,
+  Mail, MapPin, ArrowRight, Clock, Calendar,
   CheckCircle, MessageCircle, Globe, Search, ShieldCheck,
   Package, Truck, Warehouse,
 } from "lucide-react";
+import { pageMetadata } from "@/lib/seo";
+import ContactForm from "./ContactForm";
+import ContactFaq from "./ContactFaq";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Contact Us",
+  description:
+    "Talk to the FulfillMesh team. Get answers about China-powered fulfillment — supplier vetting, quality control, packaging, shipping, and overseas warehousing for your brand.",
+  path: "/contact",
+  keywords: [
+    "contact fulfillmesh",
+    "china fulfillment contact",
+    "ecommerce fulfillment support",
+  ],
+});
 
 const ways = [
   { icon: Search, title: "Supplier Vetting", desc: "We vet and list the best factories for your needs" },
@@ -29,18 +42,7 @@ const strategyBullets = [
   "Choose a convenient time and connect with an expert",
 ];
 
-const faqs = [
-  { q: "Do you work with businesses of all sizes?", a: "Yes, we work with businesses of all sizes — from startups just launching their first product to established brands shipping thousands of orders per month. Our solutions are designed to scale with your growth." },
-  { q: "Where are your warehouses located?", a: "Our main fulfillment centers are located in Shenzhen and Guangzhou, China, with additional partner warehouses in the US, Europe, and Southeast Asia for global distribution." },
-  { q: "How do you ensure product quality?", a: "We conduct rigorous on-site inspections at every stage — from pre-production checks to final random inspections before shipping, ensuring your products meet your specifications." },
-  { q: "What if I need help after onboarding?", a: "Our dedicated support team is available to assist you at every step. You can reach us via email, WhatsApp, or schedule a call with your account manager anytime." },
-];
-
-const inputBase = "w-full rounded-lg border border-border-soft bg-white px-4 py-2.5 text-[14px] text-text-primary placeholder:text-text-light focus:outline-none focus:border-action-blue focus:ring-1 focus:ring-action-blue transition-colors";
-
 export default function ContactPage() {
-  const [open, setOpen] = useState<number | null>(null);
-
   return (
     <main>
       {/* Hero Heading */}
@@ -63,69 +65,7 @@ export default function ContactPage() {
         <div className="max-w-[1200px] mx-auto px-6 pb-12">
           <div className="grid lg:grid-cols-[1fr_320px] gap-8 items-start">
             {/* Form Card */}
-            <div className="rounded-xl border border-border-soft p-6 shadow-soft">
-              <div className="grid sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[13px] font-medium text-text-primary mb-1.5">Full Name <span className="text-red-500">*</span></label>
-                  <input type="text" placeholder="Enter your full name" className={inputBase} />
-                </div>
-                <div>
-                  <label className="block text-[13px] font-medium text-text-primary mb-1.5">Work Email <span className="text-red-500">*</span></label>
-                  <input type="email" placeholder="name@company.com" className={inputBase} />
-                </div>
-              </div>
-              <div className="mt-4 grid sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[13px] font-medium text-text-primary mb-1.5">Company <span className="text-red-500">*</span></label>
-                  <input type="text" placeholder="Your company name" className={inputBase} />
-                </div>
-                <div>
-                  <label className="block text-[13px] font-medium text-text-primary mb-1.5">Website</label>
-                  <input type="url" placeholder="https://yourwebsite.com" className={inputBase} />
-                </div>
-              </div>
-              <div className="mt-4 grid sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[13px] font-medium text-text-primary mb-1.5">Monthly Order Volume <span className="text-red-500">*</span></label>
-                  <select className={inputBase + " appearance-none bg-[url('data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%239AA8B8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%3E%3C%2Fpolyline%3E%3C%2Fsvg%3E')] bg-[position:right_12px_center] bg-no-repeat"}>
-                    <option>Select volume</option>
-                    <option>Under 100</option>
-                    <option>100 - 500</option>
-                    <option>500 - 2,000</option>
-                    <option>2,000 - 10,000</option>
-                    <option>10,000+</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[13px] font-medium text-text-primary mb-1.5">Target Markets <span className="text-red-500">*</span></label>
-                  <select className={inputBase + " appearance-none bg-[url('data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%239AA8B8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%3E%3C%2Fpolyline%3E%3C%2Fsvg%3E')] bg-[position:right_12px_center] bg-no-repeat"}>
-                    <option>Select markets</option>
-                    <option>North America</option>
-                    <option>Europe</option>
-                    <option>Asia Pacific</option>
-                    <option>Global</option>
-                  </select>
-                </div>
-              </div>
-              <div className="mt-4">
-                <label className="block text-[13px] font-medium text-text-primary mb-1.5">Services Needed <span className="text-red-500">*</span></label>
-                <select className={inputBase + " appearance-none bg-[url('data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%239AA8B8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%3E%3C%2Fpolyline%3E%3C%2Fsvg%3E')] bg-[position:right_12px_center] bg-no-repeat"}>
-                  <option>Select services</option>
-                  <option>Sourcing & Supplier Vetting</option>
-                  <option>Quality Control</option>
-                  <option>Warehousing & Fulfillment</option>
-                  <option>Shipping & Logistics</option>
-                  <option>Full-Service Solution</option>
-                </select>
-              </div>
-              <div className="mt-4">
-                <label className="block text-[13px] font-medium text-text-primary mb-1.5">Tell us more about your needs</label>
-                <textarea rows={3} placeholder="Share details about your products, goals, timeline, or any challenges you're facing..." className={inputBase} />
-              </div>
-              <button className="mt-5 w-full inline-flex items-center justify-center gap-2 px-8 py-3 text-[14px] font-semibold text-white rounded-lg gradient-cta hover:shadow-button transition-all">
-                Submit <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
+            <ContactForm />
 
             {/* Sidebar */}
             <div className="space-y-5">
@@ -229,22 +169,7 @@ export default function ContactPage() {
       <section className="bg-white py-10">
         <div className="max-w-[800px] mx-auto px-6">
           <h2 className="text-[28px] font-bold text-text-primary text-center mb-6">Frequently asked questions</h2>
-          <div className="space-y-3">
-            {faqs.map((faq, i) => (
-              <div key={i} className="bg-white rounded-xl border border-border-soft overflow-hidden transition-all">
-                <button
-                  className="w-full flex items-center justify-between gap-4 px-5 py-4 text-left"
-                  onClick={() => setOpen(open === i ? null : i)}
-                >
-                  <span className="text-[14px] font-medium text-text-primary">{faq.q}</span>
-                  <ChevronDown className={`w-4 h-4 text-text-muted shrink-0 transition-transform ${open === i ? "rotate-180" : ""}`} />
-                </button>
-                {open === i && (
-                  <p className="px-5 pb-4 text-[13px] text-text-body leading-relaxed">{faq.a}</p>
-                )}
-              </div>
-            ))}
-          </div>
+          <ContactFaq />
         </div>
       </section>
 
@@ -276,4 +201,3 @@ export default function ContactPage() {
     </main>
   );
 }
-

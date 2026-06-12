@@ -1,9 +1,25 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import {
   Warehouse, Package, Truck, RotateCcw, BarChart3,
   ShieldCheck, ArrowRight, ChevronRight, Search, Eye, Layers,
   CheckCircle2, TrendingUp,
 } from "lucide-react";
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "End-to-End Fulfillment Solutions",
+  description:
+    "Explore FulfillMesh's China-powered fulfillment solutions — supplier matching, quality control, packaging, shipping, overseas warehousing, returns, and analytics for global e-commerce brands.",
+  path: "/solutions",
+  keywords: [
+    "china fulfillment solutions",
+    "ecommerce fulfillment platform",
+    "supplier matching",
+    "overseas warehousing",
+    "order fulfillment services",
+  ],
+});
 
 const solutions = [
   { icon: Search, title: "Supplier Matching", desc: "Find vetted factories and suppliers matched to your product specs and quality standards.", href: "/solutions/supplier-matching" },
@@ -197,11 +213,12 @@ export default function SolutionsPage() {
                       <svg viewBox="0 0 64 64" className="w-[56px] h-[56px] shrink-0 -rotate-90">
                         {(() => {
                           const C = 2 * Math.PI * 26;
-                          let offset = 0;
-                          return shippingLocations.map((l) => {
-                            const frac = parseFloat(l.pct) / 100;
-                            const seg = frac * C;
-                            const el = (
+                          return shippingLocations.map((l, i) => {
+                            const seg = (parseFloat(l.pct) / 100) * C;
+                            const offset = shippingLocations
+                              .slice(0, i)
+                              .reduce((sum, prev) => sum + (parseFloat(prev.pct) / 100) * C, 0);
+                            return (
                               <circle
                                 key={l.label}
                                 cx="32" cy="32" r="26"
@@ -212,8 +229,6 @@ export default function SolutionsPage() {
                                 strokeDashoffset={-offset}
                               />
                             );
-                            offset += seg;
-                            return el;
                           });
                         })()}
                         <text x="32" y="30" textAnchor="middle" transform="rotate(90 32 32)" fontSize="5" fill="#66758C">Orders</text>

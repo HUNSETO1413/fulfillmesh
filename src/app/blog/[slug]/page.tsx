@@ -1,9 +1,31 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import {
   Clock3,
   CheckCircle2, ArrowRight,
   Link2, Calendar,
 } from "lucide-react";
+import { pageMetadata } from "@/lib/seo";
+
+// Humanize a URL slug into a readable blog post title for metadata.
+function titleFromSlug(slug: string): string {
+  return slug
+    .split("-")
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+  return pageMetadata({
+    title: titleFromSlug(slug),
+    description:
+      "Expert analysis on supply chain strategy and e-commerce fulfillment — a step-by-step framework to identify reliable manufacturing partners and avoid costly risks.",
+    path: `/blog/${slug}`,
+    keywords: ["supply chain", "supplier vetting", "e-commerce fulfillment", "logistics strategy"],
+  });
+}
 
 function FacebookIcon({ className }: { className?: string }) {
   return <svg className={className} viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>;

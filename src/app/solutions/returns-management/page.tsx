@@ -1,10 +1,26 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import {
   ArrowRight, CheckCircle2, ChevronDown,
   Users, Tag, Truck, Search, CreditCard, Box, Globe,
   RotateCcw, ShoppingCart, RefreshCw, Shirt, Cpu,
-  Smile, Star, ShieldCheck, Layers, FileText, Warehouse,
+  Smile, Star, ShieldCheck, Layers, FileText,
 } from "lucide-react";
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Returns Management & Reverse Logistics",
+  description:
+    "Simplify returns with branded self-service portals, prepaid labels, and automated workflows. Inspect, restock, and resolve returns globally to cut costs and retain customers.",
+  path: "/solutions/returns-management",
+  keywords: [
+    "returns management",
+    "reverse logistics",
+    "ecommerce returns",
+    "return portal software",
+    "international returns processing",
+  ],
+});
 
 const benefits = [
   { icon: Smile, title: "Streamlined Returns", desc: "Reduce friction with self-service return portals, prepaid labels, and automated workflows." },

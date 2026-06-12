@@ -1,4 +1,20 @@
+import type { Metadata } from "next";
 import LegalPageLayout, { type LegalSection } from "@/components/LegalPageLayout";
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Terms of Service",
+  description:
+    "Read the FulfillMesh Terms of Service governing your use of our platform, website, and fulfillment services, including user responsibilities, fees, intellectual property, and liability.",
+  path: "/legal/terms",
+  keywords: [
+    "FulfillMesh terms of service",
+    "terms and conditions",
+    "user agreement",
+    "service terms",
+    "fulfillment platform terms",
+  ],
+});
 
 const icon = (path: React.ReactNode) => (
   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

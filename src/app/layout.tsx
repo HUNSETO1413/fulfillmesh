@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import LayoutWrapper from "@/components/LayoutWrapper";
+import { SITE_URL, organizationJsonLd } from "@/lib/seo";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -10,7 +11,11 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "FulfillMesh | China-Powered Fulfillment Matching for Global E-Commerce Brands",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: "FulfillMesh | China-Powered Fulfillment Matching for Global E-Commerce Brands",
+    template: "%s | FulfillMesh",
+  },
   description:
     "FulfillMesh helps global e-commerce brands find and manage the right China-powered fulfillment resources — from suppliers and quality control to packaging, shipping routes, and overseas warehouse options.",
   keywords: [
@@ -41,6 +46,10 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col font-sans">
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd()) }}
+        />
         <LayoutWrapper>{children}</LayoutWrapper>
       </body>
     </html>

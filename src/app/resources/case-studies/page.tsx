@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -10,6 +11,21 @@ import {
   Check,
   ChevronRight,
 } from "lucide-react";
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Case Studies: How E-commerce Brands Scale with FulfillMesh",
+  description:
+    "Real results from beauty, apparel, electronics, and DTC brands that cut delivery times, lowered logistics costs, and grew revenue with FulfillMesh fulfillment.",
+  path: "/resources/case-studies",
+  keywords: [
+    "fulfillment case studies",
+    "e-commerce success stories",
+    "China fulfillment results",
+    "supply chain ROI",
+    "DTC logistics",
+  ],
+});
 
 const featuredImage =
   "/images/photo-1556228578-8c89e6adf883.jpg";

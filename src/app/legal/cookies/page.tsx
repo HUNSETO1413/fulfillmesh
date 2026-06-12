@@ -1,4 +1,20 @@
+import type { Metadata } from "next";
 import LegalPageLayout, { type LegalSection } from "@/components/LegalPageLayout";
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Cookie Policy",
+  description:
+    "Understand how FulfillMesh uses cookies and similar technologies on our website and platform, including essential, performance, functional, and marketing cookies, and how to manage them.",
+  path: "/legal/cookies",
+  keywords: [
+    "FulfillMesh cookie policy",
+    "cookies",
+    "cookie consent",
+    "tracking technologies",
+    "cookie preferences",
+  ],
+});
 
 const icon = (path: React.ReactNode) => (
   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -129,7 +145,7 @@ const sections: LegalSection[] = [
           You can control and/or delete cookies as you wish. Most browsers allow you to block or delete cookies. However, blocking certain cookies may impact your experience on our website.
         </p>
         <a
-          href="#"
+          href="/legal/privacy"
           className="mt-4 inline-flex items-center gap-2 rounded-lg border border-[#3182CE] px-4 py-2.5 text-sm font-semibold text-[#3182CE] transition-colors hover:bg-[#3182CE] hover:text-white"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h12M16 7h4M4 17h8M16 17h4" /><circle cx="14" cy="7" r="2" /><circle cx="10" cy="17" r="2" /></svg>

@@ -1,17 +1,13 @@
-"use client";
-
 import Link from "next/link";
+import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import {
   ChevronRight, Download, MessageSquare, CheckCircle2, Star,
   Zap, DollarSign, FileText, Image as ImageIcon,
 } from "lucide-react";
-
-const infoFields = [
-  { label: "Request ID", value: "RFQ-2025-0487", sub: "Created: May 12, 2025", mono: true },
-  { label: "Product", value: "Wireless Bluetooth Speaker", sub: "Model: FM-W93100" },
-  { label: "Quantity", value: "5,000 units", sub: "Target: 5,000 units" },
-  { label: "Target Market", value: "United States", sub: "Destination: Los Angeles, CA" },
-];
+import { quotes } from "@/lib/repositories";
+import { StatusBadge } from "@/components/dashboard/StatusBadge";
+import { formatCurrency, formatDate } from "@/lib/format";
 
 const suppliers = [
   { name: "Shenzhen Topway Tech", loc: "Shenzhen, China", recommended: true },
@@ -66,9 +62,28 @@ const files = [
   { name: "Reference_Photo.jpg", meta: "JPG · 2.3 MB", icon: ImageIcon, color: "text-[#0057D8]", bg: "bg-[#0057D8]/10" },
 ];
 
-export default function QuoteDetailPage() {
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const { id } = await params;
+  return { title: `Quote ${id}` };
+}
+
+export default async function QuoteDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const quote = quotes.get(id);
+  if (!quote) notFound();
+
   const circumference = 2 * Math.PI * 35;
-  let off = 0;
+  const costOffsets = costBreakdown.reduce<number[]>((acc, c, i) => {
+    acc.push(i === 0 ? 0 : acc[i - 1] + parseFloat(costBreakdown[i - 1].pct));
+    return acc;
+  }, []);
+
+  const infoFields = [
+    { label: "Request ID", value: quote.id, sub: `Created: ${formatDate(quote.createdDate)}`, mono: true },
+    { label: "Customer", value: quote.customer, sub: quote.customerId ? `ID: ${quote.customerId}` : "—" },
+    { label: "Total", value: formatCurrency(quote.total), sub: "Quoted amount" },
+    { label: "Valid Until", value: quote.validUntil ? formatDate(quote.validUntil) : "—", sub: "Quote expiry" },
+  ];
 
   return (
     <div className="space-y-5">
@@ -76,7 +91,7 @@ export default function QuoteDetailPage() {
       <div className="flex items-center gap-1.5 text-[13px] text-[#66758C]">
         <Link href="/dashboard/quotes" className="hover:text-[#0057D8] transition-colors">Quotes</Link>
         <ChevronRight className="w-3.5 h-3.5" />
-        <span className="text-[#061A3D] font-medium font-mono">RFQ-2025-0487</span>
+        <span className="text-[#061A3D] font-medium font-mono">{quote.id}</span>
       </div>
 
       {/* Header */}
@@ -110,7 +125,7 @@ export default function QuoteDetailPage() {
           ))}
           <div>
             <p className="text-[11px] font-medium text-[#9AA8B8] uppercase tracking-wider mb-1">Status</p>
-            <span className="inline-flex items-center px-2 py-0.5 text-[11px] font-medium rounded bg-[#00B894]/10 text-[#00B894]">Quotes Received</span>
+            <StatusBadge status={quote.status} />
             <p className="text-[12px] text-[#4A5A73] mt-2">3 quotes received</p>
           </div>
         </div>
@@ -255,7 +270,7 @@ export default function QuoteDetailPage() {
                     {costBreakdown.map((c, i) => {
                       const p = parseFloat(c.pct);
                       const len = (p / 100) * circumference;
-                      const el = (
+                      return (
                         <circle
                           key={i}
                           cx="50"
@@ -265,11 +280,9 @@ export default function QuoteDetailPage() {
                           stroke={c.color}
                           strokeWidth="13"
                           strokeDasharray={`${len} ${circumference - len}`}
-                          strokeDashoffset={-(off / 100) * circumference}
+                          strokeDashoffset={-(costOffsets[i] / 100) * circumference}
                         />
                       );
-                      off += p;
-                      return el;
                     })}
                   </svg>
                   <div className="absolute inset-0 flex items-center justify-center">
@@ -335,7 +348,7 @@ export default function QuoteDetailPage() {
                 </li>
               ))}
             </ul>
-            <p className="text-[10px] text-[#9AA8B8] mt-4 pt-3 border-t border-[#E6EDF5]">Updated May 13, 2025 by Admin</p>
+            <p className="text-[10px] text-[#9AA8B8] mt-4 pt-3 border-t border-[#E6EDF5]">Updated {formatDate(quote.createdDate)} by Admin</p>
           </div>
         </div>
       </div>

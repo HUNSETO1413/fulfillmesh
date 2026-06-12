@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -16,6 +17,21 @@ import {
   Check,
   ChevronRight,
 } from "lucide-react";
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Fulfillment Guides: Sourcing, Inventory & Shipping",
+  description:
+    "Step-by-step guides and best practices for supplier vetting, inventory forecasting, packaging, warehousing, and quality control to optimize your supply chain.",
+  path: "/resources/guides",
+  keywords: [
+    "fulfillment guides",
+    "supplier vetting",
+    "inventory forecasting",
+    "warehouse operations",
+    "supply chain best practices",
+  ],
+});
 
 const featuredImage =
   "/images/photo-1454165804606-c3d57bc86b40.jpg";

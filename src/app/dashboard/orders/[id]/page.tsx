@@ -1,36 +1,44 @@
-"use client";
-
 import Link from "next/link";
+import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import {
   ArrowLeft, Calendar, ChevronDown, Check, ArrowRight, Edit2,
   FileText, Download, Filter, MessageSquare,
 } from "lucide-react";
-
-const items = [
-  { name: "Stainless Steel Water Bottle – 750ml", variant: "Matte Silver", sku: "FM-BTL-750-STL", price: "$12.99", qty: 12, total: "$155.88", img: "/images/photo-1602143407151-7111542de6e8.jpg" },
-  { name: "Wireless Earbuds", variant: "Black", sku: "WE-1001", price: "$29.99", qty: 5, total: "$149.95", img: "/images/photo-1505740420928-5e560c06d30e.jpg" },
-  { name: "Yoga Mat", variant: "Midnight Blue", sku: "YM-3000", price: "$24.99", qty: 6, total: "$149.94", img: "/images/photo-1553062407-98eeb64c6a62.jpg" },
-  { name: "LED Desk Lamp", variant: "White", sku: "LD-7007", price: "$19.99", qty: 5, total: "$99.95", img: "/images/photo-1507003211169-0a1dd7228f2d.jpg" },
-];
+import { orders as ordersRepo } from "@/lib/repositories";
+import { StatusBadge } from "@/components/dashboard/StatusBadge";
+import { formatCurrency, formatDate } from "@/lib/format";
 
 const steps = ["Confirmed", "Processing", "Ready", "Shipped", "Delivered"];
 const currentStep = 2; // Ready
 
 const timeline = [
   { title: "Order Confirmed", time: "May 18, 2025 11:24 AM", desc: "Order verified by customer", done: true },
-  { title: "Payment Received", time: "May 18, 2025 10:42 AM", desc: "Payment of $1,245.80 was successful", done: true },
+  { title: "Payment Received", time: "May 18, 2025 10:42 AM", desc: "Payment was successful", done: true },
   { title: "Inventory Allocated", time: "May 18, 2025 10:24 AM", desc: "All items have been allocated", done: true },
   { title: "Order Ready to Ship", time: "May 18, 2025 09:50 AM", desc: "Awaiting carrier pickup", done: false },
 ];
 
 const activity = [
   { date: "May 18, 2025 11:18 AM", user: "Sarah Johnson", action: "Status Updated", details: "Order status changed to Ready to Ship" },
-  { date: "May 18, 2025 11:02 AM", user: "System", action: "Inventory Allocated", details: "28 items allocated across 2 warehouses" },
-  { date: "May 18, 2025 10:28 AM", user: "John Smith", action: "Payment Received", details: "Payment of $1,245.80 via Visa **** 4242" },
+  { date: "May 18, 2025 11:02 AM", user: "System", action: "Inventory Allocated", details: "Items allocated across 2 warehouses" },
+  { date: "May 18, 2025 10:28 AM", user: "John Smith", action: "Payment Received", details: "Payment received via Visa **** 4242" },
   { date: "May 18, 2025 10:08 AM", user: "John Smith", action: "Order Created", details: "Order was placed via Web Store" },
 ];
 
-export default function OrderDetailPage() {
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const { id } = await params;
+  return { title: `Order ${id}` };
+}
+
+export default async function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const order = ordersRepo.get(id);
+  if (!order) notFound();
+  const orderItems = order.items ?? [];
+  const itemCount = orderItems.reduce((sum, it) => sum + it.quantity, 0);
+  const skuCount = orderItems.length;
+  const initials = order.customer.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
   return (
     <div className="space-y-5">
       {/* Back + header */}
@@ -61,20 +69,20 @@ export default function OrderDetailPage() {
           <div>
             <p className="text-[12px] text-[#94A3B8] mb-1">Order ID</p>
             <div className="flex items-center gap-2">
-              <p className="text-[15px] font-bold text-[#1E293B]">ORD-2025-0518-0012</p>
-              <span className="inline-flex items-center px-2.5 py-0.5 text-[11px] font-medium rounded-full" style={{ backgroundColor: "#10B9811A", color: "#10B981" }}>Confirmed</span>
+              <p className="text-[15px] font-bold text-[#1E293B]">{order.id}</p>
+              <StatusBadge status={order.status} />
             </div>
-            <p className="text-[12px] text-[#64748B] mt-3"><span className="text-[#94A3B8]">Order Date</span>&nbsp;&nbsp;May 18, 2025 10:24 AM</p>
-            <p className="text-[12px] text-[#64748B] mt-1.5"><span className="text-[#94A3B8]">Source</span>&nbsp;&nbsp;Web Store</p>
+            <p className="text-[12px] text-[#64748B] mt-3"><span className="text-[#94A3B8]">Order Date</span>&nbsp;&nbsp;{formatDate(order.date)}</p>
+            <p className="text-[12px] text-[#64748B] mt-1.5"><span className="text-[#94A3B8]">Source</span>&nbsp;&nbsp;{order.channel ?? "Web Store"}</p>
           </div>
           {/* Customer */}
           <div>
             <p className="text-[12px] text-[#94A3B8] mb-1">Customer</p>
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-[#3B82F6]/10 text-[#3B82F6] text-[12px] font-bold flex items-center justify-center">AT</div>
+              <div className="w-8 h-8 rounded-full bg-[#3B82F6]/10 text-[#3B82F6] text-[12px] font-bold flex items-center justify-center">{initials}</div>
               <div>
-                <p className="text-[14px] font-semibold text-[#1E293B]">Acme Retail</p>
-                <p className="text-[11px] text-[#94A3B8]">acme.retail@example.com</p>
+                <p className="text-[14px] font-semibold text-[#1E293B]">{order.customer}</p>
+                <p className="text-[11px] text-[#94A3B8]">{order.customer.toLowerCase().replace(/[^a-z]/g, "")}@example.com</p>
               </div>
             </div>
             <Link href="#" className="inline-flex items-center gap-1 text-[12px] font-medium text-[#3B82F6] mt-3">View Customer <ArrowRight className="w-3 h-3" /></Link>
@@ -83,8 +91,8 @@ export default function OrderDetailPage() {
           <div>
             <p className="text-[12px] text-[#94A3B8] mb-1">Payment Status</p>
             <span className="inline-flex items-center px-2.5 py-0.5 text-[11px] font-medium rounded-full" style={{ backgroundColor: "#10B9811A", color: "#10B981" }}>Paid</span>
-            <p className="text-[12px] text-[#64748B] mt-2">Paid on May 18, 2025</p>
-            <p className="text-[13px] font-semibold text-[#1E293B]">$1,245.80 USD</p>
+            <p className="text-[12px] text-[#64748B] mt-2">Paid on {formatDate(order.date)}</p>
+            <p className="text-[13px] font-semibold text-[#1E293B]">{formatCurrency(order.total)} USD</p>
             <Link href="#" className="inline-flex items-center gap-1 text-[12px] font-medium text-[#3B82F6] mt-2">View Payment <ArrowRight className="w-3 h-3" /></Link>
           </div>
           {/* Fulfillment Status */}
@@ -114,8 +122,8 @@ export default function OrderDetailPage() {
           {/* Total */}
           <div className="text-right">
             <p className="text-[12px] text-[#94A3B8] mb-1">Total Amount</p>
-            <p className="text-[22px] font-bold text-[#1E293B]">$1,245.80 <span className="text-[12px] font-medium text-[#94A3B8]">USD</span></p>
-            <p className="text-[12px] text-[#64748B] mt-1">28 items · 4 SKUs</p>
+            <p className="text-[22px] font-bold text-[#1E293B]">{formatCurrency(order.total)} <span className="text-[12px] font-medium text-[#94A3B8]">USD</span></p>
+            <p className="text-[12px] text-[#64748B] mt-1">{itemCount} items · {skuCount} SKUs</p>
             <Link href="#" className="inline-flex items-center gap-1 text-[12px] font-medium text-[#3B82F6] mt-3">View Summary <ArrowRight className="w-3 h-3" /></Link>
           </div>
         </div>
@@ -125,7 +133,7 @@ export default function OrderDetailPage() {
       <div className="grid gap-5" style={{ gridTemplateColumns: "2fr 1fr 1fr" }}>
         {/* Order Items */}
         <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-[0_1px_3px_rgba(0,0,0,0.1)] overflow-hidden">
-          <h3 className="text-[14px] font-semibold text-[#1E293B] px-5 py-3 bg-[#F8FAFC] border-b border-[#E2E8F0]">Order Items <span className="text-[12px] font-normal text-[#94A3B8]">(4 SKUs, 28 items)</span></h3>
+          <h3 className="text-[14px] font-semibold text-[#1E293B] px-5 py-3 bg-[#F8FAFC] border-b border-[#E2E8F0]">Order Items <span className="text-[12px] font-normal text-[#94A3B8]">({skuCount} SKUs, {itemCount} items)</span></h3>
           <div className="p-5">
             <table className="w-full">
               <thead>
@@ -138,25 +146,25 @@ export default function OrderDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {items.map((it) => (
+                {orderItems.map((it) => (
                   <tr key={it.sku} className="border-b border-[#F1F5F9] last:border-b-0">
                     <td className="py-3">
                       <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-lg bg-[#F1F5F9] overflow-hidden shrink-0 border border-[#E2E8F0]">
-                          <img src={it.img} alt={it.name} className="w-full h-full object-cover" />
-                        </div>
+                        <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-[#E2E8F0] to-[#F1F5F9] shrink-0 border border-[#E2E8F0]" />
                         <div>
                           <p className="text-[13px] font-medium text-[#1E293B]">{it.name}</p>
-                          <p className="text-[11px] text-[#94A3B8]">{it.variant}</p>
                         </div>
                       </div>
                     </td>
                     <td className="py-3 text-[12px] text-[#64748B] font-mono">{it.sku}</td>
-                    <td className="py-3 text-[13px] text-[#1E293B] text-right">{it.price}</td>
-                    <td className="py-3 text-[13px] text-[#1E293B] text-right">{it.qty}</td>
-                    <td className="py-3 text-[13px] font-semibold text-[#1E293B] text-right">{it.total}</td>
+                    <td className="py-3 text-[13px] text-[#1E293B] text-right">{formatCurrency(it.unitPrice)}</td>
+                    <td className="py-3 text-[13px] text-[#1E293B] text-right">{it.quantity}</td>
+                    <td className="py-3 text-[13px] font-semibold text-[#1E293B] text-right">{formatCurrency(it.unitPrice * it.quantity)}</td>
                   </tr>
                 ))}
+                {orderItems.length === 0 && (
+                  <tr><td colSpan={5} className="py-6 text-center text-[12px] text-[#94A3B8]">No line items recorded for this order.</td></tr>
+                )}
               </tbody>
             </table>
             <Link href="#" className="inline-flex items-center gap-1 text-[12px] font-medium text-[#3B82F6] mt-3">View all items <ArrowRight className="w-3 h-3" /></Link>

@@ -1,5 +1,21 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight, Globe, ShieldCheck, Users, Target, TrendingUp, Heart } from "lucide-react";
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "About FulfillMesh",
+  description:
+    "FulfillMesh is a China-powered fulfillment matching and management network for global e-commerce brands. Learn about our mission to help brands find, compare, and manage the right China fulfillment resources.",
+  path: "/company/about",
+  keywords: [
+    "about FulfillMesh",
+    "China fulfillment network",
+    "e-commerce fulfillment company",
+    "supply chain matching",
+    "fulfillment management platform",
+  ],
+});
 
 const values = [
   { icon: Target, title: "Best-Fit Matching", desc: "We help clients find the most suitable fulfillment solution for their product, market, volume, and budget." },

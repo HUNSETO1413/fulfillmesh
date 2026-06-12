@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import {
   Check,
@@ -17,6 +18,21 @@ import {
   FileText,
   Scale,
 } from "lucide-react";
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "System Status",
+  description:
+    "Check the real-time operational status of FulfillMesh services including the website, customer dashboard, order management, inventory, warehousing, shipping, and API integrations.",
+  path: "/status",
+  keywords: [
+    "FulfillMesh status",
+    "system status",
+    "service uptime",
+    "platform status",
+    "incident history",
+  ],
+});
 
 const services = [
   { name: "Website", icon: Globe },
@@ -153,7 +169,7 @@ export default function StatusPage() {
           ))}
         </div>
         <div className="mt-4 flex items-center justify-between text-sm">
-          <Link href="#" className="inline-flex items-center gap-1.5 font-medium text-action-blue hover:underline">
+          <Link href="/resources/help-center" className="inline-flex items-center gap-1.5 font-medium text-action-blue hover:underline">
             <TrendingUp className="w-4 h-4" /> View historical uptime
           </Link>
           <span className="font-semibold text-teal">100% uptime in the last 90 days</span>
@@ -170,7 +186,7 @@ export default function StatusPage() {
               <p className="text-sm text-[#6B7280]">No incidents reported in the last 90 days.</p>
             </div>
           </div>
-          <Link href="#" className="inline-flex items-center gap-1 text-sm font-medium text-action-blue hover:underline">
+          <Link href="/resources/help-center" className="inline-flex items-center gap-1 text-sm font-medium text-action-blue hover:underline">
             View all incidents <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </div>

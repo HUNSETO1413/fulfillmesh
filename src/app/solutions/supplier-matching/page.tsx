@@ -1,8 +1,24 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import {
   Search, Building2, Globe, ShieldCheck, FileText, Headphones, BarChart3,
   Users, Box, ClipboardCheck, CheckCircle2, Layers, ArrowRight, ChevronDown,
 } from "lucide-react";
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Supplier Matching & China Sourcing",
+  description:
+    "Get matched with pre-vetted factories in China, Vietnam, India, and 60+ countries. Compare quotes, MOQs, and lead times to source the right manufacturing partner faster.",
+  path: "/solutions/supplier-matching",
+  keywords: [
+    "china sourcing",
+    "supplier matching",
+    "find manufacturers",
+    "vetted factories",
+    "product sourcing agent",
+  ],
+});
 
 const benefits = [
   { icon: Users, title: "Save Weeks of Time", desc: "Skip the endless search. We connect you with vetted suppliers in days, not months." },

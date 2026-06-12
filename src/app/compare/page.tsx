@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import {
   Check, X, Minus, ArrowRight,
@@ -5,6 +6,21 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import FinalCTA from "@/components/FinalCTA";
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Compare FulfillMesh vs Alternatives",
+  description:
+    "Compare FulfillMesh with ShipBob, Flexport, and Deliverr across global network, transparent pricing, shipping speed, technology, integrations, and support to find the right fulfillment partner.",
+  path: "/compare",
+  keywords: [
+    "FulfillMesh vs ShipBob",
+    "FulfillMesh vs Flexport",
+    "FulfillMesh vs Deliverr",
+    "fulfillment comparison",
+    "best fulfillment provider",
+  ],
+});
 
 const tabs = ["All e-Brands", "Features", "Pricing", "Integrations", "Best For"];
 const columns = ["FulfillMesh", "ShipBob", "Flexport", "Deliverr"];

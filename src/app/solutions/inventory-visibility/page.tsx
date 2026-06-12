@@ -1,8 +1,24 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import {
   Eye, Building2, Bell, Truck, Box, BarChart3, ArrowRight, CheckCircle2,
-  Users, Warehouse, MonitorCheck, ChevronDown, Layers, Globe, ShieldCheck, FileText,
+  Users, Warehouse, MonitorCheck, ChevronDown, Layers, Globe, ShieldCheck,
 } from "lucide-react";
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Real-Time Inventory Visibility",
+  description:
+    "Track stock in real time across every warehouse, supplier, and sales channel. Get multi-warehouse visibility, low-stock alerts, and SKU-level insights to prevent stockouts.",
+  path: "/solutions/inventory-visibility",
+  keywords: [
+    "inventory visibility",
+    "real-time inventory tracking",
+    "multi-warehouse inventory",
+    "stock level management",
+    "ecommerce inventory software",
+  ],
+});
 
 const heroStats = [
   { label: "Total On Hand", value: "1,245,320", delta: "+8.4%" },

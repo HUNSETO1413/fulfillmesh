@@ -135,7 +135,6 @@ export default function TasksPage() {
   const [activeTab, setActiveTab] = useState("All Tasks");
 
   // donut math
-  let offset = 0;
   const C = 2 * Math.PI * 40;
 
   return (
@@ -280,13 +279,12 @@ export default function TasksPage() {
                 <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
                   <circle cx="50" cy="50" r="40" fill="none" stroke="#F1F5F9" strokeWidth="12" />
                   {statusOverview.map((s, i) => {
+                    const offset = statusOverview.slice(0, i).reduce((acc, x) => acc + x.pct, 0);
                     const dash = `${(s.pct / 100) * C} ${C - (s.pct / 100) * C}`;
-                    const el = (
+                    return (
                       <circle key={i} cx="50" cy="50" r="40" fill="none" stroke={s.color} strokeWidth="12"
                         strokeDasharray={dash} strokeDashoffset={-(offset / 100) * C} />
                     );
-                    offset += s.pct;
-                    return el;
                   })}
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">

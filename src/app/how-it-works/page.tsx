@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import {
   Globe, Factory, Boxes, Ship, BarChart3,
@@ -5,6 +6,21 @@ import {
   ClipboardList, TrendingUp, Layers, Headphones,
 } from "lucide-react";
 import FinalCTA from "@/components/FinalCTA";
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "How It Works",
+  description:
+    "See how FulfillMesh works — from telling us your needs and getting matched with vetted fulfillment partners to shipping, tracking, and optimizing your operations from a single dashboard.",
+  path: "/how-it-works",
+  keywords: [
+    "how FulfillMesh works",
+    "fulfillment process",
+    "supplier matching",
+    "order fulfillment workflow",
+    "fulfillment dashboard",
+  ],
+});
 
 /* ============ Hero ============ */
 const heroNodes = [

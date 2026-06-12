@@ -1,10 +1,13 @@
-"use client";
-
 import Link from "next/link";
+import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import {
   ArrowLeft, Check, ArrowRight,
   Package, CheckCircle2, Plane, DollarSign, Download, Phone, AlertTriangle, User, Tag,
 } from "lucide-react";
+import { shipments as shipmentsRepo } from "@/lib/repositories";
+import { StatusBadge } from "@/components/dashboard/StatusBadge";
+import { formatDate } from "@/lib/format";
 
 const progress = [
   { label: "Label Created", date: "May 12, 09:14", done: true },
@@ -24,7 +27,16 @@ const trackingEvents = [
   { date: "May 13, 2025 09:14 AM", loc: "Shenzhen, China", event: "Label Created", eventColor: "#7C6FF6", details: "Shipment information received" },
 ];
 
-export default function ShipmentDetailPage() {
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const { id } = await params;
+  return { title: `Shipment ${id}` };
+}
+
+export default async function ShipmentDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const shipment = shipmentsRepo.get(id);
+  if (!shipment) notFound();
+
   return (
     <div className="space-y-5">
       {/* Back + header */}
@@ -50,31 +62,31 @@ export default function ShipmentDetailPage() {
         <div className="grid items-start" style={{ gridTemplateColumns: "repeat(9, minmax(0, 1fr))", gap: "20px" }}>
           <div>
             <p className="text-[12px] text-[#9AA8B8] mb-1">Shipment ID</p>
-            <p className="text-[14px] font-semibold text-[#061A3D] font-mono">SHP-2025-0518-00123</p>
+            <p className="text-[14px] font-semibold text-[#061A3D] font-mono">{shipment.id}</p>
           </div>
           <div>
             <p className="text-[12px] text-[#9AA8B8] mb-1">Carrier</p>
-            <p className="text-[14px] font-semibold text-[#061A3D]">FedEx Express</p>
+            <p className="text-[14px] font-semibold text-[#061A3D]">{shipment.carrier}</p>
           </div>
           <div>
             <p className="text-[12px] text-[#9AA8B8] mb-1">Origin</p>
-            <p className="text-[13px] font-medium text-[#061A3D]">Shenzhen, CN</p>
+            <p className="text-[13px] font-medium text-[#061A3D]">{shipment.origin}</p>
           </div>
           <div>
             <p className="text-[12px] text-[#9AA8B8] mb-1">Destination</p>
-            <p className="text-[13px] font-medium text-[#061A3D]">Los Angeles, US</p>
+            <p className="text-[13px] font-medium text-[#061A3D]">{shipment.destination}</p>
           </div>
           <div>
             <p className="text-[12px] text-[#9AA8B8] mb-1">Date</p>
-            <p className="text-[13px] font-medium text-[#061A3D]">May 12, 2025</p>
+            <p className="text-[13px] font-medium text-[#061A3D]">{shipment.shippedDate ? formatDate(shipment.shippedDate) : "—"}</p>
           </div>
           <div>
             <p className="text-[12px] text-[#9AA8B8] mb-1">Status</p>
-            <span className="inline-flex px-2 py-0.5 text-[11px] font-medium rounded" style={{ backgroundColor: "#00B8941A", color: "#00B894" }}>Delivered</span>
+            <StatusBadge status={shipment.status} />
           </div>
           <div>
             <p className="text-[12px] text-[#9AA8B8] mb-1">Weight</p>
-            <p className="text-[13px] font-medium text-[#061A3D]">48.6 kg</p>
+            <p className="text-[13px] font-medium text-[#061A3D]">{shipment.weight ?? "—"}</p>
           </div>
           <div>
             <p className="text-[12px] text-[#9AA8B8] mb-1">Dimensions</p>
@@ -99,8 +111,8 @@ export default function ShipmentDetailPage() {
         </div>
         <div className="bg-white rounded-xl border border-[#E6EDF5] shadow-[0_1px_3px_rgba(0,0,0,0.1)] p-5">
           <div className="flex items-center gap-2 mb-3"><CheckCircle2 className="w-4 h-4 text-[#00B894]" /><span className="text-[13px] font-semibold text-[#061A3D]">Shipment Status</span></div>
-          <p className="text-[18px] font-bold text-[#00B894]">Delivered</p>
-          <p className="text-[11px] text-[#9AA8B8] mt-1">Shipment completed successfully</p>
+          <p className="text-[18px] font-bold text-[#00B894]">{shipment.status}</p>
+          <p className="text-[11px] text-[#9AA8B8] mt-1">Current shipment status</p>
         </div>
         <div className="bg-white rounded-xl border border-[#E6EDF5] shadow-[0_1px_3px_rgba(0,0,0,0.1)] p-5">
           <div className="flex items-center gap-2 mb-3"><Plane className="w-4 h-4 text-[#0057D8]" /><span className="text-[13px] font-semibold text-[#061A3D]">Service Level</span></div>
@@ -148,7 +160,7 @@ export default function ShipmentDetailPage() {
                 <rect x="6" y="-20" width="14" height="10" fill="#DE2910" />
                 <line x1="6" y1="-20" x2="6" y2="-2" stroke="#9AA8B8" strokeWidth="1" />
               </g>
-              <text x="70" y="135" textAnchor="middle" fontSize="9" fontWeight="600" fill="#061A3D">Shenzhen, CN</text>
+              <text x="70" y="135" textAnchor="middle" fontSize="9" fontWeight="600" fill="#061A3D">{shipment.origin}</text>
               {/* destination marker + flag */}
               <g transform="translate(330,95)">
                 <circle r="6" fill="#0057D8" />
@@ -156,7 +168,7 @@ export default function ShipmentDetailPage() {
                 <rect x="6" y="-20" width="14" height="10" fill="#3C3B6E" />
                 <line x1="6" y1="-20" x2="6" y2="-2" stroke="#9AA8B8" strokeWidth="1" />
               </g>
-              <text x="330" y="120" textAnchor="middle" fontSize="9" fontWeight="600" fill="#061A3D">Los Angeles, US</text>
+              <text x="330" y="120" textAnchor="middle" fontSize="9" fontWeight="600" fill="#061A3D">{shipment.destination}</text>
             </svg>
             {/* On Time / Est ETA overlay */}
             <div className="absolute top-3 left-3 bg-white/95 backdrop-blur rounded-lg border border-[#E6EDF5] shadow-sm px-3 py-2">
@@ -164,7 +176,7 @@ export default function ShipmentDetailPage() {
                 <span className="w-1.5 h-1.5 rounded-full bg-[#00B894]" />
                 <span className="text-[12px] font-semibold text-[#00B894]">On Time</span>
               </div>
-              <p className="text-[10px] text-[#9AA8B8] mt-0.5">Est. ETA May 16, 2025</p>
+              <p className="text-[10px] text-[#9AA8B8] mt-0.5">Est. ETA {shipment.estimatedDelivery ? formatDate(shipment.estimatedDelivery) : "—"}</p>
             </div>
           </div>
         </div>
@@ -197,12 +209,12 @@ export default function ShipmentDetailPage() {
           {/* Label preview */}
           <div className="rounded-lg border border-[#E6EDF5] bg-[#F7FAFC] h-[88px] flex flex-col items-center justify-center mb-3">
             <Tag className="w-6 h-6 text-[#9AA8B8] mb-1" />
-            <p className="text-[11px] text-[#9AA8B8] font-mono">FMUS25051800123</p>
+            <p className="text-[11px] text-[#9AA8B8] font-mono">{shipment.trackingNumber}</p>
           </div>
           <div className="space-y-2.5 text-[12px]">
             <div className="flex justify-between"><span className="text-[#66758C]">Label Type</span><span className="font-medium text-[#061A3D]">Master Label</span></div>
-            <div className="flex justify-between"><span className="text-[#66758C]">Service</span><span className="font-medium text-[#061A3D]">FedEx Express</span></div>
-            <div className="flex justify-between"><span className="text-[#66758C]">Created</span><span className="font-medium text-[#061A3D]">May 12, 2025</span></div>
+            <div className="flex justify-between"><span className="text-[#66758C]">Service</span><span className="font-medium text-[#061A3D]">{shipment.carrier}</span></div>
+            <div className="flex justify-between"><span className="text-[#66758C]">Created</span><span className="font-medium text-[#061A3D]">{shipment.shippedDate ? formatDate(shipment.shippedDate) : "—"}</span></div>
             <div className="flex justify-between"><span className="text-[#66758C]">Format</span><span className="font-medium text-[#061A3D]">PDF (4x6 in)</span></div>
           </div>
           <div className="flex items-center gap-2 mt-3">
@@ -255,20 +267,22 @@ export default function ShipmentDetailPage() {
             <Link href="#" className="inline-flex items-center gap-1 text-[12px] font-medium text-[#0057D8] mt-3">View Cost Details <ArrowRight className="w-3 h-3" /></Link>
           </div>
 
-          <div className="bg-white rounded-xl border border-[#E6EDF5] shadow-[0_1px_3px_rgba(0,0,0,0.1)] p-5">
-            <h3 className="text-[15px] font-semibold text-[#061A3D] mb-3">Linked Order</h3>
-            <div className="flex items-center justify-between mb-3">
-              <Link href="/dashboard/orders/ORD-10458" className="text-[15px] font-bold text-[#0057D8] hover:underline">ORD-10458</Link>
-              <span className="inline-flex px-2 py-0.5 text-[11px] font-medium rounded" style={{ backgroundColor: "#00B8941A", color: "#00B894" }}>Delivered</span>
+          {shipment.orderId && (
+            <div className="bg-white rounded-xl border border-[#E6EDF5] shadow-[0_1px_3px_rgba(0,0,0,0.1)] p-5">
+              <h3 className="text-[15px] font-semibold text-[#061A3D] mb-3">Linked Order</h3>
+              <div className="flex items-center justify-between mb-3">
+                <Link href={`/dashboard/orders/${shipment.orderId}`} className="text-[15px] font-bold text-[#0057D8] hover:underline">{shipment.orderId}</Link>
+                <StatusBadge status={shipment.status} />
+              </div>
+              <div className="space-y-1.5 text-[12px]">
+                <div className="flex justify-between"><span className="text-[#66758C]">Customer</span><span className="font-medium text-[#061A3D]">Acme Retail</span></div>
+                <div className="flex justify-between"><span className="text-[#66758C]">Order Date</span><span className="font-medium text-[#061A3D]">{shipment.shippedDate ? formatDate(shipment.shippedDate) : "—"}</span></div>
+                <div className="flex justify-between"><span className="text-[#66758C]">Items</span><span className="font-medium text-[#061A3D]">8 SKUs</span></div>
+                <div className="flex justify-between"><span className="text-[#66758C]">Order Total</span><span className="font-medium text-[#061A3D]">$3,248.00</span></div>
+              </div>
+              <Link href={`/dashboard/orders/${shipment.orderId}`} className="inline-flex items-center gap-1 text-[12px] font-medium text-[#0057D8] mt-3">View Order Details <ArrowRight className="w-3 h-3" /></Link>
             </div>
-            <div className="space-y-1.5 text-[12px]">
-              <div className="flex justify-between"><span className="text-[#66758C]">Customer</span><span className="font-medium text-[#061A3D]">Acme Retail</span></div>
-              <div className="flex justify-between"><span className="text-[#66758C]">Order Date</span><span className="font-medium text-[#061A3D]">May 12, 2025</span></div>
-              <div className="flex justify-between"><span className="text-[#66758C]">Items</span><span className="font-medium text-[#061A3D]">8 SKUs</span></div>
-              <div className="flex justify-between"><span className="text-[#66758C]">Order Total</span><span className="font-medium text-[#061A3D]">$3,248.00</span></div>
-            </div>
-            <Link href="/dashboard/orders/ORD-10458" className="inline-flex items-center gap-1 text-[12px] font-medium text-[#0057D8] mt-3">View Order Details <ArrowRight className="w-3 h-3" /></Link>
-          </div>
+          )}
         </div>
       </div>
     </div>

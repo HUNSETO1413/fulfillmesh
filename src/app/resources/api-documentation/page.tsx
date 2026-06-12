@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -6,12 +7,26 @@ import {
   Copy,
   Zap,
   Search,
-  MessageCircle,
   HelpCircle,
   Layers,
   Filter,
   Clock,
 } from "lucide-react";
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "API Documentation: Orders, Shipments & Inventory",
+  description:
+    "Integrate FulfillMesh with your store and systems. Reference for the Orders API, authentication, rate limits, status codes, and webhooks to automate fulfillment.",
+  path: "/resources/api-documentation",
+  keywords: [
+    "FulfillMesh API",
+    "fulfillment API",
+    "orders API",
+    "shipping API integration",
+    "e-commerce automation",
+  ],
+});
 
 const noteIcons = [Layers, Filter, Clock];
 

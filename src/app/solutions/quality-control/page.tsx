@@ -1,9 +1,25 @@
+import type { Metadata } from "next";
 import SolutionDetailLayout from "@/components/SolutionDetailLayout";
 import {
   ShieldCheck, Microscope, FileSearch, ClipboardCheck, Camera, AlertTriangle,
   Search, FileText, Wrench, Truck, ScanLine,
   BarChart3, Eye, Layers,
 } from "lucide-react";
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Quality Control & Product Inspection Services",
+  description:
+    "China-based quality control with PPI, in-line (DUPRO), and final random inspections using AQL sampling. Catch defects early, cut returns, and ship with confidence.",
+  path: "/solutions/quality-control",
+  keywords: [
+    "china quality control",
+    "product inspection services",
+    "pre-shipment inspection",
+    "AQL inspection",
+    "factory quality control",
+  ],
+});
 
 export default function QualityControlPage() {
   return (

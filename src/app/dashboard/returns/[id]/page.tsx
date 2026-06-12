@@ -1,42 +1,25 @@
-"use client";
-
 import Link from "next/link";
-import Image from "next/image";
+import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import {
   ArrowLeft, Check, ExternalLink, ArrowRight,
   Search, Wrench, Warehouse, Truck, DollarSign, FileText,
-  Printer, Edit2, Download,
+  Printer, Edit2, Download, Package,
 } from "lucide-react";
+import { returns as returnsRepo } from "@/lib/repositories";
+import { StatusBadge } from "@/components/dashboard/StatusBadge";
+import { formatCurrency, formatDate } from "@/lib/format";
 
-/** Hero product shot of the returned stainless-steel water bottle. */
-const PRODUCT_IMAGE = "/images/photo-1602143407151-7111542de6e8.jpg";
-
-/** Customer-submitted return photos (the leaking bottle). */
-const SUBMITTED_PHOTOS = [
-  { src: "/images/photo-1610824352934-c10d87b700cc.jpg", alt: "Returned bottle leaking water" },
-  { src: "/images/photo-1523362628745-0c100150b504.jpg", alt: "Close-up of the bottle cap" },
-  { src: "/images/photo-1625708458528-802ec79b1ed8.jpg", alt: "Returned bottle alongside reference units" },
-];
-
-/** Real product photo used in the returned-item card, the summary header
- *  thumbnail, and the submitted-photos grid. */
-function BottleThumb({
-  className = "",
-  src = PRODUCT_IMAGE,
-  alt = "FM Stainless Steel Water Bottle",
-  sizes = "96px",
-}: {
-  className?: string;
-  src?: string;
-  alt?: string;
-  sizes?: string;
-}) {
+/** Neutral placeholder used wherever a returned-item photo would appear. */
+function BottleThumb({ className = "" }: { className?: string }) {
   return (
-    <div className={`relative overflow-hidden bg-[#F7FAFC] border border-[#E6EDF5] ${className}`}>
-      <Image src={src} alt={alt} fill sizes={sizes} className="object-cover" />
+    <div className={`relative overflow-hidden bg-[#F7FAFC] border border-[#E6EDF5] flex items-center justify-center ${className}`}>
+      <Package className="w-1/3 h-1/3 text-[#9AA8B8]" />
     </div>
   );
 }
+
+const SUBMITTED_PHOTOS = [0, 1, 2];
 
 const progress = [
   { label: "Submitted", date: "May 18", done: true, active: false },
@@ -66,7 +49,19 @@ function Field({ label, value, link }: { label: string; value: string; link?: bo
   );
 }
 
-export default function ReturnDetailPage() {
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const { id } = await params;
+  return { title: `Return ${id}` };
+}
+
+export default async function ReturnDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const ret = returnsRepo.get(id);
+  if (!ret) notFound();
+
+  const refund = ret.refundAmount ?? 0;
+  const email = `${ret.customer.toLowerCase().replace(/[^a-z]/g, "")}@example.com`;
+
   return (
     <div className="space-y-5">
       {/* Back + Breadcrumb */}
@@ -98,14 +93,14 @@ export default function ReturnDetailPage() {
           <div>
             <p className="text-[11px] text-[#9AA8B8] mb-1">Return ID</p>
             <div className="flex items-center gap-2 mb-3">
-              <p className="text-[15px] font-bold text-[#061A3D] font-mono">RET-2025-0518-0421</p>
-              <span className="inline-flex px-2 py-0.5 rounded-md text-[12px] font-medium bg-[#F59E0B]/10 text-[#F59E0B]">Under Review</span>
+              <p className="text-[15px] font-bold text-[#061A3D] font-mono">{ret.id}</p>
+              <StatusBadge status={ret.status} />
             </div>
             <div className="grid grid-cols-2 gap-x-8 gap-y-2">
-              <Field label="Return Date" value="May 18, 2025 10:34 AM" />
-              <Field label="Customer" value="Acme Retail" />
-              <Field label="Order ID" value="ORD-10458" link />
-              <Field label="Customer Email" value="support@acmeretail.com" />
+              <Field label="Return Date" value={formatDate(ret.requestedDate)} />
+              <Field label="Customer" value={ret.customer} />
+              <Field label="Order ID" value={ret.orderId} link />
+              <Field label="Customer Email" value={email} />
               <Field label="RMA Type" value="Customer Return" />
               <Field label="Customer Location" value="Los Angeles, CA, USA" />
               <Field label="Channel" value="DTC Website" />
@@ -116,10 +111,10 @@ export default function ReturnDetailPage() {
           <div>
             <p className="text-[11px] font-semibold text-[#061A3D] mb-2">Summary</p>
             <div className="space-y-2">
-              <Field label="Items Returned" value="1" />
-              <Field label="Refund Amount" value="$12.99" />
+              <Field label="Items Returned" value={String(ret.items)} />
+              <Field label="Refund Amount" value={formatCurrency(refund)} />
               <Field label="Resolution" value="Replacement" />
-              <Field label="Status" value="Under Review" />
+              <Field label="Status" value={ret.status} />
             </div>
           </div>
           {/* Return Progress */}
@@ -163,9 +158,9 @@ export default function ReturnDetailPage() {
                   <div><p className="text-[#9AA8B8]">Category</p><p className="font-medium text-[#061A3D]">Drinkware</p></div>
                   <div><p className="text-[#9AA8B8]">Usage Period</p><p className="font-medium text-[#061A3D]">~2 weeks</p></div>
                   <div></div>
-                  <div><p className="text-[#9AA8B8]">Unit Price</p><p className="font-medium text-[#061A3D]">$12.99</p></div>
-                  <div><p className="text-[#9AA8B8]">Qty</p><p className="font-medium text-[#061A3D]">1</p></div>
-                  <div><p className="text-[#9AA8B8]">Total</p><p className="font-medium text-[#061A3D]">$12.99</p></div>
+                  <div><p className="text-[#9AA8B8]">Unit Price</p><p className="font-medium text-[#061A3D]">{formatCurrency(refund)}</p></div>
+                  <div><p className="text-[#9AA8B8]">Qty</p><p className="font-medium text-[#061A3D]">{ret.items}</p></div>
+                  <div><p className="text-[#9AA8B8]">Total</p><p className="font-medium text-[#061A3D]">{formatCurrency(refund)}</p></div>
                 </div>
               </div>
             </div>
@@ -176,7 +171,7 @@ export default function ReturnDetailPage() {
         <div className="bg-white rounded-xl border border-[#E6EDF5] shadow-[0_1px_3px_rgba(0,0,0,0.1)] overflow-hidden">
           <h3 className="text-[15px] font-semibold text-[#061A3D] px-5 py-3 bg-[#F7FAFC] border-b border-[#E6EDF5]">Return Reason</h3>
           <div className="p-5 space-y-2.5 text-[12px]">
-            <Field label="Selected Reason" value="Product Defective" />
+            <Field label="Selected Reason" value={ret.reason} />
             <div>
               <p className="text-[#9AA8B8] mb-1">Customer Description</p>
               <p className="text-[#4A5A73] leading-relaxed">Leakage from the cap when filled. Water leaks out of the cap when I tilt it in my bag.</p>
@@ -196,8 +191,8 @@ export default function ReturnDetailPage() {
           </div>
           <div className="p-5">
             <div className="grid grid-cols-3 gap-2">
-              {SUBMITTED_PHOTOS.map((photo) => (
-                <BottleThumb key={photo.src} src={photo.src} alt={photo.alt} sizes="120px" className="aspect-square rounded-lg" />
+              {SUBMITTED_PHOTOS.map((n) => (
+                <BottleThumb key={n} className="aspect-square rounded-lg" />
               ))}
             </div>
           </div>
@@ -310,12 +305,12 @@ export default function ReturnDetailPage() {
           </div>
           <div className="p-5">
             <div className="space-y-2.5 text-[12px]">
-              <div><p className="text-[#9AA8B8]">Refund Amount</p><p className="font-bold text-[#061A3D]">$12.99</p></div>
+              <div><p className="text-[#9AA8B8]">Refund Amount</p><p className="font-bold text-[#061A3D]">{formatCurrency(refund)}</p></div>
               <div><p className="text-[#9AA8B8]">Return Shipping Cost</p><p className="font-bold text-[#EF4444]">$4.80</p></div>
-              <div><p className="text-[#9AA8B8]">Net Impact</p><p className="font-bold text-[#EF4444]">$17.09</p></div>
+              <div><p className="text-[#9AA8B8]">Net Impact</p><p className="font-bold text-[#EF4444]">{formatCurrency(refund + 4.8)}</p></div>
               <div><p className="text-[#9AA8B8]">Recovery Value</p><p className="font-bold text-[#061A3D]">$0.00</p></div>
               <div><p className="text-[#9AA8B8]">Restocking Fee</p><p className="font-bold text-[#061A3D]">$0.00</p></div>
-              <div className="pt-2 border-t border-[#E6EDF5]"><p className="text-[#9AA8B8]">Total Impact</p><p className="font-bold text-[#EF4444]">$17.09</p></div>
+              <div className="pt-2 border-t border-[#E6EDF5]"><p className="text-[#9AA8B8]">Total Impact</p><p className="font-bold text-[#EF4444]">{formatCurrency(refund + 4.8)}</p></div>
             </div>
           </div>
         </div>

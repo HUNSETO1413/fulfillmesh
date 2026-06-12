@@ -1,10 +1,12 @@
-"use client";
-
 import Link from "next/link";
+import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import {
   ArrowLeft, Package, Box, Boxes, ExternalLink, ArrowUpRight,
   ShieldCheck, ClipboardCheck, BadgeCheck, Search as SearchIcon,
 } from "lucide-react";
+import { products as productsRepo } from "@/lib/repositories";
+import { formatCurrency, formatNumber } from "@/lib/format";
 
 const specs: { label: string; value: string; good?: boolean; flag?: string }[] = [
   { label: "Material", value: "Stainless Steel (304)" },
@@ -65,19 +67,32 @@ const orderStatusStyle: Record<string, { bg: string; text: string }> = {
   "Confirmed": { bg: "#7C6FF61A", text: "#7C6FF6" },
 };
 
-const metricCards = [
-  { label: "On Hand", value: "8,432", unit: "units", icon: Box, color: "#0057D8", bg: "#0057D81A" },
-  { label: "Reorder Point", value: "1,500", unit: "units", icon: Boxes, color: "#7C6FF6", bg: "#7C6FF61A" },
-  { label: "Days of Supply", value: "28", unit: "days", icon: Package, color: "#F59E0B", bg: "#F59E0B1A" },
-  { label: "Committed", value: "1,245", unit: "units", icon: Boxes, color: "#00B894", bg: "#00B8941A" },
-];
-
 const tabs = ["Overview", "Specifications", "Inventory", "Shipping", "Packaging", "Quality", "Orders", "Performance"];
 
 const unitsPts = [50, 38, 55, 48, 60, 52, 68, 58, 72];
 const revenuePts = [62, 50, 66, 60, 72, 64, 78, 70, 84];
 
-export default function ProductDetailPage() {
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const { id } = await params;
+  return { title: `Product ${id}` };
+}
+
+export default async function ProductDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const product = productsRepo.get(id);
+  if (!product) notFound();
+
+  const margin = product.cost != null && product.price > 0
+    ? `${(((product.price - product.cost) / product.price) * 100).toFixed(1)}%`
+    : "—";
+
+  const metricCards = [
+    { label: "On Hand", value: formatNumber(product.stock), unit: "units", icon: Box, color: "#0057D8", bg: "#0057D81A" },
+    { label: "Reorder Point", value: "1,500", unit: "units", icon: Boxes, color: "#7C6FF6", bg: "#7C6FF61A" },
+    { label: "Days of Supply", value: "28", unit: "days", icon: Package, color: "#F59E0B", bg: "#F59E0B1A" },
+    { label: "Committed", value: "1,245", unit: "units", icon: Boxes, color: "#00B894", bg: "#00B8941A" },
+  ];
+
   return (
     <div className="space-y-5">
       {/* Breadcrumb */}
@@ -117,21 +132,21 @@ export default function ProductDetailPage() {
             </div>
             {/* Fields */}
             <div className="flex-1 min-w-0">
-              <h2 className="text-[18px] font-bold text-[#1E293B]">FM Stainless Steel Water Bottle – 750ml</h2>
+              <h2 className="text-[18px] font-bold text-[#1E293B]">{product.name}</h2>
               <div className="grid grid-cols-2 gap-x-8 mt-4">
                 <div className="space-y-2.5">
-                  <Field label="SKU" value="FM-BTL-750-STL" mono />
-                  <Field label="Category" value="Drinkware" />
-                  <Field label="Supplier" value="Shenzhen Hydrate Co." link />
+                  <Field label="SKU" value={product.sku} mono />
+                  <Field label="Category" value={product.category} />
+                  <Field label="Supplier" value={product.supplier ?? "—"} link />
                   <div className="flex items-center justify-between">
                     <span className="text-[12px] text-[#94A3B8]">Status</span>
-                    <span className="inline-flex px-2 py-0.5 rounded text-[12px] font-medium" style={{ backgroundColor: "#00B8941A", color: "#00B894" }}>Active</span>
+                    <span className="inline-flex px-2 py-0.5 rounded text-[12px] font-medium" style={{ backgroundColor: "#00B8941A", color: "#00B894" }}>{product.status}</span>
                   </div>
                 </div>
                 <div className="space-y-2.5">
-                  <Field label="Unit Cost" value="$5.45" />
-                  <Field label="Selling Price" value="$12.99" />
-                  <Field label="Margin" value="58.0%" green />
+                  <Field label="Unit Cost" value={product.cost != null ? formatCurrency(product.cost) : "—"} />
+                  <Field label="Selling Price" value={formatCurrency(product.price)} />
+                  <Field label="Margin" value={margin} green />
                   <Field label="Weight" value="0.35 kg" />
                 </div>
               </div>

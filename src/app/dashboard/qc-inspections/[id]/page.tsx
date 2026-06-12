@@ -1,24 +1,14 @@
-"use client";
-
 import Link from "next/link";
+import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import {
   ChevronRight, Download, Edit, ChevronDown, Package,
   CheckCircle2, XCircle, MinusCircle, FileText, FileSpreadsheet, FileArchive,
   Clock, AlertTriangle, Send, RotateCcw, Ban, ArrowLeft, ArrowRight,
 } from "lucide-react";
-
-const headerFields = [
-  { label: "Inspection ID", value: "QC-2025-0518-002", mono: true },
-  { label: "Stage", value: "During Production", badge: "bg-[#F59E0B]/10 text-[#F59E0B]" },
-  { label: "Inspection Date", value: "May 18, 2025" },
-  { label: "AQL Level", value: "II (2.5)" },
-];
-const headerFields2 = [
-  { label: "Quantity Checked", value: "800 units" },
-  { label: "Pass / Fail", value: "Failed", badge: "bg-[#EF4444]/10 text-[#EF4444]" },
-  { label: "Overall Score", value: "72%", color: "text-[#EF4444]" },
-  { label: "Status", value: "Completed", badge: "bg-[#10B981]/10 text-[#10B981]" },
-];
+import { qcInspections } from "@/lib/repositories";
+import { StatusBadge } from "@/components/dashboard/StatusBadge";
+import { formatDate } from "@/lib/format";
 
 const checklist = [
   { item: "Product Appearance", result: "Passed" },
@@ -46,16 +36,16 @@ const topDefects = [
 ];
 
 const photos = [
-  { label: "Overall appearance", src: "/images/photo-1602143407151-7111542de6e8.jpg" },
-  { label: "Logo misalignment", src: "/images/photo-1523362628745-0c100150b504.jpg" },
-  { label: "Logo fading", src: "/images/photo-1610824352934-c10d87b700cc.jpg" },
-  { label: "Label placement", src: "/images/photo-1556228578-8c89e6adf883.jpg" },
-  { label: "Surface scratch", src: "/images/photo-1625708458528-802ec79b1ed8.jpg" },
-  { label: "Outer carton", src: "/images/photo-1607344645866-009c320b63e0.jpg" },
+  { label: "Overall appearance" },
+  { label: "Logo misalignment" },
+  { label: "Logo fading" },
+  { label: "Label placement" },
+  { label: "Surface scratch" },
+  { label: "Outer carton" },
 ];
 
 const reports = [
-  { name: "QC_Report_QC-2025-0518-002.pdf", size: "2.4 MB", icon: FileText, color: "text-[#EF4444]" },
+  { name: "QC_Report.pdf", size: "2.4 MB", icon: FileText, color: "text-[#EF4444]" },
   { name: "Inspection_Checklist.pdf", size: "1.12 MB", icon: FileText, color: "text-[#EF4444]" },
   { name: "Defect_Detail_Log.xlsx", size: "324 KB", icon: FileSpreadsheet, color: "text-[#10B981]" },
   { name: "Photo_Appendix.zip", size: "8.6 MB", icon: FileArchive, color: "text-[#F59E0B]" },
@@ -86,9 +76,34 @@ function resultBadge(r: string) {
   return { cls: "bg-[#9AA8B8]/10 text-[#66758C]", Icon: MinusCircle };
 }
 
-export default function QCInspectionDetailPage() {
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const { id } = await params;
+  return { title: `QC Inspection ${id}` };
+}
+
+export default async function QcInspectionDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const inspection = qcInspections.get(id);
+  if (!inspection) notFound();
+
   const circumference = 2 * Math.PI * 32;
-  let off = 0;
+  const defectOffsets = defects.reduce<number[]>((acc, d, i) => {
+    acc.push(i === 0 ? 0 : acc[i - 1] + parseFloat(defects[i - 1].pct));
+    return acc;
+  }, []);
+
+  const headerFields = [
+    { label: "Inspection ID", value: inspection.id, mono: true },
+    { label: "Sample Size", value: inspection.sampleSize != null ? `${inspection.sampleSize} units` : "—" },
+    { label: "Inspection Date", value: formatDate(inspection.scheduledDate) },
+    { label: "Status", value: inspection.status, status: true },
+  ];
+  const headerFields2 = [
+    { label: "Defect Rate", value: inspection.defectRate != null ? `${inspection.defectRate}%` : "—" },
+    { label: "Supplier", value: inspection.supplier },
+    { label: "Inspector", value: inspection.inspector ?? "Unassigned" },
+    { label: "SKU", value: inspection.sku ?? "—", mono: true },
+  ];
 
   return (
     <div className="space-y-5">
@@ -100,7 +115,7 @@ export default function QCInspectionDetailPage() {
         <div className="flex items-center gap-1.5 text-[13px] text-text-light">
           <Link href="/dashboard/qc-inspections" className="hover:text-action-blue">QC Inspections</Link>
           <ChevronRight className="w-3.5 h-3.5" />
-          <span className="text-text-primary font-medium font-mono">QC-2025-0518-002</span>
+          <span className="text-text-primary font-medium font-mono">{inspection.id}</span>
         </div>
       </div>
 
@@ -121,27 +136,24 @@ export default function QCInspectionDetailPage() {
       <div className="bg-white rounded-xl border border-border-soft shadow-[0_1px_3px_rgba(0,0,0,0.08)] p-5">
         <div className="flex flex-wrap gap-6">
           <div className="flex gap-4">
-            <div className="w-20 h-24 rounded-lg bg-soft-bg border border-border-soft overflow-hidden shrink-0">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/images/photo-1602143407151-7111542de6e8.jpg" alt="FM Stainless Steel Water Bottle – 750ml" className="w-full h-full object-cover" />
-            </div>
+            <div className="w-20 h-24 rounded-lg bg-gradient-to-br from-[#E2E8F0] to-[#F1F5F9] border border-border-soft overflow-hidden shrink-0" />
             <div>
-              <h2 className="text-[16px] font-bold text-text-primary">FM Stainless Steel Water Bottle – 750ml</h2>
-              <p className="text-[11px] text-text-light mt-0.5">SKU: FM-BTL-750-STL</p>
+              <h2 className="text-[16px] font-bold text-text-primary">{inspection.product}</h2>
+              <p className="text-[11px] text-text-light mt-0.5">SKU: {inspection.sku ?? "—"}</p>
               <p className="text-[11px] text-text-light mt-2">Supplier</p>
-              <p className="text-[13px] text-text-primary font-medium">🇨🇳 Shenzhen Hydrate Co.</p>
+              <p className="text-[13px] text-text-primary font-medium">{inspection.supplier}</p>
               <p className="text-[11px] text-text-light mt-2">Inspector</p>
-              <p className="text-[13px] text-text-primary font-medium">John Smith <span className="text-[11px] text-text-light">ISO 17000</span></p>
+              <p className="text-[13px] text-text-primary font-medium">{inspection.inspector ?? "Unassigned"}</p>
             </div>
           </div>
           <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-4">
             {[...headerFields, ...headerFields2].map((f) => (
               <div key={f.label}>
                 <p className="text-[11px] text-text-light mb-1">{f.label}</p>
-                {f.badge ? (
-                  <span className={`inline-flex px-2 py-0.5 rounded-md text-[12px] font-medium ${f.badge}`}>{f.value}</span>
+                {(f as { status?: boolean }).status ? (
+                  <StatusBadge status={f.value} />
                 ) : (
-                  <p className={`text-[14px] font-semibold ${(f as { color?: string }).color || "text-text-primary"} ${(f as { mono?: boolean }).mono ? "font-mono text-[13px]" : ""}`}>{f.value}</p>
+                  <p className={`text-[14px] font-semibold text-text-primary ${(f as { mono?: boolean }).mono ? "font-mono text-[13px]" : ""}`}>{f.value}</p>
                 )}
               </div>
             ))}
@@ -190,9 +202,7 @@ export default function QCInspectionDetailPage() {
                   {defects.map((d, i) => {
                     const p = parseFloat(d.pct);
                     const len = (p / 100) * circumference;
-                    const el = <circle key={i} cx="50" cy="50" r="32" fill="none" stroke={d.color} strokeWidth="12" strokeDasharray={`${len} ${circumference - len}`} strokeDashoffset={-(off / 100) * circumference} />;
-                    off += p;
-                    return el;
+                    return <circle key={i} cx="50" cy="50" r="32" fill="none" stroke={d.color} strokeWidth="12" strokeDasharray={`${len} ${circumference - len}`} strokeDashoffset={-(defectOffsets[i] / 100) * circumference} />;
                   })}
                 </svg>
                 <div className="absolute inset-0 flex items-center justify-center">
@@ -236,10 +246,7 @@ export default function QCInspectionDetailPage() {
             <div className="grid grid-cols-3 gap-2">
               {photos.map((p) => (
                 <div key={p.label}>
-                  <div className="aspect-square rounded-lg bg-soft-bg border border-border-soft overflow-hidden">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={p.src} alt={p.label} className="w-full h-full object-cover" />
-                  </div>
+                  <div className="aspect-square rounded-lg bg-gradient-to-br from-[#E2E8F0] to-[#F1F5F9] border border-border-soft overflow-hidden" />
                   <p className="text-[9px] text-text-light mt-1 truncate text-center">{p.label}</p>
                 </div>
               ))}
@@ -257,8 +264,8 @@ export default function QCInspectionDetailPage() {
             <p className="text-[12px] text-text-body leading-relaxed">Observed multiple printing defects around the logo area including misalignment and fading. Label placement is inconsistent. Product appearance passed all checks. Recommend corrective action before shipment.</p>
             <div className="flex items-center gap-2 mt-4 pt-3 border-t border-[#F1F5F9]">
               <div className="w-7 h-7 rounded-full bg-action-blue/10 flex items-center justify-center text-[10px] font-bold text-action-blue">JS</div>
-              <div className="flex-1"><p className="text-[12px] font-medium text-text-primary">John Smith</p><p className="text-[10px] text-text-light">Lead Inspector</p></div>
-              <div className="text-right"><p className="text-[10px] text-text-light">May 18, 2025</p><p className="text-[10px] text-[#10B981]">Inspection Completed</p></div>
+              <div className="flex-1"><p className="text-[12px] font-medium text-text-primary">{inspection.inspector ?? "Unassigned"}</p><p className="text-[10px] text-text-light">Lead Inspector</p></div>
+              <div className="text-right"><p className="text-[10px] text-text-light">{formatDate(inspection.scheduledDate)}</p><p className="text-[10px] text-[#10B981]">{inspection.status}</p></div>
             </div>
           </div>
         </div>
@@ -289,17 +296,14 @@ export default function QCInspectionDetailPage() {
           <div className="p-5">
             <div className="relative pl-5">
               <div className="absolute left-[6px] top-1 bottom-3 w-px bg-border-soft" />
-              {timeline.map((t, i) => {
-                const Icon = t.icon;
-                return (
-                  <div key={i} className="relative mb-4 last:mb-0">
-                    <div className={`absolute -left-5 top-0.5 w-3 h-3 rounded-full border-2 ${t.color === "bg-[#10B981]" ? "bg-[#10B981] border-[#10B981]" : "bg-white border-[#0057D8]"}`} />
-                    <p className="text-[12px] font-semibold text-text-primary">{t.title}</p>
-                    <p className="text-[10px] text-text-muted">{t.time}</p>
-                    <p className="text-[11px] text-text-body mt-0.5">{t.user}</p>
-                  </div>
-                );
-              })}
+              {timeline.map((t, i) => (
+                <div key={i} className="relative mb-4 last:mb-0">
+                  <div className={`absolute -left-5 top-0.5 w-3 h-3 rounded-full border-2 ${t.color === "bg-[#10B981]" ? "bg-[#10B981] border-[#10B981]" : "bg-white border-[#0057D8]"}`} />
+                  <p className="text-[12px] font-semibold text-text-primary">{t.title}</p>
+                  <p className="text-[10px] text-text-muted">{t.time}</p>
+                  <p className="text-[11px] text-text-body mt-0.5">{t.user}</p>
+                </div>
+              ))}
             </div>
             <Link href="#" className="inline-flex items-center gap-1 text-[12px] font-medium text-action-blue mt-2">View full timeline <ArrowRight className="w-3 h-3" /></Link>
           </div>
