@@ -14,6 +14,7 @@ import {
   MessageCircle,
   Mail,
   ExternalLink,
+  HelpCircle,
 } from "lucide-react";
 import { pageMetadata } from "@/lib/seo";
 
@@ -75,9 +76,11 @@ export default function HelpArticlePage() {
         <div className="max-w-[1200px] mx-auto px-6 py-3 flex items-center gap-2 text-sm text-text-muted">
           <Link href="/" className="hover:text-navy transition-colors">Home</Link>
           <ChevronRight className="w-3 h-3 text-text-light" />
-          <Link href="/resources" className="hover:text-navy transition-colors">Resources</Link>
-          <ChevronRight className="w-3 h-3 text-text-light" />
           <Link href="/resources/help-center" className="hover:text-navy transition-colors">Help Center</Link>
+          <ChevronRight className="w-3 h-3 text-text-light" />
+          <Link href="/resources/help-center" className="hover:text-navy transition-colors">Integrations</Link>
+          <ChevronRight className="w-3 h-3 text-text-light" />
+          <Link href="/resources/help-center" className="hover:text-navy transition-colors">Shopify</Link>
           <ChevronRight className="w-3 h-3 text-text-light" />
           <span className="text-text-primary font-medium truncate">How to connect your Shopify store to FulfillMesh</span>
         </div>
@@ -217,7 +220,10 @@ export default function HelpArticlePage() {
                 {troubleshooting.map((q, i) => (
                   <details key={i} className="group rounded-xl border border-border-soft overflow-hidden">
                     <summary className="flex items-center justify-between p-4 cursor-pointer list-none">
-                      <span className="text-sm font-medium text-text-primary pr-4">{q}</span>
+                      <span className="flex items-center gap-2.5 text-sm font-medium text-text-primary pr-4">
+                        <HelpCircle className="w-4 h-4 text-action-blue shrink-0" />
+                        {q}
+                      </span>
                       <ChevronDown className="w-4 h-4 text-text-muted shrink-0 group-open:rotate-180 transition-transform" />
                     </summary>
                     <div className="px-4 pb-4 -mt-1">
@@ -335,7 +341,7 @@ export default function HelpArticlePage() {
 function Step({ n, title, children }: { n: string; title: string; children: ReactNode }) {
   return (
     <div className="flex gap-4">
-      <div className="shrink-0 w-8 h-8 rounded-full bg-teal/10 flex items-center justify-center text-teal text-sm font-bold">{n}</div>
+      <div className="shrink-0 w-7 h-7 rounded-full bg-teal flex items-center justify-center text-white text-sm font-bold">{n}</div>
       <div className="flex-1 min-w-0">
         <h3 className="text-lg font-bold text-deep-navy mb-2">{title}</h3>
         {children}

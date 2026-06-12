@@ -108,10 +108,10 @@ const relatedGuides = [
 ];
 
 const moreGuides = [
-  { title: "The Ultimate Supplier Vetting Checklist", img: "/images/photo-1586528116311-ad8dd3c8310d.jpg" },
-  { title: "Shipping Costs Calculator: Estimate & Optimize", img: "/images/photo-1578575437130-527eed3abbec.jpg" },
-  { title: "Inventory Reorder Template: Never Run Out", img: "/images/photo-1601584115197-04ecc0da31d7.jpg" },
-  { title: "E-commerce Packaging Guide: Best Practices", img: "/images/photo-1607349913338-fca6f7fc42d0.jpg" },
+  { title: "The Ultimate Supplier Vetting Checklist", img: "/images/photo-1586528116311-ad8dd3c8310d.jpg", read: "7 min read" },
+  { title: "Shipping Costs Calculator: Estimate & Optimize", img: "/images/photo-1578575437130-527eed3abbec.jpg", read: "5 min read" },
+  { title: "Inventory Reorder Template: Never Run Out", img: "/images/photo-1601584115197-04ecc0da31d7.jpg", read: "6 min read" },
+  { title: "E-commerce Packaging Guide: Best Practices", img: "/images/photo-1607349913338-fca6f7fc42d0.jpg", read: "6 min read" },
 ];
 
 export default function GuideDetailPage() {
@@ -464,6 +464,7 @@ export default function GuideDetailPage() {
                 <div className="p-5 flex flex-col flex-1">
                   <span className="self-start text-[11px] font-semibold text-action-blue bg-action-blue/8 px-2.5 py-1 rounded-full mb-3">Guide</span>
                   <h3 className="font-semibold text-deep-navy group-hover:text-action-blue leading-snug">{g.title}</h3>
+                  <p className="mt-3 inline-flex items-center gap-1.5 text-xs text-text-muted"><Clock3 className="w-3.5 h-3.5" /> {g.read}</p>
                 </div>
               </Link>
             ))}
@@ -487,7 +488,7 @@ export default function GuideDetailPage() {
             <div className="flex gap-3 w-full lg:w-auto">
               <input
                 type="email"
-                placeholder="Enter your email"
+                placeholder="Enter your work email"
                 className="flex-1 lg:w-64 px-4 py-3 rounded-lg border border-border-soft bg-white text-sm text-text-body placeholder:text-text-light focus:outline-none focus:border-action-blue"
               />
               <button className="px-6 py-3 rounded-lg bg-navy text-white text-sm font-semibold hover:bg-deep-navy transition-colors">Subscribe</button>

@@ -8,7 +8,7 @@ import {
   Quote,
   Building2,
   Clock3,
-  DollarSign,
+  Truck,
   TrendingUp,
   ShieldCheck,
   Search,
@@ -39,12 +39,12 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   });
 }
 
-const meta = ["Peak Supplies", "Industrial & Manufacturing", "May 5, 2025", "3 min read"];
+const meta = ["Peak Supplies", "Industrial & Manufacturing", "May 5, 2025", "5 min read"];
 
 const heroStats = [
-  { icon: Clock3, value: "40%", label: "faster" },
-  { icon: DollarSign, value: "22%", label: "lower costs" },
-  { icon: TrendingUp, value: "2.4x", label: "on-time delivery increase" },
+  { icon: Clock3, value: "40%", label: "Faster Lead Times" },
+  { icon: Truck, value: "32%", label: "Lower Shipping Costs" },
+  { icon: TrendingUp, value: "2.6x", label: "Increase in On-Time Delivery" },
   { icon: CheckCircle2, value: "98%", label: "Order Accuracy" },
 ];
 
@@ -63,15 +63,16 @@ const solutions = [
 ];
 
 const implementation = [
-  { icon: Search, title: "Discover & Analyze", desc: "Mapped existing workflows and identified key bottlenecks." },
+  { icon: Search, title: "Discover & Analyze", desc: "Mapped workflows and identified key bottlenecks." },
   { icon: Settings2, title: "Configure & Integrate", desc: "Integrated systems and configured FulfillMesh modules." },
-  { icon: Rocket, title: "Go Live & Scale", desc: "Ran pilot, refined processes, and scaled into new markets." },
+  { icon: Rocket, title: "Pilot & Optimize", desc: "Ran pilot, refined processes, and validated performance." },
+  { icon: CheckCircle2, title: "Go Live & Scale", desc: "Rolled out globally and scaled into new markets." },
 ];
 
 const resultsTable = [
-  { metric: "Average Lead Time", before: "7 days", after: "4.2 days", improvement: "40% faster" },
-  { metric: "On-Time Delivery", before: "76%", after: "98%", improvement: "2.4x improvement" },
-  { metric: "Inventory Costs", before: "$2.1M / year", after: "$1.64M / year", improvement: "22% reduction" },
+  { metric: "Average Lead Time", before: "6.2 days", after: "3.7 days", improvement: "40% faster" },
+  { metric: "On-Time Delivery", before: "76%", after: "98%", improvement: "2.6x improvement" },
+  { metric: "Shipping Costs", before: "$1.28M / year", after: "$870K / year", improvement: "32% lower" },
   { metric: "Order Accuracy", before: "91%", after: "98%", improvement: "7 pp improvement" },
 ];
 
@@ -79,14 +80,15 @@ const companySnapshot = [
   { label: "Industry", value: "Industrial & Manufacturing" },
   { label: "Headquarters", value: "Chicago, Illinois, USA" },
   { label: "Founded", value: "2012" },
+  { label: "Employees", value: "180+" },
   { label: "Markets Served", value: "North America" },
-  { label: "FulfillMesh Customer Since", value: "2024" },
+  { label: "FulfillMesh Customer Since", value: "2023" },
 ];
 
 const keyResults = [
-  { value: "40%", label: "Faster Lead Time" },
-  { value: "22%", label: "Lower Inventory Costs" },
-  { value: "2.4x", label: "Increase in On-Time Delivery" },
+  { value: "40%", label: "Faster Lead Times" },
+  { value: "32%", label: "Lower Shipping Costs" },
+  { value: "2.6x", label: "Increase in On-Time Delivery" },
   { value: "98%", label: "Order Accuracy" },
 ];
 
@@ -116,8 +118,13 @@ const related = [
   },
   {
     category: "Case Study",
-    title: "LuxeGlow Grows 3.4x with FulfillMesh",
+    title: "LuxeGlow Grew 3.4x with FulfillMesh",
     image: "/images/photo-1556742049-0cfed4f6a45d.jpg",
+  },
+  {
+    category: "Blog",
+    title: "Sustainable Fulfillment: What It Means in 2025",
+    image: "/images/photo-1542601906990-b4d3fb778b09.jpg",
   },
 ];
 
@@ -135,38 +142,34 @@ export default function CaseStudyDetailPage() {
         </div>
       </section>
 
-      {/* Hero Header */}
+      {/* Hero Header — title left, image right */}
       <section className="bg-soft-bg border-b border-border-soft">
-        <div className="max-w-[1200px] mx-auto px-6 pt-10 pb-8">
-          <p className="inline-block text-xs font-semibold text-white bg-action-blue px-3 py-1.5 rounded-full uppercase tracking-wide mb-4">
-            Case Study
-          </p>
-          <h1 className="text-4xl lg:text-[44px] font-bold text-deep-navy leading-[1.12] max-w-[760px]">
-            How Peak Supplies Reduced Lead Times by 40% with FulfillMesh
-          </h1>
-          <p className="mt-5 text-lg text-text-body leading-relaxed max-w-[720px]">
-            Peak Supplies optimized inventory planning and shipping routes with FulfillMesh—cutting lead times by 40% and unlocking scalable growth.
-          </p>
-          <div className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-text-muted">
-            {meta.map((m, i) => (
-              <span key={i} className="inline-flex items-center gap-3">
-                {i > 0 && <span className="w-1 h-1 rounded-full bg-text-light" />}
-                {m}
-              </span>
-            ))}
+        <div className="max-w-[1200px] mx-auto px-6 pt-10 pb-10 grid lg:grid-cols-2 gap-10 items-center">
+          <div>
+            <p className="inline-block text-xs font-semibold text-action-blue bg-action-blue/8 px-3 py-1.5 rounded-full uppercase tracking-wide mb-4">
+              Case Study
+            </p>
+            <h1 className="text-3xl lg:text-[40px] font-bold text-deep-navy leading-[1.14]">
+              How Peak Supplies Reduced Lead Times by 40% with FulfillMesh
+            </h1>
+            <p className="mt-5 text-base text-text-body leading-relaxed max-w-[520px]">
+              Peak Supplies optimized inventory planning and shipping routes with FulfillMesh&mdash;cutting lead times by 40% and unlocking scalable growth.
+            </p>
+            <div className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-text-muted">
+              {meta.map((m, i) => (
+                <span key={i} className="inline-flex items-center gap-3">
+                  {i > 0 && <span className="w-1 h-1 rounded-full bg-text-light" />}
+                  {m}
+                </span>
+              ))}
+            </div>
           </div>
-        </div>
-      </section>
-
-      {/* Hero Image */}
-      <section className="bg-soft-bg">
-        <div className="max-w-[1200px] mx-auto px-6 pb-10">
-          <div className="relative rounded-2xl overflow-hidden aspect-[16/7] shadow-card">
+          <div className="relative rounded-2xl overflow-hidden aspect-[16/11] shadow-card">
             <Image
               src={heroImage}
               alt="Peak Supplies warehouse and distribution facility"
               fill
-              sizes="(max-width: 1024px) 100vw, 1200px"
+              sizes="(max-width: 1024px) 100vw, 560px"
               className="object-cover"
               priority
             />
@@ -184,7 +187,7 @@ export default function CaseStudyDetailPage() {
                   <s.icon className="w-5 h-5 text-teal" />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold text-deep-navy">{s.value}</p>
+                  <p className="text-2xl font-bold text-teal">{s.value}</p>
                   <p className="text-xs text-text-muted">{s.label}</p>
                 </div>
               </div>
@@ -198,27 +201,46 @@ export default function CaseStudyDetailPage() {
         <div className="max-w-[1200px] mx-auto px-6 py-14 grid lg:grid-cols-3 gap-10">
           {/* Main */}
           <div className="lg:col-span-2 space-y-12">
-            {/* Overview */}
-            <div>
-              <h2 className="text-2xl font-bold text-deep-navy mb-3">Overview</h2>
-              <p className="text-text-body leading-relaxed">
-                Peak Supplies is a fast-growing industrial components distributor serving OEMs and maintenance teams across North America. As demand increased, their legacy processes struggled to keep up—resulting in longer lead times, higher costs, and inconsistent delivery performance.
-              </p>
-              <p className="mt-4 text-text-body leading-relaxed">
-                With FulfillMesh, Peak Supplies unified inventory visibility, automated routing, and optimized their supplier network to deliver faster, more reliably, and at lower cost.
-              </p>
+            {/* Overview + Testimonial */}
+            <div className="grid lg:grid-cols-2 gap-6 items-start">
+              <div>
+                <h2 className="text-2xl font-bold text-deep-navy mb-3">Overview</h2>
+                <p className="text-text-body leading-relaxed">
+                  Peak Supplies is a fast-growing industrial components distributor serving OEMs and maintenance teams across North America. As demand increased, their legacy processes struggled to keep up&mdash;resulting in longer lead times, increased shipping costs, and inconsistent delivery performance.
+                </p>
+                <p className="mt-4 text-text-body leading-relaxed">
+                  With FulfillMesh, Peak Supplies unified inventory visibility, automated routing, and optimized their supplier network to deliver faster, more reliably, and at lower cost.
+                </p>
+              </div>
+              <div className="rounded-2xl bg-soft-bg border border-border-soft p-6">
+                <Quote className="w-7 h-7 text-action-blue/30 mb-3" />
+                <p className="text-[15px] text-text-body leading-relaxed">
+                  &ldquo;FulfillMesh didn&apos;t just help us move faster&mdash;they transformed the way we operate. Our customers notice the difference, and so do our margins.&rdquo;
+                </p>
+                <div className="mt-5 flex items-center gap-3">
+                  <div className="relative w-10 h-10 rounded-full overflow-hidden shrink-0">
+                    <Image src={authorAvatar} alt="Jason Miller" fill sizes="40px" className="object-cover" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-deep-navy">Jason Miller</p>
+                    <p className="text-xs text-text-muted">VP of Operations, Peak Supplies</p>
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Challenge */}
-            <div>
-              <h2 className="text-2xl font-bold text-deep-navy mb-4">The Challenge</h2>
-              <p className="text-text-body leading-relaxed mb-5">
-                Before FulfillMesh, Peak Supplies faced mounting operational challenges that limited their growth and customer satisfaction.
-              </p>
-              <ul className="space-y-3">
+            <div className="rounded-2xl border border-border-soft p-7">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-lg bg-red-50 flex items-center justify-center shrink-0">
+                  <XCircle className="w-5 h-5 text-red-500" />
+                </div>
+                <h2 className="text-xl font-bold text-deep-navy">The Challenge</h2>
+              </div>
+              <ul className="space-y-2.5">
                 {challenges.map((c, i) => (
-                  <li key={i} className="flex items-start gap-3 text-text-body">
-                    <XCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                  <li key={i} className="flex items-start gap-3 text-text-body text-[15px]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-400 shrink-0 mt-2" />
                     <span>{c}</span>
                   </li>
                 ))}
@@ -226,14 +248,16 @@ export default function CaseStudyDetailPage() {
             </div>
 
             {/* Solution */}
-            <div>
-              <h2 className="text-2xl font-bold text-deep-navy mb-4">The Solution</h2>
-              <p className="text-text-body leading-relaxed mb-5">
-                FulfillMesh delivered a tailored solution that addressed each pain point with automation, intelligence, and scalability.
-              </p>
-              <ul className="space-y-3">
+            <div className="rounded-2xl border border-border-soft p-7">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-lg bg-teal/10 flex items-center justify-center shrink-0">
+                  <ShieldCheck className="w-5 h-5 text-teal" />
+                </div>
+                <h2 className="text-xl font-bold text-deep-navy">The Solution</h2>
+              </div>
+              <ul className="space-y-2.5">
                 {solutions.map((c, i) => (
-                  <li key={i} className="flex items-start gap-3 text-text-body">
+                  <li key={i} className="flex items-start gap-3 text-text-body text-[15px]">
                     <CheckCircle2 className="w-5 h-5 text-teal shrink-0 mt-0.5" />
                     <span>{c}</span>
                   </li>
@@ -241,27 +265,26 @@ export default function CaseStudyDetailPage() {
               </ul>
             </div>
 
-            {/* Implementation */}
+            {/* Implementation — horizontal stepper */}
             <div>
-              <h2 className="text-2xl font-bold text-deep-navy mb-4">Implementation</h2>
-              <p className="text-text-body leading-relaxed mb-6">
+              <h2 className="text-2xl font-bold text-deep-navy mb-3">Implementation</h2>
+              <p className="text-text-body leading-relaxed mb-7">
                 Peak Supplies onboarded with FulfillMesh in just 8 weeks. Our team worked closely with their operations, IT, and logistics partners to ensure a seamless rollout.
               </p>
-              <div className="space-y-4">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
                 {implementation.map((step, i) => (
-                  <div key={i} className="rounded-xl border border-border-soft p-5 bg-white flex items-start gap-4">
-                    <div className="flex items-center gap-3 shrink-0">
-                      <span className="w-8 h-8 rounded-full bg-teal text-white text-xs font-bold flex items-center justify-center shrink-0">
-                        {String(i + 1).padStart(2, "0")}
-                      </span>
-                      <div className="w-10 h-10 rounded-lg bg-action-blue/10 flex items-center justify-center shrink-0">
-                        <step.icon className="w-5 h-5 text-action-blue" />
-                      </div>
+                  <div key={i} className="relative">
+                    {i < implementation.length - 1 && (
+                      <span className="hidden lg:block absolute top-5 left-[calc(50%+24px)] right-[-12px] h-px border-t border-dashed border-border-soft" />
+                    )}
+                    <div className="relative z-10 w-10 h-10 rounded-full bg-action-blue text-white text-sm font-bold flex items-center justify-center mb-4">
+                      {i + 1}
                     </div>
-                    <div className="min-w-0">
-                      <h3 className="text-sm font-bold text-deep-navy mb-1">{step.title}</h3>
-                      <p className="text-sm text-text-body leading-relaxed">{step.desc}</p>
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <step.icon className="w-4 h-4 text-action-blue shrink-0" />
+                      <h3 className="text-sm font-bold text-deep-navy">{step.title}</h3>
                     </div>
+                    <p className="text-xs text-text-body leading-relaxed">{step.desc}</p>
                   </div>
                 ))}
               </div>
@@ -347,31 +370,6 @@ export default function CaseStudyDetailPage() {
                 ))}
               </ul>
             </div>
-
-            {/* Testimonial */}
-            <div className="rounded-2xl border border-border-soft p-6 bg-white">
-              <div className="w-10 h-10 rounded-full gradient-cta flex items-center justify-center mb-4">
-                <Quote className="w-5 h-5 text-white" />
-              </div>
-              <p className="text-[15px] text-text-body leading-relaxed italic">
-                &ldquo;FulfillMesh didn&apos;t just help us move faster—they transformed the way we operate. Our customers notice the difference, and so do our margins.&rdquo;
-              </p>
-              <div className="mt-5 flex items-center gap-3">
-                <div className="relative w-10 h-10 rounded-full overflow-hidden shrink-0">
-                  <Image
-                    src={authorAvatar}
-                    alt="Jason Miller"
-                    fill
-                    sizes="40px"
-                    className="object-cover"
-                  />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-deep-navy">Jason Miller</p>
-                  <p className="text-xs text-text-muted">VP of Operations, Peak Supplies</p>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </section>
@@ -385,7 +383,7 @@ export default function CaseStudyDetailPage() {
               View all case studies <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           </div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {related.map((r, i) => (
               <Link
                 key={i}
@@ -397,7 +395,7 @@ export default function CaseStudyDetailPage() {
                     src={r.image}
                     alt={r.title}
                     fill
-                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 340px"
+                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 280px"
                     className="object-cover transition-transform duration-300 group-hover:scale-105"
                   />
                 </div>
@@ -428,6 +426,11 @@ export default function CaseStudyDetailPage() {
             <Link href="/contact" className="inline-flex items-center gap-2 px-7 py-3.5 text-base font-semibold text-white rounded-[10px] border border-white/20 hover:bg-white/10 transition-all">
               Book a Demo
             </Link>
+          </div>
+          <div className="mt-7 flex flex-wrap items-center justify-center gap-x-7 gap-y-2 text-sm text-text-on-dark-muted">
+            <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4 text-teal" /> Free to get started</span>
+            <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4 text-teal" /> No obligations</span>
+            <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4 text-teal" /> Personalized matches</span>
           </div>
         </div>
       </section>

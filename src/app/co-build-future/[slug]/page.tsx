@@ -5,7 +5,9 @@ import {
   ArrowRight, CheckCircle2, Target, Eye, Heart, Globe2,
   Rocket, Users, TrendingUp, Laptop, Wallet, HeartPulse, CalendarClock, GraduationCap, Plane,
   ClipboardList, UsersRound, FileCheck2, Handshake,
+  Code2, Boxes, Headphones, Briefcase, BarChart3,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { pageMetadata } from "@/lib/seo";
 
 // Humanize a URL slug into a readable title for metadata.
@@ -84,7 +86,7 @@ const values = [
   { icon: Target, title: "Our Mission", items: ["Empower brands to scale globally through trusted fulfillment networks and technology."] },
   { icon: Eye, title: "Our Vision", items: ["A world where global fulfillment is transparent, efficient, and sustainable for everyone."] },
   { icon: Heart, title: "Our Values", items: ["Customer Obsession", "Integrity & Transparency", "Ownership & Accountability", "Continuous Improvement"] },
-  { icon: Globe2, title: "Our Impact", stats: [{ value: "250+", label: "Employees" }, { value: "10+", label: "Years" }, { value: "50+", label: "Countries" }] },
+  { icon: Globe2, title: "Our Impact", stats: [{ value: "25K+", label: "Shipments Managed" }, { value: "150+", label: "Countries Served" }] },
 ];
 
 const lifeCards = [
@@ -111,12 +113,12 @@ const tagStyles: Record<string, string> = {
   Data: "bg-[#E3F2FD] text-navy",
 };
 
-const positions = [
-  { title: "Senior Backend Engineer", tag: "Engineering", location: "Shenzhen, China (Remote)", type: "Full-time" },
-  { title: "Product Manager", tag: "Product", location: "Singapore (Remote)", type: "Full-time" },
-  { title: "Customer Success Manager", tag: "Customer Success", location: "Shanghai, China (Hybrid)", type: "Full-time" },
-  { title: "Partnerships Manager", tag: "Business Development", location: "Hong Kong (Remote)", type: "Full-time" },
-  { title: "Data Analyst", tag: "Data", location: "Shenzhen, China (Remote)", type: "Full-time" },
+const positions: { title: string; tag: string; location: string; type: string; icon: LucideIcon }[] = [
+  { title: "Senior Backend Engineer", tag: "Engineering", location: "Shenzhen, China (Remote)", type: "Full-time", icon: Code2 },
+  { title: "Product Manager", tag: "Product", location: "Singapore (Remote)", type: "Full-time", icon: Boxes },
+  { title: "Customer Success Manager", tag: "Customer Success", location: "Shanghai, China (Hybrid)", type: "Full-time", icon: Headphones },
+  { title: "Partnerships Manager", tag: "Business Development", location: "Hong Kong (Remote)", type: "Full-time", icon: Briefcase },
+  { title: "Data Analyst", tag: "Data", location: "Shenzhen, China (Remote)", type: "Full-time", icon: BarChart3 },
 ];
 
 const hiring = [
@@ -203,8 +205,8 @@ export default function CoBuildFutureDetailPage() {
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
             {values.map((v) => (
               <div key={v.title} className="bg-white rounded-xl border border-[#E2E8F0] p-6 hover:shadow-soft transition-all">
-                <div className="w-10 h-10 rounded-full bg-teal flex items-center justify-center mb-4">
-                  <v.icon className="w-5 h-5 text-white" />
+                <div className="w-10 h-10 rounded-xl bg-action-blue/8 flex items-center justify-center mb-4">
+                  <v.icon className="w-5 h-5 text-action-blue" />
                 </div>
                 <h3 className="text-[16px] font-semibold text-deep-navy mb-2">{v.title}</h3>
                 {v.items && (
@@ -242,8 +244,8 @@ export default function CoBuildFutureDetailPage() {
           <div className="grid grid-cols-5 gap-5">
             {lifeCards.map((c) => (
               <div key={c.title} className="bg-white rounded-xl border border-[#E2E8F0] p-6 text-center hover:shadow-soft transition-all">
-                <div className="w-12 h-12 rounded-xl bg-teal/10 flex items-center justify-center mx-auto mb-4">
-                  <c.icon className="w-6 h-6 text-teal" />
+                <div className="flex items-center justify-center mx-auto mb-4 h-7">
+                  <c.icon className="w-7 h-7 text-action-blue" strokeWidth={1.6} />
                 </div>
                 <h3 className="text-[16px] font-semibold text-deep-navy mb-2">{c.title}</h3>
                 <p className="text-[14px] text-text-body leading-relaxed">{c.desc}</p>
@@ -265,10 +267,8 @@ export default function CoBuildFutureDetailPage() {
           <div className="grid grid-cols-5 gap-5">
             {perks.map((p) => (
               <div key={p.title} className="bg-white rounded-xl border border-[#E2E8F0] p-6 hover:shadow-soft transition-all">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-8 h-8 rounded-lg bg-teal/10 flex items-center justify-center shrink-0">
-                    <p.icon className="w-4 h-4 text-teal" />
-                  </div>
+                <div className="flex items-center gap-2.5 mb-3">
+                  <p.icon className="w-5 h-5 text-action-blue shrink-0" strokeWidth={1.7} />
                   <h3 className="text-[14px] font-semibold text-deep-navy">{p.title}</h3>
                 </div>
                 <p className="text-[14px] text-text-body leading-relaxed">{p.desc}</p>
@@ -300,6 +300,9 @@ export default function CoBuildFutureDetailPage() {
                   className={`flex flex-wrap items-center gap-4 px-5 py-4 hover:bg-[#F8FAFC] transition-colors cursor-pointer ${i !== positions.length - 1 ? "border-b border-[#E2E8F0]" : ""}`}
                 >
                   <div className="flex items-center gap-3 min-w-[220px] flex-1">
+                    <span className="w-8 h-8 rounded-lg bg-action-blue/8 flex items-center justify-center shrink-0">
+                      <p.icon className="w-4 h-4 text-action-blue" />
+                    </span>
                     <span className="text-[14px] font-semibold text-deep-navy">{p.title}</span>
                     <span className={`text-[11px] font-semibold rounded-full px-2.5 py-0.5 ${tagStyles[p.tag] ?? "bg-[#E3F2FD] text-navy"}`}>
                       {p.tag}
@@ -313,12 +316,12 @@ export default function CoBuildFutureDetailPage() {
                 </div>
               ))}
             </div>
-            <aside className="rounded-xl bg-navy text-white p-7 flex flex-col justify-center">
-              <h3 className="text-[18px] font-bold leading-snug">We&apos;re always looking for great people.</h3>
-              <p className="mt-3 text-[14px] text-text-on-dark-soft leading-relaxed">
-                Send us your resume and tell us how you can contribute.
+            <aside className="rounded-xl bg-[#E0F7FA] p-7 flex flex-col justify-center">
+              <h3 className="text-[18px] font-bold leading-snug text-deep-navy">Don&apos;t see the right role?</h3>
+              <p className="mt-3 text-[14px] text-text-body leading-relaxed">
+                We&apos;re always looking for great people. Send us your resume and tell us how you can contribute.
               </p>
-              <Link href="/contact" className="mt-6 inline-flex items-center justify-center gap-2 px-6 py-3 text-[14px] font-semibold text-white rounded-lg gradient-cta hover:shadow-button transition-all w-fit">
+              <Link href="/contact" className="mt-6 inline-flex items-center justify-center gap-2 px-6 py-3 text-[14px] font-semibold text-white rounded-lg bg-navy hover:bg-deep-navy transition-colors w-fit">
                 Submit Your Resume
               </Link>
             </aside>
@@ -335,28 +338,29 @@ export default function CoBuildFutureDetailPage() {
               We keep our hiring process straightforward and transparent. Here&apos;s what to expect.
             </p>
           </div>
-          <div className="grid lg:grid-cols-2 gap-14 items-center">
-            <div className="grid grid-cols-2 gap-5">
-              {hiring.map((h, i) => (
-                <div key={h.title} className="bg-white rounded-xl border border-[#E2E8F0] p-5">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="w-8 h-8 rounded-full bg-action-blue text-white text-[13px] font-bold flex items-center justify-center">{i + 1}</div>
-                    <h.icon className="w-5 h-5 text-action-blue" />
-                  </div>
-                  <h3 className="text-[16px] font-semibold text-deep-navy">{h.title}</h3>
-                  <p className="text-[14px] text-text-body leading-relaxed mt-1.5">{h.desc}</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-2 gap-y-8 mb-12">
+            {hiring.map((h, i) => (
+              <div key={h.title} className="relative text-center px-2">
+                {i !== hiring.length - 1 && (
+                  <div className="hidden sm:block absolute top-[22px] left-[calc(50%+28px)] right-[-4px] h-px border-t border-dashed border-action-blue/40" aria-hidden="true" />
+                )}
+                <div className="relative z-10 mx-auto w-11 h-11 rounded-full bg-action-blue/8 flex items-center justify-center">
+                  <h.icon className="w-5 h-5 text-action-blue" />
                 </div>
-              ))}
-            </div>
-            <div className="relative rounded-xl overflow-hidden aspect-[16/10] shadow-card">
-              <Image
-                src="/images/photo-1521737604893-d14cc237f11d.jpg"
-                alt="The FulfillMesh team collaborating"
-                fill
-                sizes="(max-width: 1024px) 100vw, 46vw"
-                className="object-cover"
-              />
-            </div>
+                <span className="mt-3 inline-flex items-center justify-center w-6 h-6 rounded-full bg-action-blue text-white text-[12px] font-bold">{i + 1}</span>
+                <h3 className="text-[16px] font-semibold text-deep-navy mt-2">{h.title}</h3>
+                <p className="text-[13px] text-text-body leading-relaxed mt-1.5">{h.desc}</p>
+              </div>
+            ))}
+          </div>
+          <div className="relative rounded-2xl overflow-hidden aspect-[21/9] shadow-card">
+            <Image
+              src="/images/photo-1521737604893-d14cc237f11d.jpg"
+              alt="The FulfillMesh team collaborating"
+              fill
+              sizes="(max-width: 1280px) 100vw, 1200px"
+              className="object-cover"
+            />
           </div>
         </div>
       </section>

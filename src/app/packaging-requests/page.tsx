@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, ChevronDown, ChevronRight } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronRight, Calendar, ExternalLink, Check } from "lucide-react";
 
 const steps = [
   { num: 1, label: "Request Details", active: true },
@@ -9,14 +9,14 @@ const steps = [
 ];
 
 const nextSteps = [
-  { title: "We review your request", desc: "Our team will review your request within 24 hours." },
-  { title: "You receive a proposal", desc: "We'll send you a customized packaging solution and quote." },
-  { title: "Delivery timeline", desc: "Once approved, we'll proceed with production and delivery." },
+  { title: "We review your request", desc: "Our packaging experts will review your requirements." },
+  { title: "We contact you", desc: "We'll reach out to confirm details and discuss options." },
+  { title: "You receive a proposal", desc: "We'll send you a customised packaging solution and quote." },
 ];
 
 function Label({ children, required }: { children: React.ReactNode; required?: boolean }) {
   return (
-    <label className="block text-[13px] font-medium text-text-primary mb-1.5">
+    <label className="block text-[13px] font-semibold text-deep-navy mb-1.5">
       {children}
       {required && <span className="text-red-500 ml-0.5">*</span>}
     </label>
@@ -70,11 +70,12 @@ export default function PackagingRequestsPage() {
         <div className="max-w-[1200px] mx-auto px-6 pt-16 pb-12">
           <div className="flex items-center justify-between gap-10">
             <div className="max-w-[560px]">
-              <h1 className="text-[40px] lg:text-[48px] font-bold leading-[1.1] tracking-tight text-text-primary">
+              <h1 className="text-[40px] lg:text-[48px] font-bold leading-[1.1] tracking-tight text-deep-navy">
                 Packaging Requests
               </h1>
-              <p className="mt-5 text-[17px] text-text-muted leading-relaxed">
-                Tell us what you need and we&apos;ll get back to you with options.
+              <p className="mt-5 text-[16px] text-text-muted leading-relaxed">
+                Request custom packaging solutions tailored to your brand. Our team will review your
+                request and get back to you within 1&ndash;2 business days.
               </p>
             </div>
             <div className="shrink-0 hidden lg:flex">
@@ -116,11 +117,11 @@ export default function PackagingRequestsPage() {
       {/* Form + sidebar */}
       <section className="bg-soft-bg">
         <div className="max-w-[1200px] mx-auto px-6 py-16">
-          <div className="grid lg:grid-cols-[1fr_380px] gap-10">
+          <div className="grid lg:grid-cols-[1fr_360px] gap-8">
             {/* Form */}
             <div className="rounded-2xl border border-border-soft bg-white p-8 shadow-soft">
               <h2 className="text-xl font-bold text-navy">Request Details</h2>
-              <p className="mt-1.5 text-sm text-text-muted">Fill out the form below to get started.</p>
+              <p className="mt-1.5 text-sm text-text-muted">Tell us about your packaging needs.</p>
 
               <div className="mt-8 space-y-5">
                 <div>
@@ -132,40 +133,56 @@ export default function PackagingRequestsPage() {
                 </div>
 
                 <div>
-                  <Label required>Request Type</Label>
+                  <Label required>Primary Contact</Label>
+                  <input className={inputClass} placeholder="Full name" />
+                </div>
+
+                <div className="grid sm:grid-cols-2 gap-5">
+                  <div>
+                    <Label required>Email</Label>
+                    <input className={inputClass} type="email" placeholder="name@company.com" />
+                  </div>
+                  <div>
+                    <Label required>Phone</Label>
+                    <input className={inputClass} placeholder="+1 (555) 123&ndash;4567" />
+                  </div>
+                </div>
+
+                <div>
+                  <Label required>Company Name</Label>
+                  <input className={inputClass} placeholder="Your company name" />
+                </div>
+
+                <div>
+                  <Label>Brand / Store Name</Label>
+                  <input className={inputClass} placeholder="Your brand or store name" />
+                </div>
+
+                <div>
+                  <Label required>Estimated Monthly Volume</Label>
                   <div className="relative">
                     <select className={`${inputClass} appearance-none pr-10 text-text-light`} defaultValue="">
-                      <option value="" disabled>Select request type</option>
-                      <option>New Packaging</option>
-                      <option>Modification</option>
-                      <option>Replacement</option>
-                      <option>Custom Design</option>
+                      <option value="" disabled>Select estimated volume</option>
+                      <option>Under 500 units</option>
+                      <option>500 &ndash; 2,000 units</option>
+                      <option>2,000 &ndash; 10,000 units</option>
+                      <option>10,000+ units</option>
                     </select>
                     <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
                   </div>
                 </div>
 
                 <div>
-                  <Label required>Quantity</Label>
-                  <input className={inputClass} type="number" placeholder="Enter number of units" />
-                </div>
-
-                <div>
-                  <Label required>Delivery Address</Label>
-                  <input className={inputClass} placeholder="Enter delivery address" />
-                </div>
-
-                <div>
-                  <Label>Special Instructions</Label>
-                  <textarea
-                    className={`${inputClass} min-h-[100px] resize-y`}
-                    placeholder="Enter any special requirements (e.g., Fragile, Temperature Sensitive)"
-                  />
+                  <Label>Target Launch Date</Label>
+                  <div className="relative">
+                    <input className={`${inputClass} pl-10`} placeholder="Select date" />
+                    <Calendar className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+                  </div>
                 </div>
 
                 <div className="flex justify-end pt-2">
-                  <button className="inline-flex items-center gap-2 rounded-[10px] px-8 py-3.5 text-[15px] font-semibold text-white gradient-cta hover:shadow-button transition-all">
-                    Submit Packaging Request <ArrowRight className="w-4 h-4" />
+                  <button className="inline-flex items-center gap-2 rounded-[10px] bg-deep-navy px-7 py-3.5 text-[15px] font-semibold text-white hover:opacity-95 transition-opacity">
+                    Next: Packaging Specifications <ArrowRight className="w-4 h-4" />
                   </button>
                 </div>
               </div>
@@ -174,36 +191,42 @@ export default function PackagingRequestsPage() {
             {/* Sidebar */}
             <aside className="space-y-6">
               <div className="rounded-2xl border border-border-soft bg-white p-6 shadow-soft">
-                <h3 className="text-[18px] font-bold text-text-primary">What happens next?</h3>
+                <h3 className="text-[18px] font-bold text-deep-navy">What happens next?</h3>
                 <div className="mt-5 space-y-0">
                   {nextSteps.map((step, i) => (
                     <div key={i} className="flex gap-3">
                       <div className="flex flex-col items-center">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-teal/15 text-teal">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-teal/15 text-teal shrink-0">
+                          <Check className="w-3.5 h-3.5" strokeWidth={3} />
                         </div>
                         {i < nextSteps.length - 1 && <span className="w-px flex-1 bg-teal/20 my-1" />}
                       </div>
-                      <div className="pb-4">
-                        <p className="text-[14px] font-semibold text-text-primary">{step.title}</p>
+                      <div className="pb-5">
+                        <p className="text-[14px] font-semibold text-deep-navy">{step.title}</p>
                         <p className="mt-0.5 text-[12px] text-text-muted leading-relaxed">{step.desc}</p>
                       </div>
                     </div>
                   ))}
                 </div>
+                <div className="mt-1 rounded-xl bg-teal/8 border border-teal/15 p-4">
+                  <p className="text-[14px] font-semibold text-deep-navy">Let&apos;s bring your brand to life!</p>
+                  <p className="mt-1 text-[12px] text-text-muted leading-relaxed">
+                    Once approved, we&apos;ll proceed with production and delivery.
+                  </p>
+                </div>
               </div>
 
               <div className="rounded-2xl border border-border-soft bg-white p-6 shadow-soft">
-                <h3 className="text-[18px] font-bold text-text-primary">Need Help?</h3>
+                <h3 className="text-[18px] font-bold text-deep-navy">Need inspiration?</h3>
                 <p className="mt-1.5 text-[14px] text-text-muted leading-relaxed">
-                  Contact our support team for assistance with your packaging request.
+                  Explore our packaging options and materials.
                 </p>
                 <Link
-                  href="/contact"
+                  href="/solutions/packaging-labeling"
                   className="mt-4 inline-flex items-center gap-2 rounded-[10px] border border-action-blue px-5 py-2.5 text-[14px] font-semibold text-action-blue transition-colors hover:bg-action-blue hover:text-white"
                 >
-                  Chat with Support
-                  <ArrowRight className="w-4 h-4" />
+                  View Packaging Options
+                  <ExternalLink className="w-4 h-4" />
                 </Link>
               </div>
             </aside>

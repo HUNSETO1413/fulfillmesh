@@ -113,9 +113,9 @@ const steps = [
 ];
 
 const testimonials = [
-  { name: "James Mitchell", role: "Founder, ScalePro Agency", initials: "JM", quote: "FulfillMesh has become the go-to fulfillment partner in China. Our clients love the visibility and reliability — and we love the support and commission structure." },
-  { name: "Sophie Nguyen", role: "E-commerce Consultant", initials: "SN", quote: "I recommend FulfillMesh to every client sourcing from China. Their team is responsive, transparent, and the platform is incredibly easy to use." },
-  { name: "Daniel Kim", role: "Partner, SupplyLink", initials: "DK", quote: "Great partner program with real value. The recurring commissions and performance bonuses make it a win-win for us and our clients." },
+  { name: "James Mitchell", role: "Founder, ScalePro Agency", photo: "/images/photo-1500648767791-00dcc994a43e.jpg", quote: "FulfillMesh has become the go-to fulfillment partner in China. Our clients love the visibility and reliability — and we love the support and commission structure." },
+  { name: "Sophie Nguyen", role: "E-commerce Consultant", photo: "/images/photo-1494790108377-be9c29b29330.jpg", quote: "I recommend FulfillMesh to every client sourcing from China. Their team is responsive, transparent, and the platform is incredibly easy to use." },
+  { name: "Daniel Kim", role: "Partner, SupplyLink", photo: "/images/photo-1507003211169-0a1dd7228f2d.jpg", quote: "Great partner program with real value. The recurring commissions and performance bonuses make it a win-win for us and our clients." },
 ];
 
 const faqs = [
@@ -255,7 +255,7 @@ export default function CoBuildFuturePage() {
 
       {/* Who should join + How the program works */}
       <section className="bg-soft-bg">
-        <div className="max-w-[1200px] mx-auto px-6 py-16 lg:py-20 grid lg:grid-cols-2 gap-14">
+        <div className="max-w-[1200px] mx-auto px-6 py-16 lg:py-20 grid lg:grid-cols-[2fr_3fr] gap-14">
           <div>
             <h2 className="text-[24px] font-bold text-deep-navy mb-6">Who should join?</h2>
             <ul className="space-y-3.5">
@@ -278,25 +278,20 @@ export default function CoBuildFuturePage() {
 
           <div>
             <h2 className="text-[24px] font-bold text-deep-navy mb-8 text-center lg:text-left">How the program works</h2>
-            <div className="relative">
-              {/* vertical timeline connector behind the numbered nodes */}
-              <div className="absolute left-[17px] top-5 bottom-5 w-px bg-border-soft" aria-hidden="true" />
-              <div className="space-y-5">
-                {steps.map((s, i) => (
-                  <div key={s.title} className="relative flex items-start gap-4">
-                    <div className="relative z-10 shrink-0 ring-4 ring-soft-bg rounded-full">
-                      <div className="w-9 h-9 rounded-full bg-action-blue text-white text-[13px] font-bold flex items-center justify-center">{i + 1}</div>
-                    </div>
-                    <div className="rounded-xl border border-[#E2E8F0] bg-white p-4 flex-1 flex items-start gap-3">
-                      <s.icon className="w-5 h-5 text-action-blue shrink-0 mt-0.5" />
-                      <div>
-                        <h3 className="text-[14px] font-bold text-deep-navy">{s.title}</h3>
-                        <p className="text-[13px] text-text-body leading-relaxed mt-0.5">{s.desc}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+            {/* horizontal 4-step row with dashed connectors */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-2 gap-y-8">
+              {steps.map((s, i) => (
+                <div key={s.title} className="relative text-center px-1">
+                  {/* dashed connector to the next step (hidden on last + on wrap) */}
+                  {i !== steps.length - 1 && (
+                    <div className="hidden sm:block absolute top-[18px] left-[calc(50%+24px)] right-[-2px] h-px border-t border-dashed border-action-blue/40" aria-hidden="true" />
+                  )}
+                  <div className="relative z-10 mx-auto w-9 h-9 rounded-full bg-action-blue text-white text-[13px] font-bold flex items-center justify-center">{i + 1}</div>
+                  <s.icon className="w-7 h-7 text-action-blue mx-auto mt-5" />
+                  <h3 className="text-[14px] font-bold text-deep-navy mt-3">{s.title}</h3>
+                  <p className="text-[12px] text-text-body leading-relaxed mt-1.5">{s.desc}</p>
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -313,9 +308,10 @@ export default function CoBuildFuturePage() {
             {testimonials.map((t) => (
               <div key={t.name} className="rounded-xl bg-white border border-[#E2E8F0] p-5">
                 <div className="flex items-center gap-3 mb-3.5">
-                  <div className="w-10 h-10 rounded-full bg-action-blue/8 flex items-center justify-center">
-                    <span className="text-[12px] font-bold text-action-blue">{t.initials}</span>
-                  </div>
+                  <span className="w-10 h-10 rounded-full overflow-hidden shrink-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={t.photo} alt={t.name} className="w-full h-full object-cover" />
+                  </span>
                   <div>
                     <p className="text-[14px] font-semibold text-deep-navy">{t.name}</p>
                     <p className="text-[12px] text-text-muted">{t.role}</p>

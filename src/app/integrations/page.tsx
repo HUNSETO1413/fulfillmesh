@@ -178,12 +178,12 @@ function BrandLogo({ name }: { name: string }) {
 }
 
 const filterTabs = [
-  { label: "All Integrations", active: true },
-  { label: "E-commerce", active: false },
-  { label: "Marketplaces", active: false },
-  { label: "Shipping", active: false },
-  { label: "CRM & Marketing", active: false },
-  { label: "Other", active: false },
+  { label: "All Integrations", count: 32, active: true },
+  { label: "E-commerce", count: 12, active: false },
+  { label: "Marketplaces", count: 8, active: false },
+  { label: "Shipping", count: 6, active: false },
+  { label: "CRM & Marketing", count: 3, active: false },
+  { label: "Other", count: 3, active: false },
 ];
 
 const featured = [
@@ -223,11 +223,11 @@ function IntegrationCard({
       <h3 className="mt-4 text-base font-semibold text-[#1e293b]">{item.name}</h3>
       <p className="mt-1.5 flex-1 text-sm text-[#64748b] leading-relaxed">{item.desc}</p>
       {item.connected ? (
-        <span className="mt-4 inline-flex items-center justify-center gap-1.5 rounded-md bg-[#10b981] px-2 py-1 text-xs font-medium text-white">
+        <span className="mt-4 inline-flex w-fit items-center gap-1.5 rounded-full bg-[#ecfdf5] px-3 py-1 text-xs font-semibold text-[#059669]">
           <Check className="w-3.5 h-3.5" strokeWidth={3} /> Connected
         </span>
       ) : (
-        <button className="mt-4 w-full rounded-md bg-[#3b82f6] py-2 text-sm font-semibold text-white transition-colors hover:bg-[#2563eb]">
+        <button className="mt-4 w-full rounded-md border border-[#3b82f6] bg-white py-2 text-sm font-semibold text-[#3b82f6] transition-colors hover:bg-[#eff6ff]">
           Connect
         </button>
       )}
@@ -276,13 +276,20 @@ export default function IntegrationsPage() {
             {filterTabs.map((t) => (
               <button
                 key={t.label}
-                className={`text-sm font-medium transition-colors pb-1 ${
+                className={`inline-flex items-center gap-2 text-sm font-medium transition-colors pb-1 ${
                   t.active
                     ? "text-[#1e3a8a] border-b-2 border-[#1e3a8a]"
                     : "text-[#475569] hover:text-[#1e3a8a]"
                 }`}
               >
                 {t.label}
+                <span
+                  className={`inline-flex min-w-[20px] items-center justify-center rounded-full px-1.5 py-0.5 text-[11px] font-semibold ${
+                    t.active ? "bg-[#1e3a8a] text-white" : "bg-[#e2e8f0] text-[#475569]"
+                  }`}
+                >
+                  {t.count}
+                </span>
               </button>
             ))}
           </div>

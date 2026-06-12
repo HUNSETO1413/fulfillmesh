@@ -3,26 +3,30 @@
 import { useState } from "react";
 import Link from "next/link";
 import {
-  Building2, Store, BarChart3, Globe, CheckCircle2, Check,
-  ArrowRight, ArrowLeft, Target, Zap, Sparkles, TrendingUp, LifeBuoy,
+  Building2, Store, BarChart3, Globe, Headphones, CheckCircle2, Check,
+  ArrowRight, Bell, TrendingUp, Target, Zap, ShieldCheck, Sparkles,
+  Building, User, ClipboardList, MessageSquare, ShoppingCart, LifeBuoy, X,
 } from "lucide-react";
 
 const steps = [
-  { icon: Building2, title: "Company Info", desc: "Basic brand and business details" },
-  { icon: Store, title: "Sales Channels", desc: "Where you sell your products" },
-  { icon: BarChart3, title: "Order Volume", desc: "Estimate your monthly orders" },
-  { icon: Globe, title: "Markets", desc: "Where you ship to" },
-  { icon: CheckCircle2, title: "Review", desc: "Confirm your details and finish" },
+  { num: 1, icon: Building2, title: "Company Info", desc: "Basic details about your business", active: true },
+  { num: 2, icon: Store, title: "Sales Channels", desc: "Where do you sell your products?" },
+  { num: 3, icon: BarChart3, title: "Order Volume", desc: "Estimate your monthly order volume" },
+  { num: 4, icon: Globe, title: "Markets", desc: "Where do you ship to?" },
+  { num: 5, icon: Headphones, title: "Services Needed", desc: "What support do you need?" },
+  { num: 6, icon: CheckCircle2, title: "Review", desc: "Confirm your details and finish" },
 ];
 
 const benefits = [
-  { icon: Target, title: "Optimize your matches", desc: "We pair you with the best-fit suppliers and shipping routes." },
-  { icon: Zap, title: "Faster onboarding", desc: "Skip repetitive steps and get live sooner." },
-  { icon: Sparkles, title: "Personalized recommendations", desc: "Plans and pricing tuned to your volume and goals." },
-  { icon: TrendingUp, title: "Stronger results", desc: "Brands with complete profiles see better outcomes." },
+  { icon: Target, title: "Tailored partner matching", desc: "We match you with suppliers that fit your needs, products, and goals." },
+  { icon: Zap, title: "Faster onboarding", desc: "Complete your profile now and get matched up to 3x faster." },
+  { icon: ShieldCheck, title: "Better recommendations", desc: "Get service and pricing recommendations built just for you." },
+  { icon: TrendingUp, title: "Stronger results", desc: "Our customers see up to 30% faster delivery and lower fulfillment costs." },
 ];
 
-const channels = ["Shopify", "WooCommerce", "Amazon", "eBay", "TikTok Shop", "Etsy"];
+const channels = ["Shopify", "WooCommerce", "Amazon", "Etsy", "TikTok Shop", "Other"];
+const volumes = ["0 - 100 orders", "101 - 500 orders", "501 - 1,000 orders", "1,001 - 5,000 orders", "5,000+ orders"];
+const productTypes = ["Apparel", "Accessories", "Home & Living"];
 
 function BrandLogo({ name, className }: { name: string; className?: string }) {
   switch (name) {
@@ -50,13 +54,11 @@ function BrandLogo({ name, className }: { name: string; className?: string }) {
           <path fill="#221F1F" d="M51.3 96.3H36.7c-1.4-.1-2.5-1.1-2.6-2.5V14.4c0-1.5 1.3-2.7 2.8-2.7h13.6c1.4.1 2.5 1.2 2.6 2.5v10.4h.3c3.5-9.5 10.2-13.9 19.2-13.9 9.1 0 14.9 4.4 19 13.9 3.5-9.5 11.6-13.9 20.2-13.9 6.1 0 12.8 2.5 16.8 8.2 4.6 6.3 3.7 15.4 3.7 23.4v47.1c0 1.5-1.3 2.7-2.8 2.7h-14.5c-1.5-.1-2.6-1.3-2.6-2.7V53.2c0-3.2.3-11.1-.4-14.1-1.1-5-4.4-6.4-8.6-6.4-3.5 0-7.2 2.4-8.7 6.1-1.5 3.8-1.4 10.1-1.4 14.4v39.6c0 1.5-1.3 2.7-2.8 2.7H76.5c-1.5-.1-2.6-1.3-2.6-2.7l-.1-39.6c0-8.3 1.4-20.6-9-20.6-10.5 0-10.1 11.9-10.1 20.6v39.6c.1 1.5-1.2 2.7-2.7 2.7z"/>
         </svg>
       );
-    case "eBay":
+    case "Etsy":
       return (
-        <svg viewBox="0 0 256 103" className={className} aria-hidden>
-          <path fill="#E53238" d="M33.4 28.3C15.1 28.3 0 36 0 59.4c0 18.6 10.3 30.3 33.9 30.3 27.8 0 29.6-18.3 29.6-18.3H49.1s-2.9 9.9-15.9 9.9c-10.6 0-18.2-7.2-18.2-17.2h49.7v-6.8c0-10.8-6.9-29-31.3-29zm-.5 8.6c10.1 0 17 6.2 17 15.5H15c0-9.9 9-15.5 17.9-15.5z"/>
-          <path fill="#0064D2" d="M64.7 0v77.5c0 4.4-.3 10.6-.3 10.6h13.7s.5-4.4.5-8.5c0 0 6.8 10.6 25.2 10.6 19.4 0 32.6-13.5 32.6-32.8 0-17.9-12.1-32.4-32.5-32.4-19.1 0-25.1 10.3-25.1 10.3V0H64.7zm33.9 37c13.1 0 21.5 9.8 21.5 22.4 0 13.6-9.6 22.8-21.4 22.8-14.1 0-21.6-11-21.6-22.7 0-10.9 6.7-22.5 21.5-22.5z"/>
-          <path fill="#F5AF02" d="M171.5 28.3c-27.4 0-29.1 15-29.1 17.4h14.5s.8-9 13.6-9c8.3 0 14.8 3.8 14.8 11.2v3h-14.8c-19.6 0-30 5.7-30 17.4 0 11.5 9.6 17.7 22.5 17.7 17.6 0 23.3-9.7 23.3-9.7 0 4.6.4 9.1.4 9.1h12.9s-.5-5.6-.5-9.2V49.8c0-15.5-12.5-21.5-27.6-21.5zm13.8 31.5v4c0 5.3-3.3 18.4-22.5 18.4-10.5 0-15-5.2-15-11.3 0-11 15.1-11.1 37.5-11.1z"/>
-          <path fill="#86B817" d="M192.1 30.8h16.3l23.4 46.9 23.3-46.9H255l-42.5 83.4h-15.5l12.3-23.3z"/>
+        <svg viewBox="0 0 256 256" className={className} aria-hidden>
+          <rect width="256" height="256" rx="40" fill="#F1641E"/>
+          <path fill="#FFF" d="M101.7 79.6c0-2.3.2-3.6 4.2-3.6h54.6c9.6 0 14.8 8.1 18.6 23.3l3 12.1h9.2c1.6-37.4 3.3-53.8 3.3-53.8s-25.7 2.9-40.9 2.9H93.4l-27.8-.9v9.8l9.4 1.8c6.6 1.3 8.2 2.7 8.7 8.8 0 0 .6 17.9.6 47.4s-.6 47.2-.6 47.2c0 5.4-2.1 7.4-8.7 8.7l-9.4 1.8v9.8l27.8-.9h46.6c15.4 0 51.1 1.8 51.1 1.8 .8-9.4 6-41.3 6.7-44.8h-8.7l-9.6 21.6c-7.6 17.1-18.6 18.2-30.8 18.2h-18.4c-12.2 0-18.6-4.8-18.6-15.3 0 0-.5-23.4-.5-37.9 0 0 19.6 0 26 .5 4.9.4 7.9 1.7 9.4 8.4l2.7 11.6h9.8l-.6-31.2.9-31.4h-9.8l-3 13c-1.5 6.5-2.5 8-9.4 8.5-9 .6-25.4.5-25.4.5z"/>
         </svg>
       );
     case "TikTok Shop":
@@ -67,68 +69,34 @@ function BrandLogo({ name, className }: { name: string; className?: string }) {
           <path fill="#00F2EA" d="M242.1 77.8v-10.1c-12.4 0-24.6-3.5-35.2-10 9.4 10.2 21.7 17.3 35.2 20.1zM176.5 12.8c-.3-1.8-.6-3.6-.7-5.4V1.3h-47.8v189.9c-.1 22.2-18.1 40.2-40.4 40.2-6.6 0-12.8-1.6-18.3-4.3 7.4 9.7 19.1 15.9 32.2 15.9 22.3 0 40.3-18 40.4-40.2V12.8h34.6zM101.9 113.9v-10.8c-4-.5-8-.8-12.1-.8C41.3 102.3 1.9 141.6 1.9 190.1c0 30.4 15.5 57.2 39 73 -15.5-15.8-25.1-37.5-25.1-61.4 0-47.9 38.3-86.8 86.1-87.8z"/>
         </svg>
       );
-    case "Etsy":
-      return (
-        <svg viewBox="0 0 256 256" className={className} aria-hidden>
-          <rect width="256" height="256" rx="40" fill="#F1641E"/>
-          <path fill="#FFF" d="M101.7 79.6c0-2.3.2-3.6 4.2-3.6h54.6c9.6 0 14.8 8.1 18.6 23.3l3 12.1h9.2c1.6-37.4 3.3-53.8 3.3-53.8s-25.7 2.9-40.9 2.9H93.4l-27.8-.9v9.8l9.4 1.8c6.6 1.3 8.2 2.7 8.7 8.8 0 0 .6 17.9.6 47.4s-.6 47.2-.6 47.2c0 5.4-2.1 7.4-8.7 8.7l-9.4 1.8v9.8l27.8-.9h46.6c15.4 0 51.1 1.8 51.1 1.8 .8-9.4 6-41.3 6.7-44.8h-8.7l-9.6 21.6c-7.6 17.1-18.6 18.2-30.8 18.2h-18.4c-12.2 0-18.6-4.8-18.6-15.3 0 0-.5-23.4-.5-37.9 0 0 19.6 0 26 .5 4.9.4 7.9 1.7 9.4 8.4l2.7 11.6h9.8l-.6-31.2.9-31.4h-9.8l-3 13c-1.5 6.5-2.5 8-9.4 8.5-9 .6-25.4.5-25.4.5z"/>
-        </svg>
-      );
     default:
-      return null;
+      return (
+        <span className="text-text-muted font-bold text-lg leading-none">&middot;&middot;&middot;</span>
+      );
   }
 }
 
-function TrustLogo({ name }: { name: string }) {
-  const cls = "h-6 w-auto";
-  switch (name) {
-    case "Visa":
-      return (
-        <svg viewBox="0 0 48 16" className={cls} aria-label="Visa">
-          <path fill="#1A1F71" d="M20.4 15.3h-3.3L19.2.8h3.3l-2.1 14.5zM14.4.8l-3.1 9.9-.4-1.9L9.8 2.3S9.6.8 7.7.8H2.5L2.4 1s2 .4 4.3 1.8l3.6 12.5h3.5L19.3.8h-4.9zM45.5 15.3H48L45.8.8h-2.2c-1 0-1.3.8-1.3.8l-4.2 13.7h3.5l.7-1.9h4.3l.4 1.9zm-3.7-4.5l1.8-4.9.1 4.9h-1.9zM38.6 3.9l.5-2.8S37.6.8 36 .8c-1.7 0-5.8.7-5.8 4.4 0 3.4 4.8 3.5 4.8 5.3 0 1.8-4.3 1.5-5.7.4l-.5 2.9s1.5.7 3.8.7c2.3 0 5.8-1.2 5.8-4.6 0-3.5-4.8-3.8-4.8-5.4 0-1.5 3.4-1.3 4.6-.6z"/>
-        </svg>
-      );
-    case "Mastercard":
-      return (
-        <svg viewBox="0 0 36 24" className={cls} aria-label="Mastercard">
-          <circle cx="13" cy="12" r="10" fill="#EB001B" />
-          <circle cx="23" cy="12" r="10" fill="#F79E1B" />
-          <path fill="#FF5F00" d="M18 4.3a10 10 0 0 0 0 15.4 10 10 0 0 0 0-15.4z" />
-        </svg>
-      );
-    case "PayPal":
-      return (
-        <svg viewBox="0 0 50 16" className={cls} aria-label="PayPal">
-          <path fill="#003087" d="M6.9 1.2H2.4c-.3 0-.6.2-.6.5L0 14.3c0 .2.1.4.3.4h2.2c.3 0 .6-.2.6-.5l.5-3.2c0-.3.3-.5.6-.5h1.4c3 0 4.7-1.4 5.1-4.3.2-1.3 0-2.3-.6-3-.7-.8-1.9-1.2-3.7-1.2zm.5 4.3c-.3 1.6-1.5 1.6-2.6 1.6h-.7l.5-3c0-.2.2-.3.4-.3h.3c.8 0 1.5 0 1.9.4.2.3.3.7.2 1.3z"/>
-          <path fill="#0070E0" d="M22.6 5.5h-2.2c-.2 0-.4.1-.4.3l-.1.6-.2-.2c-.5-.7-1.5-.9-2.5-.9-2.4 0-4.4 1.8-4.8 4.3-.2 1.3.1 2.5.8 3.3.6.8 1.6 1.1 2.7 1.1 1.9 0 3-1.2 3-1.2l-.1.6c0 .2.1.4.3.4h2c.3 0 .6-.2.6-.5l1.2-7.5c0-.2-.1-.3-.3-.3zm-3.1 4.2c-.2 1.2-1.2 2.1-2.4 2.1-.6 0-1.1-.2-1.4-.6-.3-.4-.4-.9-.3-1.5.2-1.2 1.2-2.1 2.4-2.1.6 0 1.1.2 1.4.6.3.4.4.9.3 1.5z"/>
-          <path fill="#003087" d="M34.4 5.5h-2.2c-.2 0-.4.1-.5.3l-3 4.5-1.3-4.3c-.1-.3-.3-.4-.6-.4h-2.1c-.2 0-.4.2-.3.5l2.4 7.1-2.3 3.2c-.2.2 0 .5.2.5h2.2c.2 0 .4-.1.5-.3l7.3-10.6c.2-.3 0-.5-.3-.5z"/>
-          <path fill="#0070E0" d="M41.7 1.2h-4.5c-.3 0-.6.2-.6.5l-1.8 11.6c0 .2.1.4.3.4h2.3c.2 0 .4-.1.4-.3l.5-3.3c0-.3.3-.5.6-.5h1.4c3 0 4.7-1.4 5.1-4.3.2-1.3 0-2.3-.6-3-.7-.7-1.9-1.1-3.6-1.1zm.5 4.3c-.3 1.6-1.5 1.6-2.6 1.6h-.7l.5-3c0-.2.2-.3.4-.3h.3c.8 0 1.5 0 1.9.4.2.3.3.7.2 1.3z"/>
-        </svg>
-      );
-    case "Stripe":
-      return (
-        <svg viewBox="0 0 60 25" className={cls} aria-label="Stripe">
-          <path fill="#635BFF" d="M60 12.9c0-4.3-2.1-7.6-6-7.6-4 0-6.4 3.4-6.4 7.6 0 5 2.8 7.5 6.9 7.5 2 0 3.5-.5 4.6-1.1v-3.3c-1.1.6-2.4 1-4 1-1.6 0-3-.6-3.2-2.5h8.1v-1.6zm-8.2-1.6c0-1.8 1.1-2.6 2.1-2.6 1 0 2 .8 2 2.6h-4.1zM41.3 5.3c-1.7 0-2.7.8-3.3 1.3l-.2-1h-3.7v19l4.2-.9v-4.6c.6.4 1.5 1 3 1 3 0 5.8-2.4 5.8-7.7 0-4.9-2.8-7.1-5.8-7.1zm-1 11.6c-1 0-1.6-.4-2-.8V9.6c.4-.5 1-.8 2-.8 1.6 0 2.6 1.7 2.6 4 0 2.4-1 4.1-2.6 4.1zM28.3 4.3l4.2-.9V0l-4.2.9v3.4zM28.3 5.6h4.2v14.5h-4.2V5.6zM23.8 6.8l-.3-1.2h-3.6v14.5h4.2v-9.8c1-1.3 2.7-1 3.2-.9V5.6c-.5-.2-2.5-.5-3.5 1.2zM15.4 2l-4.1.9v13.4c0 2.5 1.9 4.3 4.3 4.3 1.4 0 2.4-.3 2.9-.5v-3.4c-.5.2-3.1 1-3.1-1.5V9.2h3.1V5.6h-3.1V2zM4.2 9.8c0-.7.5-.9 1.4-.9 1.2 0 2.8.4 4 1V6c-1.3-.5-2.6-.7-4-.7C2.3 5.3 0 7 0 9.9c0 4.5 6.2 3.8 6.2 5.7 0 .8-.7 1-1.6 1-1.3 0-3-.5-4.3-1.3v4c1.5.6 3 .9 4.3.9 3.4 0 5.7-1.7 5.7-4.6 0-4.9-6.1-4-6.1-5.8z"/>
-        </svg>
-      );
-    default:
-      return null;
-  }
+function TrustLogo() {
+  return (
+    <span className="inline-flex items-center gap-1.5 opacity-70">
+      <span className="w-5 h-5 rounded-md bg-white/15 flex items-center justify-center">
+        <svg viewBox="0 0 24 24" className="w-3 h-3" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7.4L12 17l-6.3 4.4L8 14 2 9.4h7.6z" /></svg>
+      </span>
+      <span className="text-[14px] font-semibold text-white">logoipsum</span>
+    </span>
+  );
 }
 
 function Label({ children }: { children: React.ReactNode }) {
   return <label className="block text-[13px] font-medium text-deep-navy mb-1.5">{children}</label>;
 }
 const inputCls =
-  "w-full px-4 py-2.5 rounded-[10px] border border-border-soft text-sm bg-white focus:outline-none focus:border-teal focus:ring-1 focus:ring-teal transition-colors";
+  "w-full px-4 py-2.5 rounded-[10px] border border-border-soft text-sm bg-white text-text-body focus:outline-none focus:border-teal focus:ring-1 focus:ring-teal transition-colors";
 
 export default function OnboardingPage() {
-  const [active, setActive] = useState(0);
-  const [biz, setBiz] = useState("Brand owner");
-  const [picked, setPicked] = useState<string[]>(["Shopify"]);
+  const [picked, setPicked] = useState<string[]>(["Shopify", "Amazon"]);
+  const [volume, setVolume] = useState("101 - 500 orders");
   const toggle = (n: string) => setPicked((p) => (p.includes(n) ? p.filter((x) => x !== n) : [...p, n]));
-  const next = () => setActive((s) => Math.min(s + 1, steps.length - 1));
-  const back = () => setActive((s) => Math.max(s - 1, 0));
 
   return (
     <section
@@ -149,6 +117,17 @@ export default function OnboardingPage() {
 
         {/* Dashboard preview banner */}
         <div className="mb-8 bg-white rounded-2xl border border-border-soft shadow-card overflow-hidden">
+          {/* inner header bar */}
+          <div className="flex items-center justify-between px-5 py-3 border-b border-border-soft">
+            <span className="inline-flex items-center gap-2">
+              <svg viewBox="0 0 32 32" className="w-6 h-6" aria-hidden>
+                <path d="M4 24V8l6 8 6-8v16" fill="none" stroke="#003B7A" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M18 24V8l6 8 4-5" fill="none" stroke="#00B894" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              <span className="text-[15px] font-bold"><span className="text-navy">Fulfill</span><span className="text-teal">Mesh</span></span>
+            </span>
+            <Bell className="w-4 h-4 text-text-muted" />
+          </div>
           <div className="flex">
             {/* Mini sidebar */}
             <div className="hidden md:flex flex-col gap-0.5 w-[150px] shrink-0 border-r border-border-soft p-3">
@@ -169,9 +148,9 @@ export default function OnboardingPage() {
                   <div key={s.label} className="rounded-xl border border-border-soft p-3">
                     <p className="text-[11px] text-text-muted">{s.label}</p>
                     <p className="text-[22px] font-bold text-deep-navy leading-tight mt-0.5">{s.value}</p>
-                    <span className="inline-flex items-center gap-0.5 mt-1.5 px-1.5 py-0.5 rounded-full bg-teal/12 text-[9px] font-semibold text-teal">
+                    <span className="inline-flex items-center gap-0.5 mt-1.5 text-[9px] font-semibold text-teal">
                       <TrendingUp className="w-2.5 h-2.5" /> {s.delta}
-                      <span className="text-text-muted font-normal ml-0.5">30d</span>
+                      <span className="text-text-muted font-normal ml-0.5">vs last 30 days</span>
                     </span>
                   </div>
                 ))}
@@ -188,6 +167,7 @@ export default function OnboardingPage() {
                       { id: "SHP-2024-0981", route: "Shenzhen → Los Angeles", status: "In Transit", tone: "bg-action-blue/10 text-action-blue" },
                       { id: "SHP-2024-0172", route: "Ningbo → New York", status: "In Transit", tone: "bg-action-blue/10 text-action-blue" },
                       { id: "SHP-2024-0965", route: "Shanghai → London", status: "Delivered", tone: "bg-teal/10 text-teal" },
+                      { id: "SHP-2024-0958", route: "Guangzhou → Sydney", status: "In Transit", tone: "bg-action-blue/10 text-action-blue" },
                     ].map((r) => (
                       <div key={r.id} className="contents">
                         <span className="text-deep-navy font-medium truncate">{r.id}</span>
@@ -218,7 +198,7 @@ export default function OnboardingPage() {
                         { c: "#0057D8", t: "In Production 56 (44%)" },
                         { c: "#00B894", t: "QC 20 (16%)" },
                         { c: "#FF9900", t: "In Transit 28 (22%)" },
-                        { c: "#9AA8B8", t: "Delivered 23 (18%)" },
+                        { c: "#9AA8B8", t: "Delivered 70 (20%)" },
                       ].map((l) => (
                         <div key={l.t} className="flex items-center gap-1.5 text-text-body">
                           <span className="w-2 h-2 rounded-full" style={{ backgroundColor: l.c }} />{l.t}
@@ -232,177 +212,157 @@ export default function OnboardingPage() {
           </div>
         </div>
 
-        <div className="grid gap-7" style={{ gridTemplateColumns: "minmax(0,240px) minmax(0,1fr) minmax(0,280px)" }}>
+        <div className="grid gap-7" style={{ gridTemplateColumns: "minmax(0,240px) minmax(0,1fr) minmax(0,260px)" }}>
           {/* Left stepper */}
           <aside className="space-y-4">
+            <div>
+              <p className="text-[15px] font-bold text-deep-navy mb-1">Let&apos;s set up your account</p>
+              <p className="text-[12px] text-text-muted leading-relaxed">Tell us a bit about your business so we can match you with the right fulfillment partners.</p>
+            </div>
+            <ol className="space-y-1">
+              {steps.map((s) => (
+                <li key={s.title}>
+                  <div className={`flex items-start gap-3 p-2.5 rounded-xl ${s.active ? "bg-action-blue/5" : ""}`}>
+                    <span className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-[12px] font-bold ${s.active ? "bg-action-blue text-white" : "bg-white border border-border-soft text-text-muted"}`}>
+                      {s.num}
+                    </span>
+                    <div>
+                      <p className={`text-[14px] font-semibold ${s.active ? "text-deep-navy" : "text-deep-navy"}`}>{s.title}</p>
+                      <p className="text-[11px] text-text-muted leading-snug">{s.desc}</p>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ol>
+            <div className="rounded-2xl border border-teal/15 p-5" style={{ background: "linear-gradient(160deg, rgba(0,184,148,0.08), rgba(0,184,148,0.02))" }}>
+              <span className="inline-flex w-10 h-10 rounded-xl bg-teal/12 items-center justify-center mb-3">
+                <Sparkles className="w-5 h-5 text-teal" />
+              </span>
+              <p className="text-[15px] font-bold text-deep-navy">Almost there!</p>
+              <p className="mt-1.5 text-[12px] text-text-body leading-relaxed">Complete setup and get matched with vetted fulfillment partners in minutes.</p>
+            </div>
             <div className="bg-white rounded-2xl border border-border-soft p-4">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-text-muted px-2 mb-3">Let&apos;s set up your account</p>
-              <ol className="space-y-1">
-                {steps.map((s, i) => {
-                  const Icon = s.icon;
-                  const isActive = i === active;
-                  const done = i < active;
-                  return (
-                    <li key={s.title}>
-                      <div className={`flex items-start gap-3 p-2.5 rounded-xl ${isActive ? "bg-teal/8" : ""}`}>
-                        <span className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isActive ? "bg-teal text-white" : done ? "bg-teal/15 text-teal" : "bg-soft-bg text-text-muted"}`}>
-                          {done ? <Check className="w-4 h-4" /> : isActive ? <span className="text-[11px] font-bold">{i + 1}</span> : <Icon className="w-4 h-4" />}
-                        </span>
-                        <div>
-                          <p className={`text-[13px] font-semibold ${isActive ? "text-deep-navy" : "text-text-body"}`}>{s.title}</p>
-                          <p className="text-[11px] text-text-muted leading-snug">{s.desc}</p>
-                        </div>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ol>
-            </div>
-            <div className="bg-teal/8 rounded-2xl border border-teal/15 p-4">
-              <p className="text-[13px] font-semibold text-deep-navy">Almost there!</p>
-              <p className="mt-1 text-[12px] text-text-body leading-relaxed">Complete your profile to unlock tailored supplier matches and pricing.</p>
-            </div>
-            <div className="flex items-center gap-2 px-2 text-[12px] text-text-muted">
-              <LifeBuoy className="w-4 h-4" /> Need help? <Link href="/contact" className="text-teal font-medium">Contact Support</Link>
+              <p className="text-[13px] font-semibold text-deep-navy mb-2">Need help?</p>
+              <p className="text-[11px] text-text-muted leading-relaxed mb-3">Our team is here to help you get started.</p>
+              <Link href="/contact" className="inline-flex items-center gap-2 text-[12px] font-semibold text-deep-navy border border-border-soft rounded-lg px-3 py-2 hover:bg-soft-bg transition-colors">
+                <LifeBuoy className="w-3.5 h-3.5" /> Contact Support
+              </Link>
             </div>
           </aside>
 
-          {/* Center form — step-based */}
+          {/* Center form — all sections stacked */}
           <div className="space-y-6">
-            {/* Step 0: Company Info */}
-            {active === 0 && (
-              <div className="bg-white rounded-2xl border border-border-soft p-7">
-                <h2 className="text-[18px] font-bold text-deep-navy mb-5">Company Information</h2>
-                <div className="grid sm:grid-cols-2 gap-4">
-                  <div><Label>Company Name</Label><input className={inputCls} placeholder="Acme Brands Inc." /></div>
-                  <div><Label>Website</Label><input className={inputCls} placeholder="https://yourstore.com" /></div>
-                  <div>
-                    <Label>Industry</Label>
-                    <select className={inputCls}>
-                      {["E-commerce Retail", "Apparel & Fashion", "Electronics", "Beauty & Personal Care", "Home & Kitchen", "Other"].map((o) => <option key={o}>{o}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <Label>Company Size</Label>
-                    <select className={inputCls}>
-                      {["1–10 employees", "11–50 employees", "51–200 employees", "200+ employees"].map((o) => <option key={o}>{o}</option>)}
-                    </select>
-                  </div>
+            {/* Company Information */}
+            <div className="bg-white rounded-2xl border border-border-soft shadow-card p-7">
+              <div className="flex items-center gap-3 mb-5">
+                <span className="w-9 h-9 rounded-lg bg-action-blue/8 flex items-center justify-center"><Building className="w-5 h-5 text-action-blue" /></span>
+                <h2 className="text-[18px] font-bold text-deep-navy">Company Information</h2>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div><Label>Company Name</Label><input className={inputCls} defaultValue="Acme Retail" /></div>
+                <div><Label>Website (Optional)</Label><input className={inputCls} defaultValue="https://acmeretail.com" /></div>
+                <div>
+                  <Label>Business Type</Label>
+                  <select className={inputCls} defaultValue="E-commerce Brand">
+                    {["E-commerce Brand", "Retailer", "Wholesaler", "Manufacturer", "Other"].map((o) => <option key={o}>{o}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <Label>Company Size</Label>
+                  <select className={inputCls} defaultValue="11 – 50 employees">
+                    {["1 – 10 employees", "11 – 50 employees", "51 – 200 employees", "200+ employees"].map((o) => <option key={o}>{o}</option>)}
+                  </select>
                 </div>
               </div>
-            )}
+            </div>
 
-            {/* Step 1: Primary Contact */}
-            {active === 1 && (
-              <div className="bg-white rounded-2xl border border-border-soft p-7">
-                <h2 className="text-[18px] font-bold text-deep-navy mb-5">Primary Contact</h2>
-                <div className="grid sm:grid-cols-2 gap-4">
-                  <div><Label>First Name</Label><input className={inputCls} placeholder="Jane" /></div>
-                  <div><Label>Last Name</Label><input className={inputCls} placeholder="Doe" /></div>
-                  <div><Label>Email</Label><input type="email" className={inputCls} placeholder="jane@company.com" /></div>
-                  <div><Label>Phone</Label><input className={inputCls} placeholder="+1 (555) 000-0000" /></div>
-                  <div className="sm:col-span-2">
-                    <Label>Role</Label>
-                    <select className={inputCls}>
-                      {["Operations Manager", "Founder / CEO", "Logistics Lead", "E-commerce Manager", "Other"].map((o) => <option key={o}>{o}</option>)}
-                    </select>
-                  </div>
+            {/* Primary Contact */}
+            <div className="bg-white rounded-2xl border border-border-soft shadow-card p-7">
+              <div className="flex items-center gap-3 mb-5">
+                <span className="w-9 h-9 rounded-lg bg-action-blue/8 flex items-center justify-center"><User className="w-5 h-5 text-action-blue" /></span>
+                <h2 className="text-[18px] font-bold text-deep-navy">Primary Contact</h2>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div><Label>Full Name</Label><input className={inputCls} defaultValue="Bessie Cooper" /></div>
+                <div><Label>Work Email</Label><input type="email" className={inputCls} defaultValue="bessie@acmeretail.com" /></div>
+                <div><Label>Phone Number</Label><input className={inputCls} defaultValue="🇺🇸 +1 (555) 123-4567" /></div>
+                <div>
+                  <Label>Role</Label>
+                  <select className={inputCls} defaultValue="Operations Manager">
+                    {["Operations Manager", "Founder / CEO", "Logistics Lead", "E-commerce Manager", "Other"].map((o) => <option key={o}>{o}</option>)}
+                  </select>
                 </div>
               </div>
-            )}
+            </div>
 
-            {/* Step 2: Business Profile & Order Volume */}
-            {active === 2 && (
-              <div className="bg-white rounded-2xl border border-border-soft p-7">
-                <h2 className="text-[18px] font-bold text-deep-navy mb-2">Tell us about your business</h2>
-                <p className="text-[13px] text-text-muted mb-4">What type of business are you?</p>
-                <div className="flex flex-wrap gap-2.5 mb-6">
-                  {["Brand owner", "Retailer", "Wholesaler", "Dropshipper"].map((b) => (
-                    <button key={b} onClick={() => setBiz(b)}
-                      className={`px-4 py-2 rounded-full text-[13px] font-medium border transition-colors ${biz === b ? "bg-teal/10 border-teal text-teal" : "border-border-soft text-text-body hover:border-teal/40"}`}>
-                      {b}
+            {/* Tell us about your business */}
+            <div className="bg-white rounded-2xl border border-border-soft shadow-card p-7">
+              <div className="flex items-center gap-3 mb-5">
+                <span className="w-9 h-9 rounded-lg bg-action-blue/8 flex items-center justify-center"><ClipboardList className="w-5 h-5 text-action-blue" /></span>
+                <h2 className="text-[18px] font-bold text-deep-navy">Tell us about your business</h2>
+              </div>
+              <Label>What type of products do you sell?</Label>
+              <div className="flex flex-wrap items-center gap-2 px-3 py-2.5 rounded-[10px] border border-border-soft bg-white">
+                {productTypes.map((p) => (
+                  <span key={p} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-action-blue/8 text-[13px] font-medium text-action-blue">
+                    {p} <X className="w-3 h-3" />
+                  </span>
+                ))}
+                <span className="text-[13px] text-text-light ml-auto pr-1">▾</span>
+              </div>
+              <div className="mt-5">
+                <Label>Any special handling or storage requirements?</Label>
+                <textarea rows={3} className="w-full px-4 py-3 rounded-[10px] border border-border-soft text-sm text-text-body focus:outline-none focus:border-teal focus:ring-1 focus:ring-teal transition-colors resize-none" placeholder="e.g., fragile items, temperature control, oversized products..." />
+              </div>
+            </div>
+
+            {/* Monthly Order Volume */}
+            <div className="bg-white rounded-2xl border border-border-soft shadow-card p-7">
+              <div className="flex items-center gap-3 mb-5">
+                <span className="w-9 h-9 rounded-lg bg-action-blue/8 flex items-center justify-center"><BarChart3 className="w-5 h-5 text-action-blue" /></span>
+                <div>
+                  <h2 className="text-[18px] font-bold text-deep-navy">Monthly Order Volume (Estimated)</h2>
+                  <p className="text-[13px] text-text-muted mt-0.5">This helps us match you with the right fulfillment partners.</p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2.5">
+                {volumes.map((v) => {
+                  const on = volume === v;
+                  return (
+                    <button key={v} onClick={() => setVolume(v)}
+                      className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-[10px] text-[13px] font-medium border transition-colors ${on ? "bg-action-blue/8 border-action-blue text-action-blue" : "border-border-soft text-text-body hover:border-action-blue/40"}`}>
+                      {on && <span className="w-4 h-4 rounded-full bg-action-blue text-white flex items-center justify-center"><Check className="w-2.5 h-2.5" strokeWidth={3} /></span>}
+                      {v}
                     </button>
-                  ))}
-                </div>
-                <Label>Monthly Order Volume (Estimated)</Label>
-                <select className={inputCls}>
-                  {["0 – 100 orders", "100 – 500 orders", "500 – 2,000 orders", "2,000 – 10,000 orders", "10,000+ orders"].map((o) => <option key={o}>{o}</option>)}
-                </select>
+                  );
+                })}
               </div>
-            )}
+            </div>
 
-            {/* Step 3: Sales Channels */}
-            {active === 3 && (
-              <div className="bg-white rounded-2xl border border-border-soft p-7">
-                <h2 className="text-[18px] font-bold text-deep-navy mb-2">Select your sales channels</h2>
-                <p className="text-[13px] text-text-muted mb-4">Choose all platforms where you sell today.</p>
-                <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
-                  {channels.map((c) => {
-                    const on = picked.includes(c);
-                    return (
-                      <button key={c} onClick={() => toggle(c)}
-                        className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all ${on ? "border-teal bg-teal/5" : "border-border-soft hover:border-teal/40"}`}>
-                        <span className="w-8 h-8 rounded-lg flex items-center justify-center bg-soft-bg border border-border-soft shrink-0">
-                          <BrandLogo name={c} className="w-5 h-5" />
-                        </span>
-                        <span className="text-[13px] font-medium text-deep-navy flex-1">{c}</span>
-                        {on && <Check className="w-4 h-4 text-teal" />}
-                      </button>
-                    );
-                  })}
+            {/* Anything else */}
+            <div className="bg-white rounded-2xl border border-border-soft shadow-card p-7">
+              <div className="flex items-center gap-3 mb-4">
+                <span className="w-9 h-9 rounded-lg bg-action-blue/8 flex items-center justify-center"><MessageSquare className="w-5 h-5 text-action-blue" /></span>
+                <div>
+                  <h2 className="text-[18px] font-bold text-deep-navy">Anything else we should know?</h2>
+                  <p className="text-[13px] text-text-muted mt-0.5">Optional details that help us provide better recommendations.</p>
                 </div>
               </div>
-            )}
-
-            {/* Step 4: Review & Notes */}
-            {active === 4 && (
-              <>
-                <div className="bg-white rounded-2xl border border-border-soft p-7">
-                  <h2 className="text-[18px] font-bold text-deep-navy mb-3">Anything else we should know?</h2>
-                  <textarea rows={3} className="w-full px-4 py-3 rounded-[10px] border border-border-soft text-sm focus:outline-none focus:border-teal focus:ring-1 focus:ring-teal transition-colors resize-none" placeholder="Tell us about your goals, current challenges, or special requirements..." />
-                </div>
-                <div className="bg-teal/8 rounded-2xl border border-teal/15 p-5">
-                  <p className="text-[14px] font-semibold text-deep-navy">You&apos;re all set!</p>
-                  <p className="mt-1 text-[13px] text-text-body leading-relaxed">Review your information above and click &ldquo;Complete Setup&rdquo; to finish.</p>
-                </div>
-              </>
-            )}
-
-            {/* Nav */}
-            <div className="flex items-center justify-between">
-              <button
-                onClick={back}
-                disabled={active === 0}
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-[10px] text-sm font-semibold text-text-muted border border-border-soft hover:bg-soft-bg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <ArrowLeft className="w-4 h-4" /> Back
-              </button>
-              {active < steps.length - 1 ? (
-                <button
-                  onClick={next}
-                  className="inline-flex items-center gap-2 px-7 py-3 text-sm font-semibold text-white rounded-[10px] gradient-cta hover:shadow-button transition-all"
-                >
-                  Next <ArrowRight className="w-4 h-4" />
-                </button>
-              ) : (
-                <Link href="/get-started" className="inline-flex items-center gap-2 px-7 py-3 text-sm font-semibold text-white rounded-[10px] gradient-cta hover:shadow-button transition-all">
-                  Complete Setup <CheckCircle2 className="w-4 h-4" />
-                </Link>
-              )}
+              <textarea rows={3} className="w-full px-4 py-3 rounded-[10px] border border-border-soft text-sm text-text-body focus:outline-none focus:border-teal focus:ring-1 focus:ring-teal transition-colors resize-none" placeholder="Tell us about your business goals, challenges, or any specific needs..." />
             </div>
           </div>
 
           {/* Right tips */}
           <aside>
-            <div className="bg-white rounded-2xl border border-border-soft p-5 sticky top-24">
+            <div className="bg-white rounded-2xl border border-border-soft shadow-card p-5 sticky top-24">
               <p className="text-[14px] font-bold text-deep-navy mb-4">Why set up your profile?</p>
               <div className="space-y-4">
                 {benefits.map((b) => {
                   const Icon = b.icon;
                   return (
                     <div key={b.title} className="flex items-start gap-3">
-                      <span className="w-8 h-8 rounded-lg bg-action-blue/8 flex items-center justify-center shrink-0">
-                        <Icon className="w-4 h-4 text-action-blue" />
+                      <span className="w-8 h-8 rounded-lg bg-teal/10 flex items-center justify-center shrink-0">
+                        <Icon className="w-4 h-4 text-teal" />
                       </span>
                       <div>
                         <p className="text-[13px] font-semibold text-deep-navy">{b.title}</p>
@@ -415,27 +375,58 @@ export default function OnboardingPage() {
             </div>
           </aside>
         </div>
+
+        {/* Sales channels — full width */}
+        <div className="mt-6 bg-white rounded-2xl border border-border-soft shadow-card p-7">
+          <div className="flex items-center gap-3 mb-2">
+            <span className="w-9 h-9 rounded-lg bg-action-blue/8 flex items-center justify-center"><ShoppingCart className="w-5 h-5 text-action-blue" /></span>
+            <h2 className="text-[18px] font-bold text-deep-navy">Select your sales channels</h2>
+          </div>
+          <p className="text-[13px] text-text-muted mb-5 pl-12">Choose all the channels where you sell your products.</p>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            {channels.map((c) => {
+              const on = picked.includes(c);
+              return (
+                <button key={c} onClick={() => toggle(c)}
+                  className={`relative flex flex-col items-center justify-center gap-2 px-4 py-5 rounded-xl border transition-all ${on ? "border-action-blue bg-action-blue/4 ring-1 ring-action-blue/30" : "border-border-soft hover:border-action-blue/40"}`}>
+                  {on && <span className="absolute top-2 right-2 w-4 h-4 rounded-full bg-action-blue text-white flex items-center justify-center"><Check className="w-2.5 h-2.5" strokeWidth={3} /></span>}
+                  <BrandLogo name={c} className="w-8 h-8" />
+                  <span className="text-[13px] font-medium text-deep-navy">{c}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Footer nav */}
+        <div className="mt-7 flex items-center justify-between">
+          <button className="inline-flex items-center gap-2 px-6 py-3 rounded-[10px] text-sm font-semibold text-deep-navy border border-border-soft bg-white hover:bg-soft-bg transition-colors">
+            Save &amp; Exit
+          </button>
+          <Link href="/get-started" className="inline-flex items-center gap-2 px-7 py-3 text-sm font-semibold text-white rounded-[10px] bg-action-blue hover:opacity-95 transition-opacity">
+            Continue <ArrowRight className="w-4 h-4" />
+          </Link>
+        </div>
       </div>
 
-      {/* Bottom trust / social proof bar */}
-      <div className="mt-12 border-t border-border-soft bg-white/70 backdrop-blur-sm">
-        <div className="max-w-[1240px] mx-auto px-6 py-10 text-center">
-          <p className="text-[15px] font-semibold text-deep-navy">
-            Thousands of brands trust{" "}
-            <span className="text-navy">Fulfill</span><span className="text-teal">Mesh</span>{" "}
-            for smarter fulfillment.
-          </p>
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-x-10 gap-y-6">
-            {["Visa", "Mastercard", "PayPal", "Stripe"].map((n) => (
-              <span key={n} className="opacity-60 grayscale hover:opacity-100 hover:grayscale-0 transition-all">
-                <TrustLogo name={n} />
-              </span>
-            ))}
-            {["Shopify", "Amazon", "WooCommerce", "Etsy"].map((n) => (
-              <span key={n} className="opacity-60 hover:opacity-100 transition-opacity">
-                <BrandLogo name={n} className="h-6 w-auto" />
-              </span>
-            ))}
+      {/* Bottom trust bar */}
+      <div className="mt-12 bg-deep-navy">
+        <div className="max-w-[1240px] mx-auto px-6 py-8">
+          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+            <div>
+              <p className="text-[18px] font-bold text-white">Thousands of brands trust <span className="text-white">FulfillMesh</span> for smarter fulfillment.</p>
+              <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 text-[13px] text-white/70">
+                {["Vetted Partners", "End-to-End Support", "No Hidden Fees"].map((t) => (
+                  <span key={t} className="inline-flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-teal" strokeWidth={3} /> {t}</span>
+                ))}
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-[13px] text-white/60 mb-3">Trusted by leading brands worldwide</p>
+              <div className="flex flex-wrap items-center gap-x-7 gap-y-3 justify-end">
+                {[0, 1, 2].map((i) => <TrustLogo key={i} />)}
+              </div>
+            </div>
           </div>
         </div>
       </div>
