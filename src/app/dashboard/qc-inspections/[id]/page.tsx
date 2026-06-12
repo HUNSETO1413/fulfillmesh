@@ -83,7 +83,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
 export default async function QcInspectionDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const inspection = qcInspections.get(id);
+  const inspection = await qcInspections.get(id);
   if (!inspection) notFound();
 
   const circumference = 2 * Math.PI * 32;

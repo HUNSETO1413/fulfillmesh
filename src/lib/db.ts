@@ -1,13 +1,8 @@
-import { DatabaseSync } from "node:sqlite";
-import fs from "node:fs";
-import path from "node:path";
+import { Pool, type QueryResultRow } from "pg";
 
-// Singleton SQLite connection backed by the built-in `node:sqlite` module
-// (Node 24, zero native dependencies). The connection is cached on globalThis
-// so Next.js dev hot-reload does not open a new handle on every request.
-
-const DB_DIR = path.join(process.cwd(), "data");
-const DB_PATH = path.join(DB_DIR, "fulfillmesh.db");
+// PostgreSQL data layer. A single connection pool is cached on globalThis so
+// Next.js dev hot-reload does not open a new pool on every request. Schema
+// creation and seeding run once, guarded by a memoized promise.
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
@@ -26,7 +21,7 @@ CREATE TABLE IF NOT EXISTS orders (
   customer_id TEXT,
   status TEXT NOT NULL,
   date TEXT NOT NULL,
-  total REAL NOT NULL DEFAULT 0,
+  total DOUBLE PRECISION NOT NULL DEFAULT 0,
   channel TEXT,
   destination TEXT,
   items TEXT,
@@ -39,8 +34,8 @@ CREATE TABLE IF NOT EXISTS products (
   sku TEXT NOT NULL,
   name TEXT NOT NULL,
   category TEXT,
-  price REAL NOT NULL DEFAULT 0,
-  cost REAL,
+  price DOUBLE PRECISION NOT NULL DEFAULT 0,
+  cost DOUBLE PRECISION,
   stock INTEGER NOT NULL DEFAULT 0,
   status TEXT NOT NULL,
   supplier TEXT,
@@ -69,7 +64,7 @@ CREATE TABLE IF NOT EXISTS customers (
   phone TEXT,
   country TEXT,
   orders INTEGER NOT NULL DEFAULT 0,
-  total_spent REAL NOT NULL DEFAULT 0,
+  total_spent DOUBLE PRECISION NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'Active',
   joined_date TEXT
 );
@@ -81,7 +76,7 @@ CREATE TABLE IF NOT EXISTS suppliers (
   email TEXT,
   country TEXT NOT NULL,
   category TEXT,
-  rating REAL NOT NULL DEFAULT 0,
+  rating DOUBLE PRECISION NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'Active',
   lead_time_days INTEGER,
   products_supplied INTEGER
@@ -108,7 +103,7 @@ CREATE TABLE IF NOT EXISTS returns (
   status TEXT NOT NULL,
   requested_date TEXT NOT NULL,
   items INTEGER NOT NULL DEFAULT 1,
-  refund_amount REAL
+  refund_amount DOUBLE PRECISION
 );
 
 CREATE TABLE IF NOT EXISTS quotes (
@@ -118,7 +113,7 @@ CREATE TABLE IF NOT EXISTS quotes (
   status TEXT NOT NULL,
   created_date TEXT NOT NULL,
   valid_until TEXT,
-  total REAL NOT NULL DEFAULT 0,
+  total DOUBLE PRECISION NOT NULL DEFAULT 0,
   items TEXT
 );
 
@@ -129,7 +124,7 @@ CREATE TABLE IF NOT EXISTS invoices (
   status TEXT NOT NULL,
   issued_date TEXT NOT NULL,
   due_date TEXT NOT NULL,
-  amount REAL NOT NULL DEFAULT 0
+  amount DOUBLE PRECISION NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS qc_inspections (
@@ -140,7 +135,7 @@ CREATE TABLE IF NOT EXISTS qc_inspections (
   inspector TEXT,
   status TEXT NOT NULL,
   scheduled_date TEXT NOT NULL,
-  defect_rate REAL,
+  defect_rate DOUBLE PRECISION,
   sample_size INTEGER
 );
 
@@ -167,31 +162,42 @@ CREATE TABLE IF NOT EXISTS api_keys (
 `;
 
 type GlobalWithDb = typeof globalThis & {
-  __fulfillmeshDb?: DatabaseSync;
-  __fulfillmeshSeeded?: boolean;
+  __fulfillmeshPool?: Pool;
+  __fulfillmeshReady?: Promise<void>;
 };
 
 const globalForDb = globalThis as GlobalWithDb;
 
-export function getDb(): DatabaseSync {
-  if (!globalForDb.__fulfillmeshDb) {
-    if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
-    const db = new DatabaseSync(DB_PATH);
-    db.exec("PRAGMA journal_mode = WAL;");
-    db.exec(SCHEMA);
-    globalForDb.__fulfillmeshDb = db;
+export function getPool(): Pool {
+  if (!globalForDb.__fulfillmeshPool) {
+    globalForDb.__fulfillmeshPool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      max: 10,
+    });
   }
-  // Seed lazily on first access so the app works out of the box.
-  if (!globalForDb.__fulfillmeshSeeded) {
-    globalForDb.__fulfillmeshSeeded = true;
-    // Imported lazily to avoid a circular dependency at module load.
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { ensureSeed } = require("./seed") as typeof import("./seed");
-      ensureSeed(globalForDb.__fulfillmeshDb);
-    } catch {
-      // Seeding is best-effort; the app still runs against an empty DB.
-    }
+  return globalForDb.__fulfillmeshPool;
+}
+
+// Run schema creation + seeding exactly once per process.
+function ready(): Promise<void> {
+  if (!globalForDb.__fulfillmeshReady) {
+    globalForDb.__fulfillmeshReady = (async () => {
+      const pool = getPool();
+      await pool.query(SCHEMA);
+      const { ensureSeed } = await import("./seed");
+      await ensureSeed(pool);
+    })();
   }
-  return globalForDb.__fulfillmeshDb;
+  return globalForDb.__fulfillmeshReady;
+}
+
+// Parameterized query helper. Ensures the schema/seed are ready first, then
+// runs the statement against the pool. Use $1, $2, ... placeholders.
+export async function query<T extends QueryResultRow = QueryResultRow>(
+  text: string,
+  params: unknown[] = [],
+): Promise<T[]> {
+  await ready();
+  const res = await getPool().query<T>(text, params);
+  return res.rows;
 }

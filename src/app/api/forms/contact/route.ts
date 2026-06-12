@@ -13,7 +13,7 @@ export async function POST(request: Request) {
   if (!name || !email) {
     return NextResponse.json({ error: "Name and email are required" }, { status: 400 });
   }
-  const created = submissions.create({
+  const created = await submissions.create({
     type: "contact",
     name,
     email,

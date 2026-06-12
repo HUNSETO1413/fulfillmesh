@@ -33,7 +33,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
 export default async function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const order = ordersRepo.get(id);
+  const order = await ordersRepo.get(id);
   if (!order) notFound();
   const orderItems = order.items ?? [];
   const itemCount = orderItems.reduce((sum, it) => sum + it.quantity, 0);

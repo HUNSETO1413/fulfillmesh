@@ -68,7 +68,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
 export default async function InventoryDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const item = inventoryRepo.get(id);
+  const item = await inventoryRepo.get(id);
   if (!item) notFound();
 
   const metrics = [

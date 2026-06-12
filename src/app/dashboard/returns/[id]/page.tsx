@@ -56,7 +56,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
 export default async function ReturnDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const ret = returnsRepo.get(id);
+  const ret = await returnsRepo.get(id);
   if (!ret) notFound();
 
   const refund = ret.refundAmount ?? 0;

@@ -32,9 +32,6 @@ COPY --from=builder /app/.next/static ./.next/static
 # Copy public directory
 COPY --from=builder /app/public ./public
 
-# Writable directory for the runtime-seeded SQLite database
-RUN mkdir -p /app/data && chown -R nextjs:nodejs /app/data
-
 USER nextjs
 
 EXPOSE 3000

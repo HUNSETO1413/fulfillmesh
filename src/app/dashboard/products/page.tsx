@@ -6,7 +6,7 @@ export const metadata: Metadata = { title: "Products" };
 
 // Server Component: loads products from the SQLite-backed repository and hands
 // them to the client view for interactive filtering, search and pagination.
-export default function ProductsPage() {
-  const data = products.list();
+export default async function ProductsPage() {
+  const data = await products.list();
   return <ProductsView items={data} />;
 }

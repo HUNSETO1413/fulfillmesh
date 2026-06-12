@@ -125,7 +125,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
 export default async function SupplierDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const supplier = suppliersRepo.get(id);
+  const supplier = await suppliersRepo.get(id);
   if (!supplier) notFound();
 
   const monogram = supplier.name.replace(/[^A-Za-z ]/g, "").split(/\s+/).map((w) => w[0]).join("").slice(0, 4).toUpperCase() || "SUP";

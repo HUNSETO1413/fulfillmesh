@@ -79,7 +79,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
 export default async function ProductDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const product = productsRepo.get(id);
+  const product = await productsRepo.get(id);
   if (!product) notFound();
 
   const margin = product.cost != null && product.price > 0

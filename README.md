@@ -11,7 +11,7 @@ Tailwind CSS 4 + TypeScript**.
 - **Operational dashboard** — orders, products, inventory, customers, suppliers, shipments,
   returns, quotes, invoices and QC inspections, all backed by a real data layer with
   working search, filtering and pagination.
-- **Real backend** — a REST API (Next.js Route Handlers) over a SQLite database, with
+- **Real backend** — a REST API (Next.js Route Handlers) over a PostgreSQL database, with
   cookie-based authentication and Edge middleware protecting the dashboard.
 
 ## Architecture
@@ -19,8 +19,8 @@ Tailwind CSS 4 + TypeScript**.
 | Layer | Location | Notes |
 | --- | --- | --- |
 | Domain types | `src/types` | Single source of truth shared by API + UI |
-| Database | `src/lib/db.ts` | Built-in `node:sqlite` (Node 24, zero native deps); auto-seeded |
-| Repositories | `src/lib/repositories.ts` | CRUD per entity, snake_case ↔ camelCase mapping |
+| Database | `src/lib/db.ts` | PostgreSQL via `pg` (connection pool); schema + seed run once |
+| Repositories | `src/lib/repositories.ts` | Async CRUD per entity, snake_case ↔ camelCase mapping |
 | REST API | `src/app/api/**/route.ts` | Generated from `src/lib/api.ts` factories |
 | Auth | `src/lib/password.ts`, `src/lib/session.ts`, `src/middleware.ts` | scrypt hashing (Node) + HMAC session tokens (Edge-safe) |
 | SEO | `src/lib/seo.ts`, `src/app/sitemap.ts`, `src/app/robots.ts` | `pageMetadata()` helper |
@@ -28,16 +28,17 @@ Tailwind CSS 4 + TypeScript**.
 
 ## Getting started
 
+The fastest path is Docker (see below) — it brings up PostgreSQL, the app and a
+reverse proxy together. For local development against your own Postgres:
+
 ```bash
 npm install
-cp .env.example .env.local   # set AUTH_SECRET and NEXT_PUBLIC_SITE_URL
+cp .env.example .env.local   # set DATABASE_URL, AUTH_SECRET, NEXT_PUBLIC_SITE_URL
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
-
-The SQLite database (`data/fulfillmesh.db`) is created and seeded automatically on first
-run, so the dashboard works out of the box.
+Open [http://localhost:3000](http://localhost:3000). The schema is created and seeded
+automatically on first database access, so the dashboard works out of the box.
 
 ### Demo credentials
 
@@ -58,8 +59,26 @@ admin@fulfillmesh.com / demo1234
 
 ## Docker
 
+A single command brings up the full three-container stack:
+
 ```bash
-docker compose up
+docker compose up --build -d
+```
+
+| Service | Image | Role |
+| --- | --- | --- |
+| `nginx` | nginx:alpine | Reverse proxy — public entrypoint on **http://localhost:8080** |
+| `web` | built from `Dockerfile` | Next.js app (also exposed directly on :3000) |
+| `db` | postgres:16-alpine | PostgreSQL, data persisted in the `fulfillmesh-pgdata` volume |
+
+Startup is ordered by health checks (`db` → `web` → `nginx`). The database is seeded on
+first run and survives restarts. Useful commands:
+
+```bash
+docker compose ps            # status (with health)
+docker compose logs -f web   # app logs
+docker compose down          # stop (keeps data)
+docker compose down -v       # stop and wipe the database volume
 ```
 
 ## CI

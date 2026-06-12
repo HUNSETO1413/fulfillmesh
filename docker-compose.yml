@@ -1,22 +1,56 @@
 services:
+  db:
+    image: postgres:16-alpine
+    container_name: fulfillmesh-db
+    environment:
+      POSTGRES_USER: fulfillmesh
+      POSTGRES_PASSWORD: fulfillmesh
+      POSTGRES_DB: fulfillmesh
+    volumes:
+      - fulfillmesh-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fulfillmesh -d fulfillmesh"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
   web:
     build: .
-    container_name: fulfillmesh
-    ports:
-      - "3000:3000"
+    container_name: fulfillmesh-web
     environment:
+      - DATABASE_URL=postgres://fulfillmesh:fulfillmesh@db:5432/fulfillmesh
       # Signs session cookies. Change to a long random value for any real deployment.
       - AUTH_SECRET=local-dev-secret-change-me-in-production
-    volumes:
-      # Persist the SQLite database across container restarts/rebuilds.
-      - fulfillmesh-data:/app/data
+    expose:
+      - "3000"
+    ports:
+      # Optional direct access to the app, bypassing nginx (handy for debugging).
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 15s
+      start_period: 20s
+
+  nginx:
+    image: nginx:alpine
+    container_name: fulfillmesh-nginx
+    ports:
+      # Public entrypoint. Host 8080 -> nginx 80 (host :80 is often already taken
+      # on dev machines; change the left side if you want a different host port).
+      - "8080:80"
+    volumes:
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
-  fulfillmesh-data:
+  fulfillmesh-pgdata:

@@ -69,7 +69,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
 export default async function QuoteDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const quote = quotes.get(id);
+  const quote = await quotes.get(id);
   if (!quote) notFound();
 
   const circumference = 2 * Math.PI * 35;

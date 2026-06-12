@@ -96,7 +96,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
 export default async function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const customer = customersRepo.get(id);
+  const customer = await customersRepo.get(id);
   if (!customer) notFound();
 
   const initials = customer.name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();

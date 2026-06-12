@@ -18,11 +18,11 @@ export async function POST(request: Request) {
   if (password.length < 8) {
     return NextResponse.json({ error: "Password must be at least 8 characters" }, { status: 400 });
   }
-  if (users.findByEmail(email)) {
+  if (await users.findByEmail(email)) {
     return NextResponse.json({ error: "An account with this email already exists" }, { status: 409 });
   }
 
-  const user = users.create({
+  const user = await users.create({
     name,
     email,
     role: "Manager",
