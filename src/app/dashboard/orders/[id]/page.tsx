@@ -2,12 +2,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import {
-  ArrowLeft, Calendar, ChevronDown, Check, ArrowRight, Edit2,
+  ArrowLeft, ChevronDown, Check, ArrowRight, Edit2,
   FileText, Download, Filter, MessageSquare,
 } from "lucide-react";
 import { orders as ordersRepo } from "@/lib/repositories";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { formatCurrency, formatDate } from "@/lib/format";
+import OrderDetailActions from "./OrderDetailActions";
 
 const steps = ["Confirmed", "Processing", "Ready", "Shipped", "Delivered"];
 const currentStep = 2; // Ready
@@ -51,14 +52,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
             <h1 className="text-[24px] font-bold text-[#1E293B]">Order Detail</h1>
             <p className="text-[14px] text-[#64748B] mt-0.5">View and manage order information, items, fulfillment, and customer details.</p>
           </div>
-          <div className="flex items-center gap-3">
-            <button className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] font-medium text-[#64748B] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-              <Calendar className="w-4 h-4" /> May 12 – May 18, 2025 <ChevronDown className="w-3.5 h-3.5" />
-            </button>
-            <button className="px-3.5 py-2 bg-white border border-[#3B82F6] rounded-lg text-[13px] font-medium text-[#3B82F6] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">Edit Order</button>
-            <button className="px-3.5 py-2 bg-white border border-[#EF4444] rounded-lg text-[13px] font-medium text-[#EF4444] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">Cancel Order</button>
-            <button className="px-4 py-2 bg-[#3B82F6] hover:bg-[#2563EB] rounded-lg text-[13px] font-medium text-white shadow-[0_1px_2px_rgba(0,0,0,0.05)]">+ Create Shipment</button>
-          </div>
+          <OrderDetailActions order={order} />
         </div>
       </div>
 

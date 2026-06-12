@@ -1,4 +1,5 @@
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
+import { ToastProvider } from "@/components/dashboard/Toast";
 
 // The dashboard is user-specific and reads from the database at request time,
 // so it must never be statically prerendered (this also keeps `next build`
@@ -10,5 +11,9 @@ export default function DashLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return <DashboardLayout>{children}</DashboardLayout>;
+  return (
+    <ToastProvider>
+      <DashboardLayout>{children}</DashboardLayout>
+    </ToastProvider>
+  );
 }
