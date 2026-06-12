@@ -1,6 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import { CreditCard, User2, Crown, Package, Truck, HardDrive, Activity, Download, ChevronDown } from "lucide-react";
+import { Modal } from "@/components/dashboard/Modal";
+import { Field, TextInput, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
+import { useToast } from "@/components/dashboard/Toast";
+import { exportToCsv } from "@/lib/client";
 
 const usage = [
   { label: "Orders Processed", value: "2,450", of: "of 5,000", pct: 49, icon: Package },
@@ -18,6 +23,63 @@ const invoices = [
 ];
 
 export default function BillingPage() {
+  const { toast } = useToast();
+  const [usagePeriod, setUsagePeriod] = useState("This Month");
+
+  // Payment method modal
+  const [payOpen, setPayOpen] = useState(false);
+  const [cardName, setCardName] = useState("Sarah Johnson");
+  const [cardNumber, setCardNumber] = useState("");
+  const [cardExpiry, setCardExpiry] = useState("");
+  const [cardCvc, setCardCvc] = useState("");
+
+  // Billing contact modal
+  const [contactOpen, setContactOpen] = useState(false);
+  const [contactName, setContactName] = useState("Sarah Johnson");
+  const [contactEmail, setContactEmail] = useState("sarah.johnson@fulfillmesh.com");
+  const [contactPhone, setContactPhone] = useState("+1 (555) 123-4567");
+
+  const handleSavePayment = () => {
+    if (!cardNumber.trim() || !cardExpiry.trim()) {
+      toast("Card number and expiry are required", "error");
+      return;
+    }
+    setPayOpen(false);
+    setCardNumber("");
+    setCardExpiry("");
+    setCardCvc("");
+    toast("Payment method updated");
+  };
+
+  const handleSaveContact = () => {
+    if (!contactName.trim() || !contactEmail.trim()) {
+      toast("Name and email are required", "error");
+      return;
+    }
+    setContactOpen(false);
+    toast("Billing contact updated");
+  };
+
+  const downloadInvoice = (id: string) => {
+    const inv = invoices.find((i) => i.id === id);
+    if (!inv) return;
+    exportToCsv(`${id}.csv`, [inv], [
+      { key: "id", header: "Invoice #" },
+      { key: "date", header: "Issue Date" },
+      { key: "amount", header: "Amount" },
+    ]);
+    toast(`Downloaded ${id}`);
+  };
+
+  const downloadAll = () => {
+    exportToCsv("invoices.csv", invoices, [
+      { key: "id", header: "Invoice #" },
+      { key: "date", header: "Issue Date" },
+      { key: "amount", header: "Amount" },
+    ]);
+    toast("All invoices exported");
+  };
+
   return (
     <div>
       <h2 className="text-[20px] font-semibold text-text-primary">Billing &amp; Subscription</h2>
@@ -45,7 +107,10 @@ export default function BillingPage() {
               <span className="text-[#1F2937] font-semibold">June 18, 2025</span>
             </div>
           </div>
-          <button className="w-full mt-4 py-2 text-[14px] font-medium text-[#374151] bg-[#F3F4F6] border border-[#D1D5DB] rounded-md hover:bg-[#E5E7EB] transition-colors">
+          <button
+            onClick={() => toast("Opening plan details…", "info")}
+            className="w-full mt-4 py-2 text-[14px] font-medium text-[#374151] bg-[#F3F4F6] border border-[#D1D5DB] rounded-md hover:bg-[#E5E7EB] transition-colors"
+          >
             View Plan
           </button>
         </div>
@@ -65,7 +130,10 @@ export default function BillingPage() {
               <p className="text-[13px] text-[#6B7280]">Expires 04/2027</p>
             </div>
           </div>
-          <button className="w-full mt-[52px] py-2 text-[14px] font-medium text-white bg-[#3B82F6] rounded-md hover:bg-[#2563EB] transition-colors">
+          <button
+            onClick={() => setPayOpen(true)}
+            className="w-full mt-[52px] py-2 text-[14px] font-medium text-white bg-[#3B82F6] rounded-md hover:bg-[#2563EB] transition-colors"
+          >
             Update Payment Method
           </button>
         </div>
@@ -86,7 +154,10 @@ export default function BillingPage() {
             <p className="text-[#6B7280]">Austin, TX 78701</p>
             <p className="text-[#6B7280]">United States</p>
           </div>
-          <button className="w-full mt-3 py-2 text-[14px] font-medium text-[#374151] bg-[#F3F4F6] border border-[#D1D5DB] rounded-md hover:bg-[#E5E7EB] transition-colors">
+          <button
+            onClick={() => setContactOpen(true)}
+            className="w-full mt-3 py-2 text-[14px] font-medium text-[#374151] bg-[#F3F4F6] border border-[#D1D5DB] rounded-md hover:bg-[#E5E7EB] transition-colors"
+          >
             Edit Contact
           </button>
         </div>
@@ -97,7 +168,11 @@ export default function BillingPage() {
         <div className="flex items-center justify-between">
           <h3 className="text-[16px] font-semibold text-[#1F2937]">Usage Overview</h3>
           <div className="relative">
-            <select className="appearance-none pl-3 pr-8 py-1.5 bg-[#F9FAFB] border border-[#D1D5DB] rounded-md text-[14px] text-[#6B7280] font-medium focus:outline-none focus:ring-2 focus:ring-action-blue/20 focus:border-action-blue">
+            <select
+              value={usagePeriod}
+              onChange={(e) => setUsagePeriod(e.target.value)}
+              className="appearance-none pl-3 pr-8 py-1.5 bg-[#F9FAFB] border border-[#D1D5DB] rounded-md text-[14px] text-[#6B7280] font-medium focus:outline-none focus:ring-2 focus:ring-action-blue/20 focus:border-action-blue"
+            >
               <option>This Month</option>
               <option>Last Month</option>
               <option>This Year</option>
@@ -152,7 +227,10 @@ export default function BillingPage() {
                     <span className="inline-flex px-2 py-0.5 bg-[#10B981] text-white text-[12px] font-medium rounded">Paid</span>
                   </td>
                   <td className="px-5 py-3 text-right">
-                    <button className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#3B82F6] hover:text-[#2563EB] hover:underline transition-colors">
+                    <button
+                      onClick={() => downloadInvoice(inv.id)}
+                      className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#3B82F6] hover:text-[#2563EB] hover:underline transition-colors"
+                    >
                       <Download className="w-3.5 h-3.5" />
                       Download
                     </button>
@@ -162,10 +240,73 @@ export default function BillingPage() {
             </tbody>
           </table>
           <div className="text-center py-3 border-t border-[#E5E7EB]">
-            <a href="#" className="text-[14px] font-medium text-[#3B82F6] hover:text-[#2563EB] hover:underline">View All Invoices &rarr;</a>
+            <button
+              onClick={downloadAll}
+              className="text-[14px] font-medium text-[#3B82F6] hover:text-[#2563EB] hover:underline"
+            >
+              View All Invoices &rarr;
+            </button>
           </div>
         </div>
       </div>
+
+      {/* Update Payment Method Modal */}
+      <Modal
+        open={payOpen}
+        onClose={() => setPayOpen(false)}
+        title="Update Payment Method"
+        description="Your card details are encrypted and stored securely."
+        footer={
+          <>
+            <SecondaryButton onClick={() => setPayOpen(false)}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={handleSavePayment}>Save Card</PrimaryButton>
+          </>
+        }
+      >
+        <div className="grid grid-cols-2 gap-4">
+          <div className="col-span-2">
+            <Field label="Name on card" required>
+              <TextInput value={cardName} onChange={(e) => setCardName(e.target.value)} placeholder="Sarah Johnson" />
+            </Field>
+          </div>
+          <div className="col-span-2">
+            <Field label="Card number" required>
+              <TextInput value={cardNumber} onChange={(e) => setCardNumber(e.target.value)} placeholder="4242 4242 4242 4242" />
+            </Field>
+          </div>
+          <Field label="Expiry" required>
+            <TextInput value={cardExpiry} onChange={(e) => setCardExpiry(e.target.value)} placeholder="MM/YY" />
+          </Field>
+          <Field label="CVC">
+            <TextInput value={cardCvc} onChange={(e) => setCardCvc(e.target.value)} placeholder="123" />
+          </Field>
+        </div>
+      </Modal>
+
+      {/* Edit Billing Contact Modal */}
+      <Modal
+        open={contactOpen}
+        onClose={() => setContactOpen(false)}
+        title="Edit Billing Contact"
+        footer={
+          <>
+            <SecondaryButton onClick={() => setContactOpen(false)}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={handleSaveContact}>Save Contact</PrimaryButton>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Field label="Full name" required>
+            <TextInput value={contactName} onChange={(e) => setContactName(e.target.value)} />
+          </Field>
+          <Field label="Email" required>
+            <TextInput type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} />
+          </Field>
+          <Field label="Phone">
+            <TextInput value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} />
+          </Field>
+        </div>
+      </Modal>
     </div>
   );
 }

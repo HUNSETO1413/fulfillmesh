@@ -1,6 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import { CalendarClock, Download, Plus, ChevronDown, ChevronRight, ShoppingBag, Truck, CheckCircle2, Clock, DollarSign, ArrowUpRight, ArrowDownRight, BarChart3, Package, Ship, Warehouse, RotateCcw, Users, FileText, LineChart } from "lucide-react";
+import { DateRangeMenu } from "@/components/dashboard/DateRangeMenu";
+import { useToast } from "@/components/dashboard/Toast";
+import { exportToCsv } from "@/lib/client";
 
 const stats = [
   { title: "Total Orders", value: "12,456", change: "+10.8%", up: true, icon: ShoppingBag, color: "#3B82F6" },
@@ -11,15 +15,21 @@ const stats = [
 ];
 
 const reportCats = [
-  { name: "Order Performance", icon: BarChart3, active: true },
-  { name: "Inventory Performance", icon: Package, active: false },
-  { name: "Shipping Performance", icon: Ship, active: false },
-  { name: "Warehouse Performance", icon: Warehouse, active: false },
-  { name: "Returns Performance", icon: RotateCcw, active: false },
-  { name: "Financial Performance", icon: DollarSign, active: false },
-  { name: "Customer Performance", icon: Users, active: false },
-  { name: "Custom Reports", icon: FileText, active: false },
+  { name: "Order Performance", icon: BarChart3 },
+  { name: "Inventory Performance", icon: Package },
+  { name: "Shipping Performance", icon: Ship },
+  { name: "Warehouse Performance", icon: Warehouse },
+  { name: "Returns Performance", icon: RotateCcw },
+  { name: "Financial Performance", icon: DollarSign },
+  { name: "Customer Performance", icon: Users },
+  { name: "Custom Reports", icon: FileText },
 ];
+
+const FILTER_OPTIONS: Record<string, string[]> = {
+  Warehouse: ["All Warehouses", "ATL-1 · Atlanta", "DFW-1 · Dallas", "LAX-1 · Los Angeles", "MIA-1 · Miami", "ORD-1 · Chicago"],
+  Channel: ["All Channels", "Shopify", "Amazon", "Walmart", "eBay", "Other"],
+  "Order Type": ["All Order Types", "Standard", "Express", "Backorder", "Pre-order"],
+};
 
 const channels = [
   { name: "Shopify", orders: "5,678", shipped: "5,352", delivered: "5,102", onTime: "94.1%", cycle: "1.64 days", color: "#3B82F6" },
@@ -50,15 +60,55 @@ function Sparkline({ color }: { color: string }) {
   return <svg viewBox="0 0 100 18" className="w-full h-5" preserveAspectRatio="none"><polyline fill="none" stroke={color} strokeWidth="1.5" points={pts.map((y, i) => `${i * 11},${y}`).join(" ")} /></svg>;
 }
 
-function FilterPill({ label, icon: Icon }: { label: string; icon?: React.ComponentType<{ className?: string }> }) {
+function FilterPill({ value, options, onSelect }: { value: string; options: string[]; onSelect: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
   return (
-    <button className="flex items-center gap-1.5 px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[12px] font-medium text-[#1E293B] hover:bg-[#F8FAFC]">
-      {Icon && <Icon className="w-3.5 h-3.5 text-[#64748B]" />}{label}<ChevronDown className="w-3 h-3 text-[#94A3B8]" />
-    </button>
+    <div className="relative">
+      <button onClick={() => setOpen((v) => !v)} className="flex items-center gap-1.5 px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[12px] font-medium text-[#1E293B] hover:bg-[#F8FAFC]">
+        {value}<ChevronDown className="w-3 h-3 text-[#94A3B8]" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 mt-1 z-40 w-52 bg-white rounded-lg border border-[#E2E8F0] shadow-[0_10px_30px_rgba(0,0,0,0.12)] py-1">
+            {options.map((o) => (
+              <button key={o} onClick={() => { onSelect(o); setOpen(false); }} className={`w-full text-left px-3 py-2 text-[12px] hover:bg-[#F8FAFC] ${value === o ? "text-[#3B82F6] font-medium" : "text-[#374151]"}`}>{o}</button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
 export default function OperationalReportsPage() {
+  const { toast } = useToast();
+  const [range, setRange] = useState("May 1 – May 31, 2025");
+  const [activeCat, setActiveCat] = useState("Order Performance");
+  const [gran, setGran] = useState("Daily");
+  const [whFilter, setWhFilter] = useState("All Warehouses");
+  const [chFilter, setChFilter] = useState("All Channels");
+  const [otFilter, setOtFilter] = useState("All Order Types");
+
+  function cycleGran() {
+    const opts = ["Daily", "Weekly", "Monthly"];
+    const next = opts[(opts.indexOf(gran) + 1) % opts.length];
+    setGran(next);
+    toast(`Order volume grouped by ${next.toLowerCase()}`, "info");
+  }
+
+  function exportChannels() {
+    exportToCsv("order-performance-by-channel", channels, [
+      { key: "name", header: "Channel" },
+      { key: "orders", header: "Orders" },
+      { key: "shipped", header: "Shipped" },
+      { key: "delivered", header: "Delivered" },
+      { key: "onTime", header: "On-Time Delivery" },
+      { key: "cycle", header: "Avg Cycle Time" },
+    ]);
+    toast(`Exported ${channels.length} channels to CSV`);
+  }
+
   const W = 760, H = 230, padL = 30, padB = 24, padT = 10, yMax = 120;
   const series = [
     { name: "Orders", color: "#3B82F6", pts: [60, 80, 70, 95, 78, 88, 72, 90, 76, 85, 70, 92] },
@@ -72,9 +122,9 @@ export default function OperationalReportsPage() {
     <div className="space-y-6">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 text-[12px] text-text-light">
-        <a href="#" className="hover:text-action-blue">Dashboard</a>
+        <a href="/dashboard" className="hover:text-action-blue">Dashboard</a>
         <ChevronRight className="w-3 h-3" />
-        <a href="#" className="hover:text-action-blue">Reports</a>
+        <a href="/dashboard/reports" className="hover:text-action-blue">Reports</a>
         <ChevronRight className="w-3 h-3" />
         <span className="text-text-muted font-medium">Operational Reports</span>
       </nav>
@@ -91,16 +141,19 @@ export default function OperationalReportsPage() {
           <p className="text-[14px] text-text-muted mt-1">Gain visibility into your operations and make data-driven decisions.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] font-medium text-[#1E293B] hover:bg-[#F8FAFC] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-            <CalendarClock className="w-4 h-4 text-[#64748B]" />May 1 – May 31, 2025<ChevronDown className="w-3.5 h-3.5 text-[#94A3B8]" />
-          </button>
-          <button className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] font-medium text-[#1E293B] hover:bg-[#F8FAFC] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+          <DateRangeMenu
+            value={range}
+            icon="clock"
+            onSelect={(r) => { setRange(r); toast(`Operational reports scoped to ${r}`, "info"); }}
+            presets={["May 1 – May 31, 2025", "Last 7 days", "Last 30 days", "This quarter", "Year to date"]}
+          />
+          <button onClick={() => toast("Report scheduled to run weekly", "success")} className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] font-medium text-[#1E293B] hover:bg-[#F8FAFC] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
             <CalendarClock className="w-4 h-4 text-[#64748B]" />Schedule Report
           </button>
-          <button className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] font-medium text-[#1E293B] hover:bg-[#F8FAFC] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+          <button onClick={exportChannels} className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] font-medium text-[#1E293B] hover:bg-[#F8FAFC] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
             <Download className="w-4 h-4 text-[#64748B]" />Export
           </button>
-          <button className="flex items-center gap-2 px-3.5 py-2 bg-action-blue text-white rounded-lg text-[13px] font-medium hover:bg-action-blue/90 shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+          <button onClick={() => toast("Custom report builder opened", "info")} className="flex items-center gap-2 px-3.5 py-2 bg-action-blue text-white rounded-lg text-[13px] font-medium hover:bg-action-blue/90 shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
             <Plus className="w-4 h-4" />Create Custom Report
           </button>
         </div>
@@ -140,10 +193,9 @@ export default function OperationalReportsPage() {
 
       {/* Filter bar */}
       <div className="flex items-center gap-2 flex-wrap">
-        <FilterPill label="All Warehouses" />
-        <FilterPill label="All Channels" />
-        <FilterPill label="All Order Types" />
-        <FilterPill label="Filters" />
+        <FilterPill value={whFilter} options={FILTER_OPTIONS.Warehouse} onSelect={(v) => { setWhFilter(v); toast(`Warehouse: ${v}`, "info"); }} />
+        <FilterPill value={chFilter} options={FILTER_OPTIONS.Channel} onSelect={(v) => { setChFilter(v); toast(`Channel: ${v}`, "info"); }} />
+        <FilterPill value={otFilter} options={FILTER_OPTIONS["Order Type"]} onSelect={(v) => { setOtFilter(v); toast(`Order type: ${v}`, "info"); }} />
       </div>
 
       {/* Volume chart + Report Categories */}
@@ -151,7 +203,7 @@ export default function OperationalReportsPage() {
         <div className="bg-white rounded-xl border border-[#E2E8F0] p-5 shadow-[0_1px_3px_0_rgba(0,0,0,0.1),0_1px_2px_0_rgba(0,0,0,0.06)]">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-[16px] font-semibold text-[#1E293B]">Order Volume Over Time</h3>
-            <span className="inline-flex items-center gap-1.5 text-[12px] text-[#64748B] border border-[#E2E8F0] px-2.5 py-1 rounded-lg">Daily <ChevronDown className="w-3.5 h-3.5 text-[#94A3B8]" /></span>
+            <button onClick={cycleGran} className="inline-flex items-center gap-1.5 text-[12px] text-[#64748B] border border-[#E2E8F0] px-2.5 py-1 rounded-lg hover:bg-[#F8FAFC]">{gran} <ChevronDown className="w-3.5 h-3.5 text-[#94A3B8]" /></button>
           </div>
           <div className="flex items-center gap-5 mb-3">
             {series.map((s) => (
@@ -183,8 +235,9 @@ export default function OperationalReportsPage() {
           <div className="space-y-1">
             {reportCats.map((c) => {
               const Icon = c.icon;
+              const active = activeCat === c.name;
               return (
-                <button key={c.name} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] font-medium transition-colors ${c.active ? "bg-action-blue/10 text-action-blue" : "text-[#64748B] hover:bg-[#F8FAFC]"}`}>
+                <button key={c.name} onClick={() => { setActiveCat(c.name); toast(`Viewing ${c.name}`, "info"); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] font-medium transition-colors ${active ? "bg-action-blue/10 text-action-blue" : "text-[#64748B] hover:bg-[#F8FAFC]"}`}>
                   <Icon className="w-4 h-4" />{c.name}
                 </button>
               );
@@ -220,7 +273,7 @@ export default function OperationalReportsPage() {
               </tbody>
             </table>
           </div>
-          <div className="px-5 py-3 border-t border-[#E2E8F0] text-right"><a href="#" className="text-[13px] font-medium text-action-blue hover:underline">View full report →</a></div>
+          <div className="px-5 py-3 border-t border-[#E2E8F0] text-right"><button onClick={exportChannels} className="text-[13px] font-medium text-action-blue hover:underline">View full report →</button></div>
         </div>
 
         {/* Top Warehouses donut */}
@@ -281,7 +334,7 @@ export default function OperationalReportsPage() {
               </tbody>
             </table>
           </div>
-          <div className="px-5 py-3 border-t border-[#E2E8F0] text-right"><a href="#" className="text-[13px] font-medium text-action-blue hover:underline">View full report →</a></div>
+          <div className="px-5 py-3 border-t border-[#E2E8F0] text-right"><button onClick={() => { exportToCsv("warehouse-performance-summary", whSummary, [{ key: "name", header: "Warehouse" }, { key: "orders", header: "Orders" }, { key: "shipped", header: "Shipped" }, { key: "onTime", header: "On-Time Delivery" }, { key: "cycle", header: "Avg Cycle Time" }, { key: "perDay", header: "Orders / Day" }]); toast(`Exported ${whSummary.length} warehouses to CSV`); }} className="text-[13px] font-medium text-action-blue hover:underline">View full report →</button></div>
         </div>
 
         {/* right column */}
@@ -312,7 +365,7 @@ export default function OperationalReportsPage() {
                 <div key={i} className="flex gap-3"><span className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ backgroundColor: ins.dot }} /><p className="text-[13px] text-[#475569] leading-relaxed">{ins.text}</p></div>
               ))}
             </div>
-            <a href="#" className="inline-block mt-4 text-[13px] font-medium text-action-blue hover:underline">View all insights →</a>
+            <button onClick={() => toast("Opening full insights report", "info")} className="inline-block mt-4 text-[13px] font-medium text-action-blue hover:underline">View all insights →</button>
           </div>
         </div>
       </div>

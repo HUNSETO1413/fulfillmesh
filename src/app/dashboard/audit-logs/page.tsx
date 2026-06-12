@@ -1,10 +1,13 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import {
-  Activity, User, Settings as SettingsIcon, Shield, Search, ChevronDown,
+  Activity, User, Settings as SettingsIcon, Shield, Search,
   Download, ArrowUpRight, ArrowDownRight, AlertTriangle, Smartphone, Monitor, Tablet,
   ChevronLeft, ChevronRight, SlidersHorizontal, Calendar,
 } from "lucide-react";
+import { exportToCsv } from "@/lib/client";
+import { useToast } from "@/components/dashboard/Toast";
 
 /* ---------------- data ---------------- */
 
@@ -99,19 +102,60 @@ function Card({ children, className = "" }: { children: React.ReactNode; classNa
   return <div className={`bg-white rounded-xl border border-border-soft shadow-[0_1px_3px_rgba(0,0,0,0.05)] ${className}`}>{children}</div>;
 }
 
-function FilterButton({ label, icon: Icon }: { label: string; icon?: React.ElementType }) {
-  return (
-    <button className="inline-flex items-center gap-2 px-3 py-2 text-[13px] text-text-muted border border-border-soft rounded-lg bg-white hover:bg-soft-bg whitespace-nowrap">
-      {Icon && <Icon className="w-4 h-4 text-text-light" />}
-      {label} <ChevronDown className="w-3.5 h-3.5 text-[#9AA8B8]" />
-    </button>
-  );
-}
+const EV_TYPES: EvType[] = ["User Action", "System Event", "Security Event"];
 
 export default function AuditLogsPage() {
+  const { toast } = useToast();
   const total = eventSummary.reduce((a, b) => a + b.count, 0);
   const hourBars = [4, 7, 12, 9, 15, 22, 28, 31, 26, 19, 24, 30, 35, 29, 33, 27, 21, 18, 14, 11, 8, 6, 5, 3];
   const circumference = 2 * Math.PI * 40;
+
+  const [query, setQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [userFilter, setUserFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+
+  const userOptions = useMemo(() => Array.from(new Set(logs.map((l) => l.user))), []);
+
+  function parseLogDate(d: string): number {
+    return new Date(d).getTime();
+  }
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const from = fromDate ? new Date(fromDate).getTime() : null;
+    const to = toDate ? new Date(toDate).getTime() : null;
+    return logs.filter((l) => {
+      const matchesQuery = !q || l.user.toLowerCase().includes(q) || l.action.toLowerCase().includes(q) || l.resource.toLowerCase().includes(q) || l.details.toLowerCase().includes(q);
+      const matchesType = !typeFilter || l.type === typeFilter;
+      const matchesUser = !userFilter || l.user === userFilter;
+      const matchesStatus = !statusFilter || l.status === statusFilter;
+      const ts = parseLogDate(l.date);
+      const matchesFrom = from === null || ts >= from;
+      const matchesTo = to === null || ts <= to;
+      return matchesQuery && matchesType && matchesUser && matchesStatus && matchesFrom && matchesTo;
+    });
+  }, [query, typeFilter, userFilter, statusFilter, fromDate, toDate]);
+
+  function handleExport() {
+    exportToCsv("audit-logs", filtered, [
+      { key: "date", header: "Date" },
+      { key: "time", header: "Time" },
+      { key: "user", header: "User" },
+      { key: "role", header: "Role" },
+      { key: "type", header: "Event Type" },
+      { key: "action", header: "Action" },
+      { key: "resource", header: "Resource" },
+      { key: "details", header: "Details" },
+      { key: "ip", header: "IP Address" },
+      { key: "status", header: "Status" },
+    ]);
+    toast(`Exported ${filtered.length} event${filtered.length === 1 ? "" : "s"} to CSV`);
+  }
+
+  const selectCls = "inline-flex items-center gap-2 px-3 py-2 text-[13px] text-text-muted border border-border-soft rounded-lg bg-white hover:bg-soft-bg whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-action-blue/20";
 
   return (
     <div className="space-y-6">
@@ -130,10 +174,10 @@ export default function AuditLogsPage() {
           <p className="text-[14px] text-text-muted mt-0.5">Track user activities and system events for security and compliance.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-border-soft bg-white text-text-body text-[13px] font-medium hover:bg-soft-bg shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+          <button onClick={handleExport} className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-border-soft bg-white text-text-body text-[13px] font-medium hover:bg-soft-bg shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
             <Download className="w-4 h-4 text-text-light" /> Export Logs
           </button>
-          <button className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-action-blue text-white text-[13px] font-medium hover:bg-[#0047B3] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+          <button onClick={() => toast("Opening retention settings…", "info")} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-action-blue text-white text-[13px] font-medium hover:bg-[#0047B3] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
             <SettingsIcon className="w-4 h-4" /> Retention Settings
           </button>
         </div>
@@ -166,13 +210,30 @@ export default function AuditLogsPage() {
       <div className="bg-white rounded-xl border border-border-soft p-3 shadow-[0_1px_3px_rgba(0,0,0,0.05)] flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[240px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-light" />
-          <input placeholder="Search by user, action, resource, or details..." className="w-full pl-9 pr-4 py-2 border border-border-soft rounded-lg text-[13px] text-text-primary placeholder:text-text-light focus:outline-none focus:ring-2 focus:ring-action-blue/20" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by user, action, resource, or details..." className="w-full pl-9 pr-4 py-2 border border-border-soft rounded-lg text-[13px] text-text-primary placeholder:text-text-light focus:outline-none focus:ring-2 focus:ring-action-blue/20" />
         </div>
-        <FilterButton label="May 1 – May 31, 2026" icon={Calendar} />
-        <FilterButton label="All Event Types" />
-        <FilterButton label="All Users" />
-        <FilterButton label="All Statuses" />
-        <FilterButton label="Filters" icon={SlidersHorizontal} />
+        <div className="inline-flex items-center gap-1.5 px-3 py-2 border border-border-soft rounded-lg bg-white text-[13px] text-text-muted">
+          <Calendar className="w-4 h-4 text-text-light" />
+          <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="text-[13px] text-text-primary bg-transparent focus:outline-none" aria-label="From date" />
+          <span className="text-text-light">–</span>
+          <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="text-[13px] text-text-primary bg-transparent focus:outline-none" aria-label="To date" />
+        </div>
+        <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className={selectCls}>
+          <option value="">All Event Types</option>
+          {EV_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <select value={userFilter} onChange={(e) => setUserFilter(e.target.value)} className={selectCls}>
+          <option value="">All Users</option>
+          {userOptions.map((u) => <option key={u} value={u}>{u}</option>)}
+        </select>
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={selectCls}>
+          <option value="">All Statuses</option>
+          <option value="Success">Success</option>
+          <option value="Failed">Failed</option>
+        </select>
+        <button onClick={() => { setQuery(""); setTypeFilter(""); setUserFilter(""); setStatusFilter(""); setFromDate(""); setToDate(""); toast("Filters cleared", "info"); }} className="inline-flex items-center gap-2 px-3 py-2 text-[13px] text-text-muted border border-border-soft rounded-lg bg-white hover:bg-soft-bg whitespace-nowrap">
+          <SlidersHorizontal className="w-4 h-4 text-text-light" /> Clear
+        </button>
       </div>
 
       {/* Main: table + sidebar */}
@@ -189,7 +250,7 @@ export default function AuditLogsPage() {
                 </tr>
               </thead>
               <tbody>
-                {logs.map((l, i) => (
+                {filtered.map((l, i) => (
                   <tr key={i} className="border-b border-border-soft last:border-b-0 hover:bg-soft-bg/60 transition-colors">
                     <td className="px-5 py-3.5 whitespace-nowrap">
                       <div className="text-[13px] text-text-primary">{l.date}</div>
@@ -223,20 +284,21 @@ export default function AuditLogsPage() {
                     </td>
                   </tr>
                 ))}
+                {filtered.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="px-5 py-12 text-center text-[13px] text-text-muted">No events match your filters.</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
           {/* Pagination */}
           <div className="flex items-center justify-between px-5 py-4 border-t border-border-soft">
-            <p className="text-[13px] text-text-muted">Showing 1 to 15 of 24,856 events</p>
+            <p className="text-[13px] text-text-muted">Showing {filtered.length} of {logs.length} events</p>
             <div className="flex items-center gap-1.5">
-              <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-light hover:bg-soft-bg"><ChevronLeft className="w-4 h-4" /></button>
+              <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-light hover:bg-soft-bg" disabled><ChevronLeft className="w-4 h-4" /></button>
               <button className="w-8 h-8 flex items-center justify-center rounded-lg bg-action-blue text-white text-[13px] font-medium">1</button>
-              <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-muted text-[13px] hover:bg-soft-bg">2</button>
-              <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-muted text-[13px] hover:bg-soft-bg">3</button>
-              <span className="px-1 text-[13px] text-text-light">...</span>
-              <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-muted text-[13px] hover:bg-soft-bg">1658</button>
-              <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-light hover:bg-soft-bg"><ChevronRight className="w-4 h-4" /></button>
+              <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-light hover:bg-soft-bg" disabled><ChevronRight className="w-4 h-4" /></button>
             </div>
           </div>
         </Card>
@@ -283,7 +345,7 @@ export default function AuditLogsPage() {
           <Card className="p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-[14px] font-semibold text-text-primary">Event Types</h3>
-              <button className="text-[12px] font-medium text-action-blue hover:underline">View all</button>
+              <button onClick={() => toast("Opening full list…", "info")} className="text-[12px] font-medium text-action-blue hover:underline">View all</button>
             </div>
             <div className="space-y-3">
               {eventTypes.map((e) => (
@@ -314,14 +376,14 @@ export default function AuditLogsPage() {
                 </div>
               ))}
             </div>
-            <button className="mt-3 text-[12px] font-medium text-action-blue hover:underline">View all users</button>
+            <button onClick={() => toast("Opening all users…", "info")} className="mt-3 text-[12px] font-medium text-action-blue hover:underline">View all users</button>
           </Card>
 
           {/* Recent Security Events */}
           <Card className="p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-[14px] font-semibold text-text-primary">Recent Security Events</h3>
-              <button className="text-[12px] font-medium text-action-blue hover:underline">View all</button>
+              <button onClick={() => toast("Opening full list…", "info")} className="text-[12px] font-medium text-action-blue hover:underline">View all</button>
             </div>
             <div className="space-y-4">
               {securityEvents.map((e, i) => (

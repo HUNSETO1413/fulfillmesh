@@ -1,6 +1,10 @@
 "use client";
 
-import { Calendar, Filter, Download, ChevronDown, ChevronRight, Users, CheckSquare, Activity, Target, Zap, ArrowUpRight } from "lucide-react";
+import { useState } from "react";
+import { Filter, Download, ChevronDown, ChevronRight, Users, CheckSquare, Activity, Target, Zap, ArrowUpRight } from "lucide-react";
+import { DateRangeMenu } from "@/components/dashboard/DateRangeMenu";
+import { useToast } from "@/components/dashboard/Toast";
+import { exportToCsv } from "@/lib/client";
 
 const stats = [
   { title: "Total Active Users", value: "128", change: "+12.5%", note: "vs Apr 30", icon: Users, iconBg: "bg-[#3B82F6]/10", iconColor: "text-[#3B82F6]", sparkColor: "#3B82F6" },
@@ -68,6 +72,39 @@ function Sparkline({ color }: { color: string }) {
 }
 
 export default function ProductivityPage() {
+  const { toast } = useToast();
+  const [range, setRange] = useState("May 1 – May 31, 2025");
+  const [gran, setGran] = useState("Daily");
+
+  function cycleGran() {
+    const opts = ["Daily", "Weekly", "Monthly"];
+    const next = opts[(opts.indexOf(gran) + 1) % opts.length];
+    setGran(next);
+    toast(`Tasks completed grouped by ${next.toLowerCase()}`, "info");
+  }
+
+  function exportActivities() {
+    exportToCsv("productivity-by-activity", byActivity, [
+      { key: "name", header: "Activity" },
+      { key: "tasks", header: "Tasks Completed" },
+      { key: "pct", header: "% of Total" },
+      { key: "time", header: "Avg Time / Task" },
+      { key: "acc", header: "Accuracy Rate" },
+    ]);
+    toast(`Exported ${byActivity.length} activities to CSV`);
+  }
+
+  function exportWarehouses() {
+    exportToCsv("productivity-by-warehouse", byWarehouse, [
+      { key: "name", header: "Warehouse" },
+      { key: "tasks", header: "Tasks Completed" },
+      { key: "perUser", header: "Tasks / User / Day" },
+      { key: "acc", header: "Accuracy Rate" },
+      { key: "eff", header: "Labor Efficiency" },
+    ]);
+    toast(`Exported ${byWarehouse.length} warehouses to CSV`);
+  }
+
   // multi-line chart geometry
   const W = 760, H = 220, padL = 30, padB = 24, padT = 10;
   const max = 95;
@@ -88,16 +125,16 @@ export default function ProductivityPage() {
           <p className="text-[14px] text-[#64748B] mt-0.5">Track team performance and operational productivity in real time.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="inline-flex items-center gap-2 bg-white border border-[#E2E8F0] rounded-lg px-3.5 py-2 text-[13px] font-medium text-[#1E293B] shadow-[0_1px_2px_rgba(0,0,0,0.05)] shrink-0 hover:bg-[#F8FAFC] transition-colors">
-            <Calendar className="w-4 h-4 text-[#64748B]" />
-            May 1 – May 31, 2025
-            <ChevronDown className="w-4 h-4 text-[#94A3B8]" />
-          </button>
-          <button className="inline-flex items-center gap-2 bg-white border border-[#E2E8F0] rounded-lg px-3.5 py-2 text-[13px] font-medium text-[#1E293B] shadow-[0_1px_2px_rgba(0,0,0,0.05)] shrink-0 hover:bg-[#F8FAFC] transition-colors">
+          <DateRangeMenu
+            value={range}
+            onSelect={(r) => { setRange(r); toast(`Productivity scoped to ${r}`, "info"); }}
+            presets={["May 1 – May 31, 2025", "Last 7 days", "Last 30 days", "This quarter", "Year to date"]}
+          />
+          <button onClick={() => toast("Filter panel opened", "info")} className="inline-flex items-center gap-2 bg-white border border-[#E2E8F0] rounded-lg px-3.5 py-2 text-[13px] font-medium text-[#1E293B] shadow-[0_1px_2px_rgba(0,0,0,0.05)] shrink-0 hover:bg-[#F8FAFC] transition-colors">
             <Filter className="w-4 h-4 text-[#64748B]" />
             Filters
           </button>
-          <button className="inline-flex items-center gap-2 bg-[#1E293B] text-white rounded-lg px-4 py-2 text-[13px] font-medium hover:bg-[#334155] shadow-[0_1px_2px_rgba(0,0,0,0.05)] shrink-0 transition-colors">
+          <button onClick={exportActivities} className="inline-flex items-center gap-2 bg-[#1E293B] text-white rounded-lg px-4 py-2 text-[13px] font-medium hover:bg-[#334155] shadow-[0_1px_2px_rgba(0,0,0,0.05)] shrink-0 transition-colors">
             <Download className="w-4 h-4" />
             Export
           </button>
@@ -138,8 +175,8 @@ export default function ProductivityPage() {
         <div className="bg-white rounded-xl border border-[#E2E8F0] p-5 shadow-[0_1px_3px_0_rgba(0,0,0,0.1),0_1px_2px_0_rgba(0,0,0,0.06)]">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-[16px] font-semibold text-[#1E293B]">Tasks Completed Over Time</h3>
-            <button className="inline-flex items-center gap-1.5 text-[12px] text-[#64748B] border border-[#E2E8F0] px-2.5 py-1 rounded-lg">
-              Daily <ChevronDown className="w-3.5 h-3.5 text-[#94A3B8]" />
+            <button onClick={cycleGran} className="inline-flex items-center gap-1.5 text-[12px] text-[#64748B] border border-[#E2E8F0] px-2.5 py-1 rounded-lg hover:bg-[#F8FAFC]">
+              {gran} <ChevronDown className="w-3.5 h-3.5 text-[#94A3B8]" />
             </button>
           </div>
           <div className="flex items-center gap-4 mb-4">
@@ -246,7 +283,7 @@ export default function ProductivityPage() {
             </table>
           </div>
           <div className="px-5 py-3 border-t border-[#E2E8F0]">
-            <a href="#" className="text-[13px] font-medium text-[#3B82F6] hover:underline">View all activities</a>
+            <button onClick={exportActivities} className="text-[13px] font-medium text-[#3B82F6] hover:underline">View all activities</button>
           </div>
         </div>
 
@@ -274,7 +311,7 @@ export default function ProductivityPage() {
           <div className="bg-white rounded-xl border border-[#E2E8F0] p-5 shadow-[0_1px_3px_0_rgba(0,0,0,0.1),0_1px_2px_0_rgba(0,0,0,0.06)]">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-[16px] font-semibold text-[#1E293B]">Top Performers</h3>
-              <a href="#" className="text-[13px] font-medium text-[#3B82F6] hover:underline">View all</a>
+              <button onClick={() => toast("Showing all top performers", "info")} className="text-[13px] font-medium text-[#3B82F6] hover:underline">View all</button>
             </div>
             <div className="space-y-3">
               {performers.map((p) => (
@@ -328,7 +365,7 @@ export default function ProductivityPage() {
             </table>
           </div>
           <div className="px-5 py-3 border-t border-[#E2E8F0]">
-            <a href="#" className="text-[13px] font-medium text-[#3B82F6] hover:underline">View all warehouses</a>
+            <button onClick={exportWarehouses} className="text-[13px] font-medium text-[#3B82F6] hover:underline">View all warehouses</button>
           </div>
         </div>
 
@@ -349,7 +386,7 @@ export default function ProductivityPage() {
               </div>
             ))}
           </div>
-          <a href="#" className="inline-block mt-4 text-[13px] font-medium text-[#3B82F6] hover:underline">View all insights →</a>
+          <button onClick={() => toast("Opening full insights report", "info")} className="inline-block mt-4 text-[13px] font-medium text-[#3B82F6] hover:underline">View all insights →</button>
         </div>
       </div>
 
@@ -364,8 +401,8 @@ export default function ProductivityPage() {
             <p className="text-[13px] text-white/70 mt-0.5">Use data-driven insights to recognize top performers and continuously improve operations.</p>
           </div>
         </div>
-        <button className="inline-flex items-center gap-2 gradient-cta text-white rounded-lg px-4 py-2 text-[13px] font-medium hover:brightness-110 shrink-0 shadow-[0_1px_2px_rgba(0,0,0,0.1)] transition-all">
-          <Calendar className="w-4 h-4" />
+        <button onClick={() => toast("Productivity report scheduled weekly", "success")} className="inline-flex items-center gap-2 gradient-cta text-white rounded-lg px-4 py-2 text-[13px] font-medium hover:brightness-110 shrink-0 shadow-[0_1px_2px_rgba(0,0,0,0.1)] transition-all">
+          <Activity className="w-4 h-4" />
           Schedule Report
         </button>
       </div>

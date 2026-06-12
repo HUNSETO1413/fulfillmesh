@@ -1,7 +1,10 @@
 "use client";
 
 import type { ReactElement } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, RefreshCw, XCircle, MoreHorizontal, HelpCircle } from "lucide-react";
+import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
+import { useToast } from "@/components/dashboard/Toast";
 
 type Status = "Connected" | "Syncing" | "Available" | "Disconnected";
 
@@ -70,14 +73,16 @@ const ZapierLogo = () => (
   </svg>
 );
 
-const integrations: {
+type Integration = {
   name: string;
   desc: string;
   Logo: () => ReactElement;
   status: Status;
   lastSync: string;
   action: "Manage" | "Connect";
-}[] = [
+};
+
+const initialIntegrations: Integration[] = [
   { name: "Shopify", desc: "Sync orders, products, and inventory from your Shopify store.", Logo: ShopifyLogo, status: "Connected", lastSync: "May 18, 2025 9:41 AM", action: "Manage" },
   { name: "WooCommerce", desc: "Sync orders from your WooCommerce store.", Logo: WooLogo, status: "Connected", lastSync: "May 18, 2025 8:15 AM", action: "Manage" },
   { name: "Amazon", desc: "Sync orders and fulfillments from your Amazon account.", Logo: AmazonLogo, status: "Syncing", lastSync: "May 18, 2025 9:37 AM", action: "Manage" },
@@ -103,7 +108,62 @@ function StatusBadge({ status }: { status: Status }) {
   );
 }
 
+function nowStamp() {
+  return new Date().toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export default function IntegrationsPage() {
+  const { toast } = useToast();
+  const [integrations, setIntegrations] = useState<Integration[]>(initialIntegrations);
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [disconnecting, setDisconnecting] = useState<Integration | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuFor) return;
+    const onDoc = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuFor(null);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [menuFor]);
+
+  const connect = (name: string) => {
+    setIntegrations((list) =>
+      list.map((it) =>
+        it.name === name ? { ...it, status: "Connected", action: "Manage", lastSync: nowStamp() } : it,
+      ),
+    );
+    toast(`${name} connected`);
+  };
+
+  const sync = (name: string) => {
+    setIntegrations((list) =>
+      list.map((it) => (it.name === name ? { ...it, lastSync: nowStamp() } : it)),
+    );
+    setMenuFor(null);
+    toast(`${name} sync started`, "info");
+  };
+
+  const handleDisconnect = () => {
+    if (!disconnecting) return;
+    setIntegrations((list) =>
+      list.map((it) =>
+        it.name === disconnecting.name
+          ? { ...it, status: "Disconnected", action: "Connect", lastSync: "—" }
+          : it,
+      ),
+    );
+    toast(`${disconnecting.name} disconnected`);
+    setDisconnecting(null);
+  };
+
   return (
     <div>
       <h2 className="text-[20px] font-semibold text-text-primary">Integrations</h2>
@@ -139,17 +199,60 @@ export default function IntegrationsPage() {
                 <td className="px-5 py-4">
                   <div className="flex items-center justify-end gap-2">
                     {it.action === "Manage" ? (
-                      <button className="px-3.5 py-1.5 text-[13px] font-medium text-action-blue border border-border-soft rounded-lg hover:bg-soft-bg transition-colors">
+                      <button
+                        onClick={() => toast(`Opening ${it.name} settings…`, "info")}
+                        className="px-3.5 py-1.5 text-[13px] font-medium text-action-blue border border-border-soft rounded-lg hover:bg-soft-bg transition-colors"
+                      >
                         Manage
                       </button>
                     ) : (
-                      <button className="px-3.5 py-1.5 text-[13px] font-medium text-white bg-action-blue rounded-lg hover:bg-action-blue/90 transition-colors">
+                      <button
+                        onClick={() => connect(it.name)}
+                        className="px-3.5 py-1.5 text-[13px] font-medium text-white bg-action-blue rounded-lg hover:bg-action-blue/90 transition-colors"
+                      >
                         Connect
                       </button>
                     )}
-                    <button className="text-text-light hover:text-text-muted transition-colors p-0.5">
-                      <MoreHorizontal className="w-4 h-4" />
-                    </button>
+                    <div className="relative" ref={menuFor === it.name ? menuRef : undefined}>
+                      <button
+                        onClick={() => setMenuFor(menuFor === it.name ? null : it.name)}
+                        className="text-text-light hover:text-text-muted transition-colors p-0.5"
+                        aria-label="More actions"
+                      >
+                        <MoreHorizontal className="w-4 h-4" />
+                      </button>
+                      {menuFor === it.name && (
+                        <div className="absolute right-0 top-7 z-20 w-44 bg-white border border-[#E2E8F0] rounded-lg shadow-lg py-1 text-left">
+                          <button
+                            onClick={() => sync(it.name)}
+                            className="block w-full text-left px-3 py-2 text-[13px] text-[#374151] hover:bg-[#F8FAFC]"
+                          >
+                            Sync now
+                          </button>
+                          {it.action === "Manage" ? (
+                            <button
+                              onClick={() => {
+                                setMenuFor(null);
+                                setDisconnecting(it);
+                              }}
+                              className="block w-full text-left px-3 py-2 text-[13px] text-[#EF4444] hover:bg-[#FEF2F2]"
+                            >
+                              Disconnect
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setMenuFor(null);
+                                connect(it.name);
+                              }}
+                              className="block w-full text-left px-3 py-2 text-[13px] text-[#374151] hover:bg-[#F8FAFC]"
+                            >
+                              Connect
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </td>
               </tr>
@@ -162,8 +265,24 @@ export default function IntegrationsPage() {
       <div className="flex items-center gap-1.5 mt-5 text-[13px] text-text-body">
         <HelpCircle className="w-4 h-4 text-text-light shrink-0" />
         Don&apos;t see the integration you need?{" "}
-        <a href="#" className="text-action-blue hover:underline">Contact our support team.</a>
+        <button
+          onClick={() => toast("Support request started — we'll be in touch.", "info")}
+          className="text-action-blue hover:underline"
+        >
+          Contact our support team.
+        </button>
       </div>
+
+      {/* Disconnect Confirm */}
+      <ConfirmDialog
+        open={disconnecting !== null}
+        onClose={() => setDisconnecting(null)}
+        onConfirm={handleDisconnect}
+        title="Disconnect integration"
+        message={`Disconnect ${disconnecting?.name ?? ""}? Data syncing will stop until you reconnect.`}
+        confirmLabel="Disconnect"
+        destructive
+      />
     </div>
   );
 }

@@ -1,9 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import {
   Package, PieChart, ArrowDownToLine, ShoppingCart, RotateCcw,
-  ArrowUpRight, MapPin,
+  ArrowUpRight, MapPin, ChevronDown,
 } from "lucide-react";
+import { useToast } from "@/components/dashboard/Toast";
 
 const stats = [
   { title: "Total Inventory", value: "152,842", sub: "SKUs", change: "+8.6%", note: "vs last 7 days", positive: true, icon: Package, iconBg: "bg-action-blue/10", iconColor: "text-action-blue" },
@@ -62,7 +64,12 @@ function Badge({ text }: { text: string }) {
 const card = "bg-white rounded-xl border border-border-soft shadow-soft";
 const thCls = "text-left text-[11px] font-semibold text-text-light uppercase tracking-[0.05em] px-5 py-3";
 
+const WAREHOUSE_OPTIONS = ["All Warehouses", "WH1 - Los Angeles", "WH2 - Dallas", "WH3 - New Jersey", "WH4 - Chicago"];
+
 export default function WarehouseOperationsPage() {
+  const { toast } = useToast();
+  const [whScope, setWhScope] = useState("All Warehouses");
+  const [whOpen, setWhOpen] = useState(false);
   return (
     <div className="space-y-6">
       {/* Header Banner */}
@@ -146,7 +153,7 @@ export default function WarehouseOperationsPage() {
                 </div>
               )}
               {s.link && (
-                <button className="text-[12px] text-action-blue hover:underline mt-2 font-medium">{s.link}</button>
+                <button onClick={() => toast(`Opening ${s.title.toLowerCase()} details`, "info")} className="text-[12px] text-action-blue hover:underline mt-2 font-medium">{s.link}</button>
               )}
             </div>
           );
@@ -159,7 +166,19 @@ export default function WarehouseOperationsPage() {
         <div className={card + " overflow-hidden"}>
           <div className="flex items-center justify-between px-5 py-4 border-b border-border-soft">
             <h3 className="text-[14px] font-semibold text-text-primary">Inventory by Warehouse</h3>
-            <span className="text-[11px] font-medium text-text-muted bg-soft-bg px-2.5 py-1 rounded-md">All Warehouses</span>
+            <div className="relative">
+              <button onClick={() => setWhOpen((v) => !v)} className="flex items-center gap-1.5 text-[11px] font-medium text-text-muted bg-soft-bg px-2.5 py-1 rounded-md hover:bg-border-blue">{whScope} <ChevronDown className="w-3 h-3" /></button>
+              {whOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setWhOpen(false)} />
+                  <div className="absolute right-0 mt-1 z-20 w-48 bg-white rounded-lg border border-border-soft shadow-lg py-1">
+                    {WAREHOUSE_OPTIONS.map((o) => (
+                      <button key={o} onClick={() => { setWhScope(o); setWhOpen(false); toast(`Scoped to ${o}`, "info"); }} className={`w-full text-left px-3 py-1.5 text-[13px] hover:bg-soft-bg ${whScope === o ? "text-action-blue font-medium" : "text-text-primary"}`}>{o}</button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -186,7 +205,7 @@ export default function WarehouseOperationsPage() {
             </table>
           </div>
           <div className="px-5 py-3.5 border-t border-border-soft text-center">
-            <button className="text-[12px] font-medium text-action-blue border border-border-soft rounded-lg px-3 py-1.5 hover:bg-soft-bg transition-colors">View all warehouses</button>
+            <button onClick={() => toast("Showing all warehouses", "info")} className="text-[12px] font-medium text-action-blue border border-border-soft rounded-lg px-3 py-1.5 hover:bg-soft-bg transition-colors">View all warehouses</button>
           </div>
         </div>
 
@@ -339,7 +358,7 @@ export default function WarehouseOperationsPage() {
         <div className={card + " p-5"}>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-[14px] font-semibold text-text-primary">Warehouse Activity</h3>
-            <button className="text-[12px] font-medium text-action-blue hover:underline">View full activity</button>
+            <button onClick={() => toast("Showing full activity log", "info")} className="text-[12px] font-medium text-action-blue hover:underline">View full activity</button>
           </div>
           <div className="space-y-3">
             {activity.map((a, i) => (
@@ -355,7 +374,7 @@ export default function WarehouseOperationsPage() {
         <div className={card + " p-5"}>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-[14px] font-semibold text-text-primary">Warehouse Map</h3>
-            <button className="text-[12px] font-medium text-action-blue hover:underline">View all</button>
+            <button onClick={() => toast("Opening warehouse map", "info")} className="text-[12px] font-medium text-action-blue hover:underline">View all</button>
           </div>
           <div className="relative bg-soft-bg rounded-lg h-[200px] border border-border-soft overflow-hidden">
             <svg viewBox="0 0 200 110" className="w-full h-full opacity-40" preserveAspectRatio="xMidYMid meet">

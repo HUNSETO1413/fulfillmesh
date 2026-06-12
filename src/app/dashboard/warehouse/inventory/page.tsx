@@ -1,10 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Package, Tag, DollarSign, AlertTriangle,
-  Search, Filter, Download, ChevronDown, MoreHorizontal, ArrowUpRight, ArrowDownRight,
+  Search, Download, ChevronDown, MoreHorizontal, ArrowUpRight, ArrowDownRight, Eye, SlidersHorizontal,
 } from "lucide-react";
+import { Modal } from "@/components/dashboard/Modal";
+import { Field, NumberInput } from "@/components/dashboard/FormControls";
+import { useToast } from "@/components/dashboard/Toast";
+import { exportToCsv } from "@/lib/client";
 
 const stats = [
   { title: "Total Units", value: "1,248,924", sub: "Units", change: "+12.5%", note: "vs last 30 days", positive: true, icon: Package, iconBg: "bg-[#3B82F6]/10", iconColor: "text-[#3B82F6]" },
@@ -15,18 +19,28 @@ const stats = [
 
 const tabs = ["All Inventory", "Low Stock", "Out of Stock", "Expiring Soon"];
 
-const rows = [
-  { product: "Wireless Headphones", category: "Electronics", sku: "ELEC-1001", wh: "ATL-1", onHand: "2,450", reserved: "320", available: "2,130", status: "In Stock" },
-  { product: "Stainless Steel Bottle", category: "Home & Kitchen", sku: "HK-2002", wh: "LAX-1", onHand: "5,120", reserved: "200", available: "4,920", status: "In Stock" },
-  { product: "Cotton T-Shirt", category: "Apparel", sku: "APP-3003-M", wh: "ORD-1", onHand: "1,250", reserved: "640", available: "610", status: "In Stock" },
-  { product: "Running Shoes", category: "Sports", sku: "FTW-4004-9", wh: "DFW-1", onHand: "320", reserved: "85", available: "235", status: "Low Stock" },
-  { product: "Whey Protein 1kg", category: "Health & Beauty", sku: "HB-5005", wh: "MIA-1", onHand: "0", reserved: "0", available: "0", status: "Out of Stock" },
-  { product: "Travel Backpack", category: "Bags & Luggage", sku: "BAG-6006", wh: "ATL-1", onHand: "880", reserved: "120", available: "760", status: "In Stock" },
-  { product: "Bluetooth Speaker", category: "Electronics", sku: "ELEC-1007", wh: "LAX-1", onHand: "1,640", reserved: "210", available: "1,430", status: "In Stock" },
-  { product: "Yoga Mat Premium", category: "Sports", sku: "SPT-4008", wh: "ORD-1", onHand: "410", reserved: "60", available: "350", status: "Low Stock" },
-  { product: "Ceramic Dinner Set", category: "Home & Kitchen", sku: "HK-2009", wh: "DFW-1", onHand: "2,200", reserved: "180", available: "2,020", status: "In Stock" },
-  { product: "Vitamin C Tablets", category: "Health & Beauty", sku: "HB-5010", wh: "MIA-1", onHand: "95", reserved: "40", available: "55", status: "Low Stock" },
+type Status = "In Stock" | "Low Stock" | "Out of Stock";
+type Row = {
+  product: string; category: string; sku: string; wh: string;
+  onHand: number; reserved: number; status: Status; expiring?: boolean;
+};
+
+const initialRows: Row[] = [
+  { product: "Wireless Headphones", category: "Electronics", sku: "ELEC-1001", wh: "ATL-1", onHand: 2450, reserved: 320, status: "In Stock" },
+  { product: "Stainless Steel Bottle", category: "Home & Kitchen", sku: "HK-2002", wh: "LAX-1", onHand: 5120, reserved: 200, status: "In Stock" },
+  { product: "Cotton T-Shirt", category: "Apparel", sku: "APP-3003-M", wh: "ORD-1", onHand: 1250, reserved: 640, status: "In Stock" },
+  { product: "Running Shoes", category: "Sports", sku: "FTW-4004-9", wh: "DFW-1", onHand: 320, reserved: 85, status: "Low Stock" },
+  { product: "Whey Protein 1kg", category: "Health & Beauty", sku: "HB-5005", wh: "MIA-1", onHand: 0, reserved: 0, status: "Out of Stock", expiring: true },
+  { product: "Travel Backpack", category: "Bags & Luggage", sku: "BAG-6006", wh: "ATL-1", onHand: 880, reserved: 120, status: "In Stock" },
+  { product: "Bluetooth Speaker", category: "Electronics", sku: "ELEC-1007", wh: "LAX-1", onHand: 1640, reserved: 210, status: "In Stock" },
+  { product: "Yoga Mat Premium", category: "Sports", sku: "SPT-4008", wh: "ORD-1", onHand: 410, reserved: 60, status: "Low Stock" },
+  { product: "Ceramic Dinner Set", category: "Home & Kitchen", sku: "HK-2009", wh: "DFW-1", onHand: 2200, reserved: 180, status: "In Stock" },
+  { product: "Vitamin C Tablets", category: "Health & Beauty", sku: "HB-5010", wh: "MIA-1", onHand: 95, reserved: 40, status: "Low Stock", expiring: true },
 ];
+
+const CATEGORIES = ["Electronics", "Home & Kitchen", "Apparel", "Sports", "Health & Beauty", "Bags & Luggage"];
+const WAREHOUSES = ["ATL-1", "LAX-1", "ORD-1", "DFW-1", "MIA-1"];
+const STATUSES: Status[] = ["In Stock", "Low Stock", "Out of Stock"];
 
 const categories = [
   { name: "Electronics", pct: 24, color: "#3B82F6" },
@@ -59,9 +73,103 @@ function StatusBadge({ status }: { status: string }) {
 
 const card = "bg-white rounded-xl border border-[#E2E8F0] shadow-[0_1px_3px_rgba(0,0,0,0.08)]";
 const thCls = "text-left text-[12px] font-medium text-[#64748B] uppercase tracking-wider px-5 py-3";
+const dropBtn = "flex items-center gap-2 text-[13px] text-[#64748B] bg-white border border-[#E2E8F0] rounded-lg px-3 py-2 hover:bg-[#F8FAFC]";
+
+function Dropdown({ label, value, options, onSelect }: { label: string; value: string; options: string[]; onSelect: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen((v) => !v)} className={`${dropBtn} ${value ? "text-[#3B82F6] border-[#3B82F6]" : ""}`}>
+        {value || label} <ChevronDown className="w-4 h-4" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 mt-1 z-20 w-52 bg-white rounded-lg border border-[#E2E8F0] shadow-lg py-1 max-h-64 overflow-auto">
+            <button onClick={() => { onSelect(""); setOpen(false); }} className={`w-full text-left px-3 py-1.5 text-[13px] hover:bg-[#F8FAFC] ${!value ? "text-[#3B82F6] font-medium" : "text-[#1E293B]"}`}>{label}</button>
+            {options.map((o) => (
+              <button key={o} onClick={() => { onSelect(o); setOpen(false); }} className={`w-full text-left px-3 py-1.5 text-[13px] hover:bg-[#F8FAFC] ${value === o ? "text-[#3B82F6] font-medium" : "text-[#1E293B]"}`}>{o}</button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function deriveStatus(onHand: number): Status {
+  if (onHand <= 0) return "Out of Stock";
+  if (onHand < 500) return "Low Stock";
+  return "In Stock";
+}
 
 export default function WarehouseInventoryPage() {
-  const [activeTab, setActiveTab] = useState("All Inventory");
+  const { toast } = useToast();
+  const [rows, setRows] = useState<Row[]>(initialRows);
+  const [activeTab, setActiveTabState] = useState("All Inventory");
+  const [query, setQueryState] = useState("");
+  const [whFilter, setWhFilterState] = useState("");
+  const [catFilter, setCatFilterState] = useState("");
+  const [statusFilter, setStatusFilterState] = useState("");
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+
+  const setActiveTab = (v: string) => { setActiveTabState(v); setPage(1); };
+  const setQuery = (v: string) => { setQueryState(v); setPage(1); };
+  const setWhFilter = (v: string) => { setWhFilterState(v); setPage(1); };
+  const setCatFilter = (v: string) => { setCatFilterState(v); setPage(1); };
+  const setStatusFilter = (v: string) => { setStatusFilterState(v); setPage(1); };
+
+  const [adjusting, setAdjusting] = useState<Row | null>(null);
+  const [adjustQty, setAdjustQty] = useState("");
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return rows.filter((r) => {
+      let tab = true;
+      if (activeTab === "Low Stock") tab = r.status === "Low Stock";
+      else if (activeTab === "Out of Stock") tab = r.status === "Out of Stock";
+      else if (activeTab === "Expiring Soon") tab = !!r.expiring;
+      const wh = !whFilter || r.wh === whFilter;
+      const cat = !catFilter || r.category === catFilter;
+      const st = !statusFilter || r.status === statusFilter;
+      const search = !q || r.sku.toLowerCase().includes(q) || r.product.toLowerCase().includes(q) || r.category.toLowerCase().includes(q);
+      return tab && wh && cat && st && search;
+    });
+  }, [rows, activeTab, whFilter, catFilter, statusFilter, query]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const start = (currentPage - 1) * pageSize;
+  const pageRows = filtered.slice(start, start + pageSize);
+
+  function handleExport() {
+    const exportRows = filtered.map((r) => ({
+      ...r, available: r.onHand - r.reserved,
+    }));
+    exportToCsv("warehouse-inventory", exportRows, [
+      { key: "product", header: "Product" }, { key: "category", header: "Category" }, { key: "sku", header: "SKU" },
+      { key: "wh", header: "Warehouse" }, { key: "onHand", header: "On Hand" }, { key: "reserved", header: "Reserved" },
+      { key: "available", header: "Available" }, { key: "status", header: "Status" },
+    ]);
+    toast(`Exported ${filtered.length} inventory items to CSV`);
+  }
+
+  function openAdjust(r: Row) {
+    setAdjusting(r);
+    setAdjustQty(String(r.onHand));
+    setMenuFor(null);
+  }
+
+  function saveAdjust() {
+    if (!adjusting) return;
+    const qty = Number(adjustQty);
+    if (Number.isNaN(qty) || qty < 0) { toast("Enter a valid quantity", "error"); return; }
+    setRows((prev) => prev.map((r) => (r.sku === adjusting.sku ? { ...r, onHand: qty, status: deriveStatus(qty) } : r)));
+    toast(`${adjusting.sku} on-hand set to ${qty.toLocaleString("en-US")}`);
+    setAdjusting(null);
+  }
 
   return (
     <div className="space-y-6">
@@ -72,9 +180,9 @@ export default function WarehouseInventoryPage() {
           <p className="text-[14px] text-[#64748B] mt-1">View and manage all inventory across your warehouses.</p>
         </div>
         <div className="flex items-center gap-2">
-          <button className="flex items-center gap-2 text-[13px] text-[#64748B] bg-white border border-[#E2E8F0] rounded-lg px-3 py-2 hover:bg-[#F8FAFC]">All Warehouses (5) <ChevronDown className="w-4 h-4" /></button>
-          <button className="flex items-center gap-2 text-[13px] text-[#64748B] bg-white border border-[#E2E8F0] rounded-lg px-3 py-2 hover:bg-[#F8FAFC]"><Filter className="w-4 h-4" /> Filters</button>
-          <button className="flex items-center gap-2 text-[13px] text-white bg-[#3B82F6] rounded-lg px-4 py-2 hover:bg-[#2563EB]"><Download className="w-4 h-4" /> Export</button>
+          <Dropdown label="All Warehouses (5)" value={whFilter} options={WAREHOUSES} onSelect={setWhFilter} />
+          <Dropdown label="Filters" value={statusFilter} options={STATUSES} onSelect={setStatusFilter} />
+          <button onClick={handleExport} className="flex items-center gap-2 text-[13px] text-white bg-[#3B82F6] rounded-lg px-4 py-2 hover:bg-[#2563EB]"><Download className="w-4 h-4" /> Export</button>
         </div>
       </div>
 
@@ -126,10 +234,10 @@ export default function WarehouseInventoryPage() {
           <div className="flex items-center gap-3 px-5 py-4 border-b border-[#E2E8F0]">
             <div className="relative flex-1">
               <Search className="w-4 h-4 text-[#94A3B8] absolute left-3 top-1/2 -translate-y-1/2" />
-              <input placeholder="Search by SKU, product name or barcode..." className="w-full text-[13px] text-[#1E293B] placeholder:text-[#94A3B8] bg-white border border-[#E2E8F0] rounded-lg pl-9 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/30" />
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by SKU, product name or barcode..." className="w-full text-[13px] text-[#1E293B] placeholder:text-[#94A3B8] bg-white border border-[#E2E8F0] rounded-lg pl-9 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/30" />
             </div>
-            <button className="flex items-center gap-2 text-[13px] text-[#64748B] bg-white border border-[#E2E8F0] rounded-lg px-3 py-2 hover:bg-[#F8FAFC]">All Categories <ChevronDown className="w-4 h-4" /></button>
-            <button className="flex items-center gap-2 text-[13px] text-[#64748B] bg-white border border-[#E2E8F0] rounded-lg px-3 py-2 hover:bg-[#F8FAFC]">All Status <ChevronDown className="w-4 h-4" /></button>
+            <Dropdown label="All Categories" value={catFilter} options={CATEGORIES} onSelect={setCatFilter} />
+            <Dropdown label="All Status" value={statusFilter} options={STATUSES} onSelect={setStatusFilter} />
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -146,7 +254,7 @@ export default function WarehouseInventoryPage() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
+                {pageRows.map((r) => (
                   <tr key={r.sku} className="border-b border-[#E2E8F0] last:border-b-0 hover:bg-[#F8FAFC]/50 transition-colors">
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-3">
@@ -161,25 +269,39 @@ export default function WarehouseInventoryPage() {
                     </td>
                     <td className="px-5 py-3 text-[13px] text-[#64748B] font-mono">{r.sku}</td>
                     <td className="px-5 py-3 text-[13px] text-[#64748B]">{r.wh}</td>
-                    <td className="px-5 py-3 text-[13px] font-medium text-[#1E293B]">{r.onHand}</td>
-                    <td className="px-5 py-3 text-[13px] text-[#64748B]">{r.reserved}</td>
-                    <td className="px-5 py-3 text-[13px] font-medium text-[#1E293B]">{r.available}</td>
+                    <td className="px-5 py-3 text-[13px] font-medium text-[#1E293B]">{r.onHand.toLocaleString("en-US")}</td>
+                    <td className="px-5 py-3 text-[13px] text-[#64748B]">{r.reserved.toLocaleString("en-US")}</td>
+                    <td className="px-5 py-3 text-[13px] font-medium text-[#1E293B]">{Math.max(0, r.onHand - r.reserved).toLocaleString("en-US")}</td>
                     <td className="px-5 py-3"><StatusBadge status={r.status} /></td>
                     <td className="px-5 py-3 text-right">
-                      <button className="text-[#94A3B8] hover:text-[#64748B]">
-                        <MoreHorizontal className="w-4 h-4 inline" />
-                      </button>
+                      <div className="relative inline-block">
+                        <button onClick={() => setMenuFor((v) => (v === r.sku ? null : r.sku))} className="text-[#94A3B8] hover:text-[#64748B]">
+                          <MoreHorizontal className="w-4 h-4 inline" />
+                        </button>
+                        {menuFor === r.sku && (
+                          <>
+                            <div className="fixed inset-0 z-10" onClick={() => setMenuFor(null)} />
+                            <div className="absolute right-0 mt-1 z-20 w-40 bg-white rounded-lg border border-[#E2E8F0] shadow-lg py-1 text-left">
+                              <button onClick={() => { setMenuFor(null); toast(`Viewing ${r.sku}`, "info"); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-[13px] text-[#1E293B] hover:bg-[#F8FAFC]"><Eye className="w-3.5 h-3.5" /> View details</button>
+                              <button onClick={() => openAdjust(r)} className="w-full flex items-center gap-2 px-3 py-1.5 text-[13px] text-[#3B82F6] hover:bg-[#F8FAFC]"><SlidersHorizontal className="w-3.5 h-3.5" /> Adjust stock</button>
+                            </div>
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
+                {pageRows.length === 0 && (
+                  <tr><td colSpan={8} className="px-5 py-12 text-center text-[13px] text-[#64748B]">No inventory items match your filters.</td></tr>
+                )}
               </tbody>
             </table>
           </div>
           <div className="flex items-center justify-between px-5 py-3.5 border-t border-[#E2E8F0]">
-            <span className="text-[13px] text-[#64748B]">Showing 1-10 of 8,742 items</span>
+            <span className="text-[13px] text-[#64748B]">{filtered.length === 0 ? "Showing 0 items" : `Showing ${start + 1}-${Math.min(start + pageSize, filtered.length)} of ${filtered.length} items`}</span>
             <div className="flex items-center gap-1">
-              {["1", "2", "3", "...", "1457"].map((p, i) => (
-                <button key={i} className={`min-w-8 h-8 px-2 flex items-center justify-center rounded-lg text-[13px] ${p === "1" ? "bg-[#3B82F6] text-white" : "border border-[#E2E8F0] text-[#64748B] hover:bg-[#F8FAFC]"}`}>{p}</button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                <button key={p} onClick={() => setPage(p)} className={`min-w-8 h-8 px-2 flex items-center justify-center rounded-lg text-[13px] ${p === currentPage ? "bg-[#3B82F6] text-white" : "border border-[#E2E8F0] text-[#64748B] hover:bg-[#F8FAFC]"}`}>{p}</button>
               ))}
             </div>
           </div>
@@ -226,7 +348,7 @@ export default function WarehouseInventoryPage() {
             <h3 className="text-[14px] font-semibold text-[#1E293B] mb-3">Stock Status</h3>
             <div className="space-y-2.5">
               {stockStatus.map((s) => (
-                <div key={s.label} className="flex items-center justify-between text-[12px]">
+                <button key={s.label} onClick={() => { setStatusFilter(s.label); toast(`Filtered by ${s.label}`, "info"); }} className="w-full flex items-center justify-between text-[12px] hover:bg-[#F8FAFC] rounded-lg -mx-1 px-1 py-0.5">
                   <div className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
                     <span className="text-[#64748B]">{s.label}</span>
@@ -235,7 +357,7 @@ export default function WarehouseInventoryPage() {
                     <span className="text-[#1E293B]">{s.skus}</span>
                     <span className="text-[#94A3B8] w-10 text-right">{s.pct}</span>
                   </div>
-                </div>
+                </button>
               ))}
               <div className="flex items-center justify-between text-[12px] pt-2 border-t border-[#E2E8F0]">
                 <span className="font-semibold text-[#1E293B]">Total</span>
@@ -248,7 +370,7 @@ export default function WarehouseInventoryPage() {
           <div className={card + " p-5"}>
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-[14px] font-semibold text-[#1E293B]">Expiring Soon</h3>
-              <button className="text-[12px] text-[#3B82F6] hover:underline">View all</button>
+              <button onClick={() => { setActiveTab("Expiring Soon"); toast("Showing expiring items", "info"); }} className="text-[12px] text-[#3B82F6] hover:underline">View all</button>
             </div>
             <div className="space-y-3">
               {expiring.map((e) => (
@@ -264,14 +386,14 @@ export default function WarehouseInventoryPage() {
                 </div>
               ))}
             </div>
-            <button className="w-full mt-3 text-[12px] text-[#3B82F6] border border-[#E2E8F0] rounded-lg py-2 hover:bg-[#F8FAFC]">View all expiring items</button>
+            <button onClick={() => { setActiveTab("Expiring Soon"); toast("Showing expiring items", "info"); }} className="w-full mt-3 text-[12px] text-[#3B82F6] border border-[#E2E8F0] rounded-lg py-2 hover:bg-[#F8FAFC]">View all expiring items</button>
           </div>
 
           {/* Recent Activity */}
           <div className={card + " p-5"}>
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-[14px] font-semibold text-[#1E293B]">Recent Activity</h3>
-              <button className="text-[12px] text-[#3B82F6] hover:underline">View all</button>
+              <button onClick={() => toast("Showing full activity log", "info")} className="text-[12px] text-[#3B82F6] hover:underline">View all</button>
             </div>
             <div className="space-y-3">
               {[
@@ -291,6 +413,25 @@ export default function WarehouseInventoryPage() {
           </div>
         </div>
       </div>
+
+      {/* Adjust stock modal */}
+      <Modal
+        open={!!adjusting}
+        onClose={() => setAdjusting(null)}
+        title={adjusting ? `Adjust ${adjusting.sku}` : "Adjust stock"}
+        description="Set the on-hand quantity for this SKU."
+        size="sm"
+        footer={
+          <>
+            <button onClick={() => setAdjusting(null)} className="px-4 py-2 text-[13px] font-medium text-[#374151] bg-white border border-[#E2E8F0] rounded-lg hover:bg-[#F8FAFC]">Cancel</button>
+            <button onClick={saveAdjust} className="px-4 py-2 text-[13px] font-medium text-white bg-[#3B82F6] rounded-lg hover:bg-[#2563EB]">Save adjustment</button>
+          </>
+        }
+      >
+        <Field label="On-hand quantity" hint={adjusting ? `Reserved: ${adjusting.reserved.toLocaleString("en-US")} units` : undefined}>
+          <NumberInput value={adjustQty} onChange={(e) => setAdjustQty(e.target.value)} min="0" />
+        </Field>
+      </Modal>
     </div>
   );
 }

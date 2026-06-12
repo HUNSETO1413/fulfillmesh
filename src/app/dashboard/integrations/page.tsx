@@ -1,13 +1,16 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import {
   Plug, CheckCircle2, RefreshCw, AlertTriangle, Clock, Shield,
-  Search, ChevronDown, Plus, ScrollText, ArrowUpRight, ArrowDownRight,
+  Search, Plus, ScrollText, ArrowUpRight, ArrowDownRight,
   MoreHorizontal, ArrowRight, ArrowLeft, ExternalLink,
   ShoppingBag, Boxes, Truck, Calculator, Bell, FileSpreadsheet,
   Store, KeyRound, Webhook, GitMerge, Download,
   ChevronRight,
 } from "lucide-react";
+import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
+import { useToast } from "@/components/dashboard/Toast";
 
 /* ---------------- data ---------------- */
 
@@ -31,7 +34,9 @@ const catStyle: Record<string, string> = {
   "Custom": "bg-[#4B5563]/10 text-[#4B5563]",
 };
 
-const rows: { name: string; type: string; cat: string; status: "Connected"; sync: string; iconBg: string; iconColor: string; icon: typeof Plug }[] = [
+interface IntegrationRow { name: string; type: string; cat: string; status: "Connected" | "Disconnected"; sync: string; iconBg: string; iconColor: string; icon: typeof Plug }
+
+const initialRows: IntegrationRow[] = [
   { name: "Shopify", type: "E-commerce", cat: "Sales Channel", status: "Connected", sync: "2 min ago", iconBg: "bg-[#00B894]/10", iconColor: "text-[#00B894]", icon: ShoppingBag },
   { name: "Amazon Seller Central", type: "Marketplace", cat: "Marketplace", status: "Connected", sync: "5 min ago", iconBg: "bg-[#F59E0B]/10", iconColor: "text-[#F59E0B]", icon: Store },
   { name: "Walmart", type: "Marketplace", cat: "Marketplace", status: "Connected", sync: "10 min ago", iconBg: "bg-[#0057D8]/10", iconColor: "text-[#0057D8]", icon: Store },
@@ -69,7 +74,48 @@ const quickActions = [
 
 /* ---------------- components ---------------- */
 
+const CATEGORIES = ["Sales Channel", "Marketplace", "Shipping", "Accounting", "ERP", "Communication", "Productivity", "Automation", "Custom"];
+
 export default function IntegrationsPage() {
+  const { toast } = useToast();
+  const [rows, setRows] = useState<IntegrationRow[]>(initialRows);
+  const [query, setQuery] = useState("");
+  const [catFilter, setCatFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [disconnecting, setDisconnecting] = useState<IntegrationRow | null>(null);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return rows.filter((r) => {
+      const matchesQuery = !q || r.name.toLowerCase().includes(q) || r.type.toLowerCase().includes(q);
+      const matchesCat = !catFilter || r.cat === catFilter;
+      const matchesStatus = !statusFilter || r.status === statusFilter;
+      return matchesQuery && matchesCat && matchesStatus;
+    });
+  }, [rows, query, catFilter, statusFilter]);
+
+  function setStatus(name: string, status: "Connected" | "Disconnected") {
+    setRows((cur) => cur.map((r) => (r.name === name ? { ...r, status, sync: status === "Connected" ? "Just now" : "—" } : r)));
+  }
+
+  function connect(name: string) {
+    setStatus(name, "Connected");
+    setOpenMenu(null);
+    toast(`${name} connected`);
+  }
+
+  function confirmDisconnect() {
+    if (!disconnecting) return;
+    setStatus(disconnecting.name, "Disconnected");
+    toast(`${disconnecting.name} disconnected`);
+    setDisconnecting(null);
+  }
+
+  const [detailTab, setDetailTab] = useState("Overview");
+
+  const selectCls = "inline-flex items-center gap-2 px-3 py-2 border border-border-soft rounded-lg text-[13px] text-text-muted bg-white hover:bg-soft-bg focus:outline-none focus:ring-2 focus:ring-action-blue/20";
+
   return (
     <div className="space-y-6">
       {/* Breadcrumb + Header */}
@@ -87,10 +133,10 @@ export default function IntegrationsPage() {
           <p className="text-[14px] text-text-muted mt-0.5">Connect FulfillMesh with your favorite tools and services to automate workflows and sync data.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-border-soft bg-white text-text-body text-[13px] font-medium hover:bg-soft-bg shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+          <button onClick={() => toast("Opening integration logs…", "info")} className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-border-soft bg-white text-text-body text-[13px] font-medium hover:bg-soft-bg shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
             <ScrollText className="w-4 h-4 text-text-light" /> View Logs
           </button>
-          <button className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-action-blue text-white text-[13px] font-medium hover:bg-[#0047B3] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+          <button onClick={() => toast("Browse the integration marketplace", "info")} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-action-blue text-white text-[13px] font-medium hover:bg-[#0047B3] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
             <Plus className="w-4 h-4" /> Add Integration
           </button>
         </div>
@@ -124,16 +170,19 @@ export default function IntegrationsPage() {
       <div className="bg-white rounded-xl border border-border-soft p-3 shadow-[0_1px_3px_rgba(0,0,0,0.05)] flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[240px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-light" />
-          <input placeholder="Search integrations..." className="w-full pl-9 pr-4 py-2 text-[13px] bg-white border border-border-soft rounded-lg text-text-primary placeholder:text-text-light focus:outline-none focus:ring-2 focus:ring-action-blue/20" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search integrations..." className="w-full pl-9 pr-4 py-2 text-[13px] bg-white border border-border-soft rounded-lg text-text-primary placeholder:text-text-light focus:outline-none focus:ring-2 focus:ring-action-blue/20" />
         </div>
-        <button className="inline-flex items-center gap-2 px-3 py-2 border border-border-soft rounded-lg text-[13px] text-text-muted">
-          All Categories <ChevronDown className="w-3.5 h-3.5" />
-        </button>
-        <button className="inline-flex items-center gap-2 px-3 py-2 border border-border-soft rounded-lg text-[13px] text-text-muted">
-          All Statuses <ChevronDown className="w-3.5 h-3.5" />
-        </button>
-        <button className="inline-flex items-center gap-2 px-3 py-2 border border-border-soft rounded-lg text-[13px] text-text-muted">
-          All Connections <ChevronDown className="w-3.5 h-3.5" />
+        <select value={catFilter} onChange={(e) => setCatFilter(e.target.value)} className={selectCls}>
+          <option value="">All Categories</option>
+          {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={selectCls}>
+          <option value="">All Statuses</option>
+          <option value="Connected">Connected</option>
+          <option value="Disconnected">Disconnected</option>
+        </select>
+        <button onClick={() => { setQuery(""); setCatFilter(""); setStatusFilter(""); toast("Filters cleared", "info"); }} className="inline-flex items-center gap-2 px-3 py-2 border border-border-soft rounded-lg text-[13px] text-text-muted hover:bg-soft-bg">
+          Clear
         </button>
       </div>
 
@@ -150,8 +199,9 @@ export default function IntegrationsPage() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => {
+                {filtered.map((r) => {
                   const RowIcon = r.icon;
+                  const connected = r.status === "Connected";
                   return (
                   <tr key={r.name} className="border-b border-border-soft last:border-b-0 hover:bg-soft-bg/60 transition-colors">
                     <td className="px-5 py-3.5">
@@ -167,7 +217,7 @@ export default function IntegrationsPage() {
                     </td>
                     <td className="px-5 py-3.5"><span className={`inline-flex px-2 py-0.5 text-[11px] font-medium rounded ${catStyle[r.cat]} whitespace-nowrap`}>{r.cat}</span></td>
                     <td className="px-5 py-3.5">
-                      <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-teal"><span className="w-1.5 h-1.5 rounded-full bg-teal" />{r.status}</span>
+                      <span className={`inline-flex items-center gap-1.5 text-[12px] font-medium ${connected ? "text-teal" : "text-text-light"}`}><span className={`w-1.5 h-1.5 rounded-full ${connected ? "bg-teal" : "bg-[#9AA8B8]"}`} />{r.status}</span>
                     </td>
                     <td className="px-5 py-3.5 text-[12px] text-text-muted whitespace-nowrap">{r.sync}</td>
                     <td className="px-5 py-3.5">
@@ -175,17 +225,42 @@ export default function IntegrationsPage() {
                     </td>
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-1">
-                        <button className="text-[12px] font-medium text-action-blue hover:underline">Configure</button>
-                        <button className="p-1 rounded hover:bg-soft-bg text-text-light"><MoreHorizontal className="w-4 h-4" /></button>
+                        {connected ? (
+                          <button onClick={() => toast(`Configuring ${r.name}…`, "info")} className="text-[12px] font-medium text-action-blue hover:underline">Configure</button>
+                        ) : (
+                          <button onClick={() => connect(r.name)} className="text-[12px] font-medium text-action-blue hover:underline">Connect</button>
+                        )}
+                        <div className="relative inline-block">
+                          <button onClick={() => setOpenMenu(openMenu === r.name ? null : r.name)} className="p-1 rounded hover:bg-soft-bg text-text-light" aria-label="Integration actions"><MoreHorizontal className="w-4 h-4" /></button>
+                          {openMenu === r.name && (
+                            <>
+                              <div className="fixed inset-0 z-10" onClick={() => setOpenMenu(null)} />
+                              <div className="absolute right-0 mt-1 z-20 w-44 bg-white rounded-lg border border-border-soft shadow-lg py-1 text-left">
+                                <button onClick={() => { setOpenMenu(null); toast(`Syncing ${r.name}…`); }} className="w-full text-left px-3 py-1.5 text-[13px] text-text-primary hover:bg-soft-bg flex items-center gap-2"><RefreshCw className="w-3.5 h-3.5" /> Sync now</button>
+                                <button onClick={() => { setOpenMenu(null); toast(`Configuring ${r.name}…`, "info"); }} className="w-full text-left px-3 py-1.5 text-[13px] text-text-primary hover:bg-soft-bg flex items-center gap-2"><Plug className="w-3.5 h-3.5" /> Configure</button>
+                                {connected ? (
+                                  <button onClick={() => { setOpenMenu(null); setDisconnecting(r); }} className="w-full text-left px-3 py-1.5 text-[13px] text-[#EF4444] hover:bg-[#FEF2F2] flex items-center gap-2"><AlertTriangle className="w-3.5 h-3.5" /> Disconnect</button>
+                                ) : (
+                                  <button onClick={() => connect(r.name)} className="w-full text-left px-3 py-1.5 text-[13px] text-teal hover:bg-soft-bg flex items-center gap-2"><CheckCircle2 className="w-3.5 h-3.5" /> Connect</button>
+                                )}
+                              </div>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </td>
                   </tr>
                   );
                 })}
+                {filtered.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-5 py-12 text-center text-[13px] text-text-muted">No integrations match your filters.</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
-          <div className="px-5 py-3 border-t border-border-soft text-[12px] text-text-muted">Showing 1 to 12 of 12 integrations</div>
+          <div className="px-5 py-3 border-t border-border-soft text-[12px] text-text-muted">Showing {filtered.length} of {rows.length} integrations</div>
         </div>
 
         {/* Sidebar */}
@@ -229,7 +304,7 @@ export default function IntegrationsPage() {
                     <p className="text-[12px] font-medium text-text-primary truncate">{p.name}</p>
                     <p className="text-[10px] text-text-light truncate">{p.desc}</p>
                   </div>
-                  <button className="text-[12px] font-medium text-action-blue hover:underline shrink-0">{p.action}</button>
+                  <button onClick={() => { if (p.action === "Connect") connect(p.name); else toast(`Managing ${p.name}…`, "info"); }} className="text-[12px] font-medium text-action-blue hover:underline shrink-0">{p.action}</button>
                 </div>
                 );
               })}
@@ -243,7 +318,7 @@ export default function IntegrationsPage() {
               {quickActions.map((a) => {
                 const Icon = a.icon;
                 return (
-                  <button key={a.label} className="w-full flex items-center gap-2.5 px-2 py-2 text-[13px] text-text-body rounded-lg hover:bg-soft-bg transition-colors">
+                  <button key={a.label} onClick={() => toast(`${a.label}…`, "info")} className="w-full flex items-center gap-2.5 px-2 py-2 text-[13px] text-text-body rounded-lg hover:bg-soft-bg transition-colors">
                     <Icon className="w-4 h-4 text-text-muted shrink-0" />
                     <span className="flex-1 text-left">{a.label}</span>
                     <ArrowRight className="w-3.5 h-3.5 text-text-light shrink-0" />
@@ -257,7 +332,7 @@ export default function IntegrationsPage() {
           <div className="bg-white rounded-lg border border-border-soft shadow-[0_1px_3px_rgba(0,0,0,0.05)] p-5">
             <h3 className="text-[15px] font-semibold text-text-primary mb-1">Need a Custom Integration?</h3>
             <p className="text-[12px] text-text-muted mb-3">Our team can build a custom integration for your business needs.</p>
-            <button className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 text-[13px] font-medium text-white bg-action-blue rounded-lg hover:bg-[#0047B3]">
+            <button onClick={() => toast("Integration request submitted", "success")} className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 text-[13px] font-medium text-white bg-action-blue rounded-lg hover:bg-[#0047B3]">
               Request Integration <ExternalLink className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -280,15 +355,15 @@ export default function IntegrationsPage() {
               <div><span className="text-text-light">Connection since</span><div>May 15, 2026 10:00 AM</div></div>
               <div><span className="text-text-light">Connected by</span><div>admin@fulfillmesh.com</div></div>
             </div>
-            <button className="w-full px-3 py-2 text-[13px] font-medium text-text-body border border-border-soft rounded-lg hover:bg-soft-bg transition-colors">Configure</button>
-            <button className="w-full mt-2 px-3 py-2 text-[13px] font-medium text-[#EF4444] border border-border-soft rounded-lg hover:bg-[#FEF2F2] transition-colors">Disconnect</button>
+            <button onClick={() => toast("Configuring Shopify…", "info")} className="w-full px-3 py-2 text-[13px] font-medium text-text-body border border-border-soft rounded-lg hover:bg-soft-bg transition-colors">Configure</button>
+            <button onClick={() => setDisconnecting(rows.find((r) => r.name === "Shopify") ?? null)} className="w-full mt-2 px-3 py-2 text-[13px] font-medium text-[#EF4444] border border-border-soft rounded-lg hover:bg-[#FEF2F2] transition-colors">Disconnect</button>
           </div>
 
           {/* Middle: overview */}
           <div>
             <nav className="flex gap-6 border-b border-border-soft mb-4">
-              {["Overview", "Data Sync", "Settings", "Activity Log", "Webhooks"].map((t, i) => (
-                <button key={t} className={`pb-2.5 text-[13px] font-medium border-b-2 transition-colors ${i === 0 ? "border-action-blue text-action-blue" : "border-transparent text-text-muted hover:text-text-primary"}`}>{t}</button>
+              {["Overview", "Data Sync", "Settings", "Activity Log", "Webhooks"].map((t) => (
+                <button key={t} onClick={() => setDetailTab(t)} className={`pb-2.5 text-[13px] font-medium border-b-2 transition-colors ${detailTab === t ? "border-action-blue text-action-blue" : "border-transparent text-text-muted hover:text-text-primary"}`}>{t}</button>
               ))}
             </nav>
             <div className="grid grid-cols-3 gap-3 mb-4">
@@ -322,7 +397,7 @@ export default function IntegrationsPage() {
                 </div>
               ))}
             </div>
-            <button className="mt-3 text-[12px] font-medium text-action-blue hover:underline">View all activity</button>
+            <button onClick={() => toast("Opening full activity log…", "info")} className="mt-3 text-[12px] font-medium text-action-blue hover:underline">View all activity</button>
           </div>
 
           {/* Right: data flow */}
@@ -349,7 +424,7 @@ export default function IntegrationsPage() {
                 </div>
               ))}
             </div>
-            <button className="w-full mt-4 px-3 py-2 text-[13px] font-medium text-text-body border border-border-soft rounded-lg hover:bg-soft-bg transition-colors">View Data Mapping</button>
+            <button onClick={() => toast("Opening data mapping…", "info")} className="w-full mt-4 px-3 py-2 text-[13px] font-medium text-text-body border border-border-soft rounded-lg hover:bg-soft-bg transition-colors">View Data Mapping</button>
           </div>
         </div>
       </div>
@@ -366,14 +441,25 @@ export default function IntegrationsPage() {
           </div>
         </div>
         <div className="flex items-center gap-3 shrink-0">
-          <button className="inline-flex items-center gap-2 px-5 py-2.5 bg-white rounded-lg text-[13px] font-semibold text-navy hover:bg-white/90">
+          <button onClick={() => toast("Browse the integration marketplace", "info")} className="inline-flex items-center gap-2 px-5 py-2.5 bg-white rounded-lg text-[13px] font-semibold text-navy hover:bg-white/90">
             <Store className="w-4 h-4" /> Browse Marketplace
           </button>
-          <button className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg border border-white/30 text-white text-[13px] font-medium hover:bg-white/10">
+          <button onClick={() => toast("Integration request submitted", "success")} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg border border-white/30 text-white text-[13px] font-medium hover:bg-white/10">
             Request Integration <ArrowRight className="w-4 h-4" />
           </button>
         </div>
       </div>
+
+      {/* Disconnect confirm */}
+      <ConfirmDialog
+        open={!!disconnecting}
+        onClose={() => setDisconnecting(null)}
+        onConfirm={confirmDisconnect}
+        title="Disconnect integration"
+        message={`Disconnect ${disconnecting?.name}? Data syncing will stop until you reconnect.`}
+        confirmLabel="Disconnect"
+        destructive
+      />
     </div>
   );
 }

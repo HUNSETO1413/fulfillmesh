@@ -1,10 +1,16 @@
 "use client";
 
+import { useState } from "react";
 import {
   ShoppingBag, DollarSign, CheckCircle2, Package,
-  ArrowUpRight, ArrowDownRight, Calendar, ChevronDown,
-  MoreVertical,
+  ArrowUpRight, ArrowDownRight, ChevronDown,
+  MoreVertical, Download, RefreshCw,
 } from "lucide-react";
+import { DateRangeMenu } from "@/components/dashboard/DateRangeMenu";
+import { useToast } from "@/components/dashboard/Toast";
+import { exportToCsv } from "@/lib/client";
+
+const GRANULARITIES = ["Daily", "Weekly", "Monthly"];
 
 const stats = [
   { title: "Total Orders", value: "12,842", change: "+8.5%", positive: true, period: "vs May 5", icon: ShoppingBag, iconBg: "bg-[#3B82F6]/10", iconColor: "text-[#3B82F6]" },
@@ -30,6 +36,29 @@ const regions = [
 ];
 
 export default function AnalyticsPage() {
+  const { toast } = useToast();
+  const [range, setRange] = useState("May 12 – May 18, 2025");
+  const [ordersGran, setOrdersGran] = useState("Daily");
+  const [revGran, setRevGran] = useState("Daily");
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  function cycle(current: string, set: (v: string) => void, label: string) {
+    const next = GRANULARITIES[(GRANULARITIES.indexOf(current) + 1) % GRANULARITIES.length];
+    set(next);
+    toast(`${label} grouped by ${next.toLowerCase()}`, "info");
+  }
+
+  function exportProducts() {
+    exportToCsv("analytics-top-products", topProducts, [
+      { key: "name", header: "Product" },
+      { key: "sku", header: "SKU" },
+      { key: "orders", header: "Orders" },
+      { key: "revenue", header: "Revenue" },
+      { key: "trend", header: "Trend" },
+    ]);
+    toast(`Exported ${topProducts.length} products to CSV`);
+  }
+
   return (
     <div className="space-y-6">
       {/* Page Header */}
@@ -39,14 +68,38 @@ export default function AnalyticsPage() {
           <p className="text-[14px] text-[#64748B] mt-0.5">Track performance and key metrics.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="inline-flex items-center gap-2 bg-white border border-[#E2E8F0] rounded-lg px-3.5 py-2 text-[13px] font-medium text-[#1E293B] shadow-[0_1px_2px_rgba(0,0,0,0.05)] shrink-0">
-            <Calendar className="w-4 h-4 text-[#64748B]" />
-            May 12 – May 18, 2025
-            <ChevronDown className="w-4 h-4 text-[#94A3B8]" />
-          </button>
-          <button className="w-9 h-9 flex items-center justify-center bg-white border border-[#E2E8F0] rounded-lg text-[#64748B] hover:bg-[#F8FAFC] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-            <MoreVertical className="w-4 h-4" />
-          </button>
+          <DateRangeMenu
+            value={range}
+            onSelect={(r) => { setRange(r); toast(`Showing analytics for ${r}`, "info"); }}
+            presets={["May 12 – May 18, 2025", "Last 7 days", "Last 30 days", "This quarter", "Year to date"]}
+          />
+          <div className="relative">
+            <button
+              onClick={() => setMenuOpen((v) => !v)}
+              className="w-9 h-9 flex items-center justify-center bg-white border border-[#E2E8F0] rounded-lg text-[#64748B] hover:bg-[#F8FAFC] shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
+            >
+              <MoreVertical className="w-4 h-4" />
+            </button>
+            {menuOpen && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setMenuOpen(false)} />
+                <div className="absolute right-0 mt-1 z-40 w-48 bg-white rounded-lg border border-[#E2E8F0] shadow-[0_10px_30px_rgba(0,0,0,0.12)] py-1">
+                  <button
+                    onClick={() => { setMenuOpen(false); exportProducts(); }}
+                    className="w-full flex items-center gap-2 text-left px-3 py-2 text-[13px] text-[#374151] hover:bg-[#F8FAFC]"
+                  >
+                    <Download className="w-4 h-4 text-[#64748B]" /> Export data
+                  </button>
+                  <button
+                    onClick={() => { setMenuOpen(false); toast("Analytics refreshed", "success"); }}
+                    className="w-full flex items-center gap-2 text-left px-3 py-2 text-[13px] text-[#374151] hover:bg-[#F8FAFC]"
+                  >
+                    <RefreshCw className="w-4 h-4 text-[#64748B]" /> Refresh
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -87,8 +140,8 @@ export default function AnalyticsPage() {
         <div className="bg-white rounded-xl border border-[#E2E8F0] p-5 shadow-[0_1px_3px_0_rgba(0,0,0,0.1),0_1px_2px_0_rgba(0,0,0,0.06)]">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-[16px] font-semibold text-[#1E293B]">Orders Over Time</h3>
-            <button className="inline-flex items-center gap-1.5 text-[12px] text-[#64748B] border border-[#E2E8F0] px-2.5 py-1 rounded-lg">
-              Daily <ChevronDown className="w-3.5 h-3.5 text-[#94A3B8]" />
+            <button onClick={() => cycle(ordersGran, setOrdersGran, "Orders over time")} className="inline-flex items-center gap-1.5 text-[12px] text-[#64748B] border border-[#E2E8F0] px-2.5 py-1 rounded-lg hover:bg-[#F8FAFC]">
+              {ordersGran} <ChevronDown className="w-3.5 h-3.5 text-[#94A3B8]" />
             </button>
           </div>
           <div className="h-[200px]">
@@ -137,8 +190,8 @@ export default function AnalyticsPage() {
         <div className="bg-white rounded-xl border border-[#E2E8F0] p-5 shadow-[0_1px_3px_0_rgba(0,0,0,0.1),0_1px_2px_0_rgba(0,0,0,0.06)]">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-[16px] font-semibold text-[#1E293B]">Revenue Over Time</h3>
-            <button className="inline-flex items-center gap-1.5 text-[12px] text-[#64748B] border border-[#E2E8F0] px-2.5 py-1 rounded-lg">
-              Daily <ChevronDown className="w-3.5 h-3.5 text-[#94A3B8]" />
+            <button onClick={() => cycle(revGran, setRevGran, "Revenue over time")} className="inline-flex items-center gap-1.5 text-[12px] text-[#64748B] border border-[#E2E8F0] px-2.5 py-1 rounded-lg hover:bg-[#F8FAFC]">
+              {revGran} <ChevronDown className="w-3.5 h-3.5 text-[#94A3B8]" />
             </button>
           </div>
           <div className="h-[200px]">
@@ -190,9 +243,9 @@ export default function AnalyticsPage() {
         <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-[0_1px_3px_0_rgba(0,0,0,0.1),0_1px_2px_0_rgba(0,0,0,0.06)]">
           <div className="flex items-center justify-between px-5 py-4 border-b border-[#E2E8F0]">
             <h3 className="text-[16px] font-semibold text-[#1E293B]">Top Products</h3>
-            <a href="#" className="text-[13px] font-medium text-[#3B82F6] border border-[#E2E8F0] rounded-lg px-3 py-1.5 hover:bg-[#F8FAFC] transition-colors">
-              View all
-            </a>
+            <button onClick={exportProducts} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#3B82F6] border border-[#E2E8F0] rounded-lg px-3 py-1.5 hover:bg-[#F8FAFC] transition-colors">
+              <Download className="w-3.5 h-3.5" /> Export
+            </button>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">

@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import React, { createContext, useContext, useState } from "react";
 import {
   Settings as SettingsIcon, Download, Save, CheckCircle2, ChevronDown, ChevronRight,
   Package, Warehouse, Bell, Shield,
   Mail, FileText, Users, ScrollText, Trash2, HardDriveDownload,
 } from "lucide-react";
+import { useToast } from "@/components/dashboard/Toast";
 
 /* ---------------- components ---------------- */
 
@@ -13,42 +14,64 @@ function Card({ children, className = "" }: { children: React.ReactNode; classNa
   return <div className={`bg-white rounded-lg border border-border-soft shadow-[0_1px_3px_rgba(0,0,0,0.08)] ${className}`}>{children}</div>;
 }
 
-function Toggle({ on, label }: { on: boolean; label: string }) {
+function Toggle({ on, label, name }: { on: boolean; label?: string; name?: string }) {
+  const { toast } = useContext(SettingsToastCtx);
   const [enabled, setEnabled] = useState(on);
   return (
     <div className="flex items-center gap-2">
       <button
-        onClick={() => setEnabled(!enabled)}
+        onClick={() => {
+          const next = !enabled;
+          setEnabled(next);
+          toast(`${name ?? "Setting"} ${next ? "enabled" : "disabled"}`);
+        }}
         className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${enabled ? "bg-action-blue" : "bg-[#CBD5E1]"}`}
+        aria-label={name ?? label}
       >
         <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform shadow-sm ${enabled ? "translate-x-[18px]" : "translate-x-[3px]"}`} />
       </button>
-      <span className={`text-xs ${enabled ? "text-text-primary" : "text-text-light"}`}>{label}</span>
+      <span className={`text-xs ${enabled ? "text-text-primary" : "text-text-light"}`}>{enabled ? "Enabled" : "Disabled"}</span>
     </div>
   );
 }
 
+const SettingsToastCtx = createContext<{ toast: (m: string, t?: "success" | "error" | "info") => void }>({ toast: () => {} });
+
 function FieldRow({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
+  const child = React.isValidElement(children) && (children.type === Toggle || children.type === SelectInput || children.type === TextInput)
+    ? React.cloneElement(children as React.ReactElement<{ name?: string }>, { name: label })
+    : children;
   return (
     <div className="flex items-center justify-between gap-4 py-3">
       <div>
         <span className="text-[13px] text-text-body">{label}</span>
         {hint && <div className="text-[10px] text-text-light mt-0.5">{hint}</div>}
       </div>
-      <div className="shrink-0">{children}</div>
+      <div className="shrink-0">{child}</div>
     </div>
   );
 }
 
-function TextInput({ value }: { value: string }) {
-  return <input defaultValue={value} className="w-[200px] px-3 py-1.5 text-[13px] text-text-primary border border-border-soft rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-action-blue/20 focus:border-action-blue" />;
+function TextInput({ value, name }: { value: string; name?: string }) {
+  const { toast } = useContext(SettingsToastCtx);
+  return <input defaultValue={value} aria-label={name} onBlur={(e) => { if (e.target.value !== value) toast(`${name ?? "Field"} updated`); }} className="w-[200px] px-3 py-1.5 text-[13px] text-text-primary border border-border-soft rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-action-blue/20 focus:border-action-blue" />;
 }
 
-function SelectInput({ value }: { value: string }) {
+function SelectInput({ value, name, options }: { value: string; name?: string; options?: string[] }) {
+  const { toast } = useContext(SettingsToastCtx);
+  const opts = options && options.length ? options : [value];
+  const list = opts.includes(value) ? opts : [value, ...opts];
   return (
     <div className="relative w-[200px]">
-      <div className="w-full px-3 py-1.5 pr-8 text-[13px] border border-border-soft rounded-lg text-text-primary bg-white">{value}</div>
-      <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-light" />
+      <select
+        defaultValue={value}
+        aria-label={name}
+        onChange={(e) => toast(`${name ?? "Setting"} set to ${e.target.value}`)}
+        className="w-full appearance-none px-3 py-1.5 pr-8 text-[13px] border border-border-soft rounded-lg text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-action-blue/20"
+      >
+        {list.map((o) => <option key={o} value={o}>{o}</option>)}
+      </select>
+      <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-light pointer-events-none" />
     </div>
   );
 }
@@ -101,9 +124,23 @@ const automationRules = [
 const prefTabs = ["Pricing", "Documents", "Shipping", "Returns", "Billing", "API Settings", "Advanced"];
 
 export default function SystemSettingsPage() {
+  const { toast } = useToast();
   const [prefTab, setPrefTab] = useState("Pricing");
+  const [integrations, setIntegrations] = useState(integrationsTable);
+
+  function toggleIntegration(name: string) {
+    setIntegrations((cur) => cur.map((r) => {
+      if (r.name !== name) return r;
+      const connected = r.status !== "Connected";
+      toast(`${name} ${connected ? "connected" : "configured"}`);
+      return connected
+        ? { ...r, status: "Connected", action: "Configure", sync: "Just now" }
+        : r;
+    }));
+  }
 
   return (
+    <SettingsToastCtx.Provider value={{ toast }}>
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between">
@@ -122,10 +159,10 @@ export default function SystemSettingsPage() {
           <p className="text-[13px] text-text-body mt-1">Configure system preferences, integrations, security, and operational rules.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border-soft bg-white text-text-primary text-[13px] font-medium hover:bg-soft-bg transition-colors">
+          <button onClick={() => toast("Settings exported", "success")} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border-soft bg-white text-text-primary text-[13px] font-medium hover:bg-soft-bg transition-colors">
             <Download className="w-4 h-4" /> Export Settings
           </button>
-          <button className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-action-blue text-white text-[13px] font-medium hover:bg-[#2563EB] transition-colors shadow-sm">
+          <button onClick={() => toast("All changes saved")} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-action-blue text-white text-[13px] font-medium hover:bg-[#2563EB] transition-colors shadow-sm">
             <Save className="w-4 h-4" /> Save Changes
           </button>
         </div>
@@ -139,13 +176,13 @@ export default function SystemSettingsPage() {
             <SectionTitle subtitle="Configure basic system preferences">General Settings</SectionTitle>
             <div className="divide-y divide-border-soft/60">
               <FieldRow label="Company Name"><TextInput value="FulfillMesh Co." /></FieldRow>
-              <FieldRow label="Time Zone"><SelectInput value="(UTC-05:00) Eastern Time" /></FieldRow>
-              <FieldRow label="Date Format"><SelectInput value="MM/DD/YYYY" /></FieldRow>
-              <FieldRow label="Time Format"><SelectInput value="12 Hour (AM/PM)" /></FieldRow>
-              <FieldRow label="Language"><SelectInput value="English (US)" /></FieldRow>
-              <FieldRow label="Currency"><SelectInput value="USD - US Dollar ($)" /></FieldRow>
-              <FieldRow label="Week Starts On"><SelectInput value="Monday" /></FieldRow>
-              <FieldRow label="Measurement System"><SelectInput value="Imperial (lb, in)" /></FieldRow>
+              <FieldRow label="Time Zone"><SelectInput value="(UTC-05:00) Eastern Time" options={["(UTC-05:00) Eastern Time", "(UTC-06:00) Central Time", "(UTC-08:00) Pacific Time", "(UTC+00:00) UTC"]} /></FieldRow>
+              <FieldRow label="Date Format"><SelectInput value="MM/DD/YYYY" options={["MM/DD/YYYY", "DD/MM/YYYY", "YYYY-MM-DD"]} /></FieldRow>
+              <FieldRow label="Time Format"><SelectInput value="12 Hour (AM/PM)" options={["12 Hour (AM/PM)", "24 Hour"]} /></FieldRow>
+              <FieldRow label="Language"><SelectInput value="English (US)" options={["English (US)", "English (UK)", "Español", "Français"]} /></FieldRow>
+              <FieldRow label="Currency"><SelectInput value="USD - US Dollar ($)" options={["USD - US Dollar ($)", "EUR - Euro (€)", "GBP - Pound (£)"]} /></FieldRow>
+              <FieldRow label="Week Starts On"><SelectInput value="Monday" options={["Monday", "Sunday"]} /></FieldRow>
+              <FieldRow label="Measurement System"><SelectInput value="Imperial (lb, in)" options={["Imperial (lb, in)", "Metric (kg, cm)"]} /></FieldRow>
               <FieldRow label="Enable Multi-Warehouse"><Toggle on label="Enabled" /></FieldRow>
             </div>
           </Card>
@@ -219,7 +256,7 @@ export default function SystemSettingsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {integrationsTable.map((r, i) => (
+                  {integrations.map((r, i) => (
                     <tr key={r.name} className={`border-b border-border-soft/60 last:border-b-0 ${i % 2 === 1 ? "bg-soft-bg/50" : "bg-white"}`}>
                       <td className="px-5 py-2.5 text-[12px] font-medium text-text-primary">{r.name}</td>
                       <td className="px-5 py-2.5">
@@ -228,7 +265,7 @@ export default function SystemSettingsPage() {
                         </span>
                       </td>
                       <td className="px-5 py-2.5 text-[11px] text-text-muted">{r.sync}</td>
-                      <td className="px-5 py-2.5"><button className="text-[12px] font-medium text-action-blue hover:underline">{r.action}</button></td>
+                      <td className="px-5 py-2.5"><button onClick={() => toggleIntegration(r.name)} className="text-[12px] font-medium text-action-blue hover:underline">{r.action}</button></td>
                     </tr>
                   ))}
                 </tbody>
@@ -281,7 +318,7 @@ export default function SystemSettingsPage() {
                 <span className="text-teal font-medium">All Systems Operational</span>
               </div>
             </div>
-            <button className="mt-4 w-full flex items-center justify-center gap-2 px-3 py-2 text-[13px] font-medium text-action-blue border border-border-soft rounded-lg hover:bg-soft-bg transition-colors">
+            <button onClick={() => toast("Opening system logs…", "info")} className="mt-4 w-full flex items-center justify-center gap-2 px-3 py-2 text-[13px] font-medium text-action-blue border border-border-soft rounded-lg hover:bg-soft-bg transition-colors">
               <ScrollText className="w-4 h-4" /> View System Logs
             </button>
           </Card>
@@ -292,7 +329,7 @@ export default function SystemSettingsPage() {
               {quickActions.map((a) => {
                 const Icon = a.icon;
                 return (
-                  <button key={a.label} className="w-full flex items-center justify-between px-2 py-2 text-[13px] text-text-primary rounded-lg hover:bg-soft-bg transition-colors">
+                  <button key={a.label} onClick={() => toast(`${a.label}…`, "info")} className="w-full flex items-center justify-between px-2 py-2 text-[13px] text-text-primary rounded-lg hover:bg-soft-bg transition-colors">
                     <span className="flex items-center gap-2.5">
                       <div className={`w-6 h-6 rounded-md flex items-center justify-center ${a.color}`}>
                         <Icon className="w-3 h-3" />
@@ -319,15 +356,15 @@ export default function SystemSettingsPage() {
                 </div>
               ))}
             </div>
-            <button className="mt-4 w-full px-3 py-2 text-[13px] font-medium text-action-blue border border-border-soft rounded-lg hover:bg-soft-bg transition-colors">Manage Automation Rules</button>
+            <button onClick={() => toast("Opening automation rules…", "info")} className="mt-4 w-full px-3 py-2 text-[13px] font-medium text-action-blue border border-border-soft rounded-lg hover:bg-soft-bg transition-colors">Manage Automation Rules</button>
           </Card>
 
           <Card className="p-5">
             <h3 className="text-[14px] font-semibold text-text-primary mb-3">Help &amp; Resources</h3>
             <div className="space-y-2 text-[13px]">
-              <a className="block text-action-blue hover:underline cursor-pointer">Configuration Guide</a>
-              <a className="block text-action-blue hover:underline cursor-pointer">API Documentation</a>
-              <a className="block text-action-blue hover:underline cursor-pointer">Contact Support</a>
+              <button onClick={() => toast("Opening configuration guide…", "info")} className="block text-action-blue hover:underline cursor-pointer">Configuration Guide</button>
+              <button onClick={() => toast("Opening API documentation…", "info")} className="block text-action-blue hover:underline cursor-pointer">API Documentation</button>
+              <button onClick={() => toast("Opening support…", "info")} className="block text-action-blue hover:underline cursor-pointer">Contact Support</button>
             </div>
           </Card>
         </div>
@@ -363,5 +400,6 @@ export default function SystemSettingsPage() {
         </div>
       </Card>
     </div>
+    </SettingsToastCtx.Provider>
   );
 }

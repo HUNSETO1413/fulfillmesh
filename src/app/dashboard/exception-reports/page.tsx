@@ -1,7 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import { Calendar, Filter, Download, ChevronDown, Search, AlertTriangle, AlertCircle, CheckCircle2, ShieldAlert, Clock, ArrowUpRight, ArrowDownRight, MoreHorizontal, Plus, Settings, UserPlus, FileDown } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Filter, Download, ChevronDown, Search, AlertTriangle, AlertCircle, CheckCircle2, ShieldAlert, Clock, ArrowUpRight, ArrowDownRight, MoreHorizontal, Plus, Settings, UserPlus, FileDown } from "lucide-react";
+import { DateRangeMenu } from "@/components/dashboard/DateRangeMenu";
+import { useToast } from "@/components/dashboard/Toast";
+import { exportToCsv } from "@/lib/client";
 
 const stats = [
   { title: "Total Exceptions", value: "312", change: "-12.5%", good: true, icon: AlertTriangle, color: "#EF4444" },
@@ -19,7 +22,9 @@ const tabs = [
   { name: "Ignored", count: 8 },
 ];
 
-const rows = [
+type ExcRow = { id: string; type: string; desc: string; wh: string; priority: string; pc: string; status: string; sc: string; on: string };
+
+const initialRows: ExcRow[] = [
   { id: "EXC-0005-0001-001", type: "Inventory", desc: "Inventory discrepancy on SKU-10023", wh: "ATL-1 · Atlanta", priority: "High", pc: "#EF4444", status: "Open", sc: "open", on: "May 31, 2025 09:42 AM" },
   { id: "EXC-0005-0001-002", type: "Shipment", desc: "Shipment delayed > 24 hr", wh: "DFW-1 · Dallas", priority: "Medium", pc: "#F59E0B", status: "Open", sc: "open", on: "May 31, 2025 08:15 AM" },
   { id: "EXC-0005-0001-003", type: "Order", desc: "Order not allocated", wh: "LAX-1 · Los Angeles", priority: "High", pc: "#EF4444", status: "Investigating", sc: "investigating", on: "May 30, 2025 06:30 PM" },
@@ -36,6 +41,8 @@ const statusStyle: Record<string, string> = {
   open: "bg-[#FEF2F2] text-[#EF4444]",
   investigating: "bg-[#FFFBEB] text-[#F59E0B]",
   resolved: "bg-[#ECFDF5] text-[#10B981]",
+  ignored: "bg-[#F1F5F9] text-[#64748B]",
+  acknowledged: "bg-[#EFF6FF] text-[#3B82F6]",
 };
 
 const summary = [
@@ -88,17 +95,89 @@ function Sparkline({ color }: { color: string }) {
   );
 }
 
-function FilterPill({ label }: { label: string }) {
+function FilterPill({ value, options, onSelect }: { value: string; options: string[]; onSelect: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
   return (
-    <button className="flex items-center gap-1.5 px-3 py-2 bg-white border border-border-soft rounded-lg text-[12px] font-medium text-text-primary hover:bg-soft-bg transition-colors">
-      {label}
-      <ChevronDown className="w-3 h-3 text-text-light" />
-    </button>
+    <div className="relative">
+      <button onClick={() => setOpen((v) => !v)} className="flex items-center gap-1.5 px-3 py-2 bg-white border border-border-soft rounded-lg text-[12px] font-medium text-text-primary hover:bg-soft-bg transition-colors">
+        {value}
+        <ChevronDown className="w-3 h-3 text-text-light" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 mt-1 z-40 w-48 bg-white rounded-lg border border-border-soft shadow-[0_10px_30px_rgba(0,0,0,0.12)] py-1">
+            {options.map((o) => (
+              <button key={o} onClick={() => { onSelect(o); setOpen(false); }} className={`w-full text-left px-3 py-2 text-[12px] hover:bg-soft-bg ${value === o ? "text-action-blue font-medium" : "text-text-primary"}`}>{o}</button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
+const TYPE_FILTER = ["All Types", "Inventory", "Shipment", "Order", "Return", "Inbound", "Transfer"];
+const WH_FILTER = ["All Warehouses", "ATL-1 · Atlanta", "DFW-1 · Dallas", "LAX-1 · Los Angeles", "MIA-1 · Miami", "ORD-1 · Chicago"];
+const PRIORITY_FILTER = ["All Priorities", "High", "Medium", "Low"];
+
 export default function ExceptionReportsPage() {
+  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("All Exceptions");
+  const [range, setRange] = useState("May 1 – May 31, 2025");
+  const [query, setQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState("All Types");
+  const [whFilter, setWhFilter] = useState("All Warehouses");
+  const [priorityFilter, setPriorityFilter] = useState("All Priorities");
+  const [rows, setRows] = useState(initialRows);
+  const [rowMenu, setRowMenu] = useState<string | null>(null);
+  const [gran, setGran] = useState("Daily");
+
+  const tabFilter: Record<string, (r: ExcRow) => boolean> = {
+    "All Exceptions": () => true,
+    Open: (r) => r.sc === "open",
+    "SLA Breached": (r) => r.priority === "High",
+    Resolved: (r) => r.sc === "resolved",
+    Ignored: (r) => r.sc === "ignored",
+  };
+
+  const filteredRows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return rows.filter((r) =>
+      (tabFilter[activeTab] ?? (() => true))(r) &&
+      (typeFilter === "All Types" || r.type === typeFilter) &&
+      (whFilter === "All Warehouses" || r.wh === whFilter) &&
+      (priorityFilter === "All Priorities" || r.priority === priorityFilter) &&
+      (!q || r.id.toLowerCase().includes(q) || r.desc.toLowerCase().includes(q))
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, activeTab, typeFilter, whFilter, priorityFilter, query]);
+
+  function setStatus(id: string, status: string, sc: string, verb: string) {
+    setRows((prev) => prev.map((r) => r.id === id ? { ...r, status, sc } : r));
+    setRowMenu(null);
+    toast(`${id} ${verb}`);
+  }
+
+  function cycleGran() {
+    const opts = ["Daily", "Weekly", "Monthly"];
+    const next = opts[(opts.indexOf(gran) + 1) % opts.length];
+    setGran(next);
+    toast(`Exceptions grouped by ${next.toLowerCase()}`, "info");
+  }
+
+  function exportExceptions() {
+    exportToCsv("exception-reports", filteredRows, [
+      { key: "id", header: "Exception ID" },
+      { key: "type", header: "Type" },
+      { key: "desc", header: "Description" },
+      { key: "wh", header: "Warehouse" },
+      { key: "priority", header: "Priority" },
+      { key: "status", header: "Status" },
+      { key: "on", header: "Detected On" },
+    ]);
+    toast(`Exported ${filteredRows.length} exceptions to CSV`);
+  }
 
   // exceptions over time chart
   const W = 760, H = 200, padL = 28, padB = 22, padT = 8, yMax = 60;
@@ -120,16 +199,16 @@ export default function ExceptionReportsPage() {
           <p className="text-[14px] text-text-muted mt-1">Identify, track and resolve exceptions that impact your operations.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 px-3.5 py-2 bg-white border border-border-soft rounded-lg text-[13px] font-medium text-text-primary hover:bg-soft-bg transition-colors">
-            <Calendar className="w-4 h-4 text-text-muted" />
-            May 1 – May 31, 2025
-            <ChevronDown className="w-3.5 h-3.5 text-text-light" />
-          </button>
-          <button className="flex items-center gap-2 px-3.5 py-2 bg-white border border-border-soft rounded-lg text-[13px] font-medium text-text-primary hover:bg-soft-bg transition-colors">
+          <DateRangeMenu
+            value={range}
+            onSelect={(r) => { setRange(r); toast(`Exceptions scoped to ${r}`, "info"); }}
+            presets={["May 1 – May 31, 2025", "Last 7 days", "Last 30 days", "This quarter", "Year to date"]}
+          />
+          <button onClick={() => toast("Filter panel opened", "info")} className="flex items-center gap-2 px-3.5 py-2 bg-white border border-border-soft rounded-lg text-[13px] font-medium text-text-primary hover:bg-soft-bg transition-colors">
             <Filter className="w-4 h-4 text-text-muted" />
             Filters
           </button>
-          <button className="flex items-center gap-2 px-4 py-2 bg-action-blue text-white rounded-lg text-[13px] font-semibold hover:bg-action-blue/90 transition-colors">
+          <button onClick={exportExceptions} className="flex items-center gap-2 px-4 py-2 bg-action-blue text-white rounded-lg text-[13px] font-semibold hover:bg-action-blue/90 transition-colors">
             <Download className="w-4 h-4" />
             Export
           </button>
@@ -172,7 +251,7 @@ export default function ExceptionReportsPage() {
           <button
             key={t.name}
             onClick={() => setActiveTab(t.name)}
-            className={`px-4 py-2.5 text-[13px] font-medium whitespace-nowrap border-b-2 -mb-px transition-colors ${
+            className={`px-4 py-2.5 text-[13px] font-medium whitespace-nowrap border-b-2 -mb-px transition-colors cursor-pointer ${
               activeTab === t.name
                 ? "border-action-blue text-action-blue"
                 : "border-transparent text-text-muted hover:text-text-primary"
@@ -191,14 +270,15 @@ export default function ExceptionReportsPage() {
             <div className="relative flex-1 min-w-[180px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-light" />
               <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search exceptions..."
                 className="w-full pl-9 pr-3 py-2 bg-white border border-border-soft rounded-lg text-[13px] text-text-primary placeholder:text-text-light focus:outline-none focus:ring-2 focus:ring-action-blue/20 focus:border-action-blue/40 transition-colors"
               />
             </div>
-            <FilterPill label="All Types" />
-            <FilterPill label="All Warehouses" />
-            <FilterPill label="All Priorities" />
-            <FilterPill label="More Filters" />
+            <FilterPill value={typeFilter} options={TYPE_FILTER} onSelect={setTypeFilter} />
+            <FilterPill value={whFilter} options={WH_FILTER} onSelect={setWhFilter} />
+            <FilterPill value={priorityFilter} options={PRIORITY_FILTER} onSelect={setPriorityFilter} />
           </div>
 
           <div className="bg-white rounded-xl border border-border-soft overflow-hidden">
@@ -212,7 +292,7 @@ export default function ExceptionReportsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((r) => (
+                  {filteredRows.map((r) => (
                     <tr key={r.id} className="border-b border-border-soft/60 last:border-b-0 hover:bg-soft-bg/50 transition-colors">
                       <td className="px-4 py-3 text-[13px] font-semibold text-action-blue font-mono whitespace-nowrap">{r.id}</td>
                       <td className="px-4 py-3 text-[13px] text-text-muted font-medium">{r.type}</td>
@@ -224,27 +304,46 @@ export default function ExceptionReportsPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`inline-flex px-2.5 py-0.5 text-[11px] font-semibold rounded-md ${statusStyle[r.sc]}`}>
+                        <span className={`inline-flex px-2.5 py-0.5 text-[11px] font-semibold rounded-md ${statusStyle[r.sc] ?? statusStyle.open}`}>
                           {r.status}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-[13px] text-text-muted whitespace-nowrap">{r.on}</td>
                       <td className="px-4 py-3">
-                        <button className="text-text-light hover:text-text-muted transition-colors">
-                          <MoreHorizontal className="w-4 h-4" />
-                        </button>
+                        <div className="relative">
+                          <button onClick={() => setRowMenu(rowMenu === r.id ? null : r.id)} className="text-text-light hover:text-text-muted transition-colors">
+                            <MoreHorizontal className="w-4 h-4" />
+                          </button>
+                          {rowMenu === r.id && (
+                            <>
+                              <div className="fixed inset-0 z-30" onClick={() => setRowMenu(null)} />
+                              <div className="absolute right-0 mt-1 z-40 w-44 bg-white rounded-lg border border-border-soft shadow-[0_10px_30px_rgba(0,0,0,0.12)] py-1 text-left">
+                                <button onClick={() => setStatus(r.id, "Acknowledged", "acknowledged", "acknowledged")} className="w-full text-left px-3 py-2 text-[13px] text-text-primary hover:bg-soft-bg">Acknowledge</button>
+                                <button onClick={() => setStatus(r.id, "Investigating", "investigating", "marked investigating")} className="w-full text-left px-3 py-2 text-[13px] text-text-primary hover:bg-soft-bg">Investigate</button>
+                                <button onClick={() => setStatus(r.id, "Resolved", "resolved", "resolved")} className="w-full text-left px-3 py-2 text-[13px] text-[#10B981] hover:bg-soft-bg">Resolve</button>
+                                <button onClick={() => setStatus(r.id, "Ignored", "ignored", "ignored")} className="w-full text-left px-3 py-2 text-[13px] text-text-muted hover:bg-soft-bg">Ignore</button>
+                              </div>
+                            </>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
+                  {filteredRows.length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="px-4 py-10 text-center text-[13px] text-text-muted">No exceptions match your filters.</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
             <div className="flex items-center justify-between px-4 py-3 border-t border-border-soft">
-              <span className="text-[12px] text-text-muted">Showing 1 to 10 of 312 exceptions</span>
+              <span className="text-[12px] text-text-muted">Showing {filteredRows.length} of {rows.length} exceptions</span>
               <div className="flex items-center gap-1">
                 {["1", "2", "3", "4", "5", "…", "32"].map((p, i) => (
                   <button
                     key={i}
+                    onClick={() => p !== "…" && toast(`Page ${p}`, "info")}
                     className={`min-w-[28px] h-7 px-2 rounded-md text-[12px] font-medium transition-colors ${
                       p === "1" ? "bg-action-blue text-white" : "text-text-muted hover:bg-soft-bg"
                     }`}
@@ -353,7 +452,7 @@ export default function ExceptionReportsPage() {
               ))}
             </div>
             <div className="mt-4 pt-3 border-t border-border-soft/60">
-              <a href="#" className="text-[13px] font-medium text-action-blue hover:underline">View full report →</a>
+              <button onClick={exportExceptions} className="text-[13px] font-medium text-action-blue hover:underline">View full report →</button>
             </div>
           </div>
         </div>
@@ -363,9 +462,9 @@ export default function ExceptionReportsPage() {
       <div className="bg-white rounded-xl border border-border-soft p-5">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-[15px] font-semibold text-text-primary">Exceptions Over Time</h3>
-          <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-text-muted bg-soft-bg px-2.5 py-1.5 rounded-lg cursor-pointer hover:bg-border-soft transition-colors">
-            Daily <ChevronDown className="w-3 h-3" />
-          </span>
+          <button onClick={cycleGran} className="inline-flex items-center gap-1.5 text-[12px] font-medium text-text-muted bg-soft-bg px-2.5 py-1.5 rounded-lg cursor-pointer hover:bg-border-soft transition-colors">
+            {gran} <ChevronDown className="w-3 h-3" />
+          </button>
         </div>
         <div className="flex items-center gap-5 mb-4">
           {otSeries.map((s) => (
@@ -395,7 +494,7 @@ export default function ExceptionReportsPage() {
           ))}
         </svg>
         <div className="text-right mt-2">
-          <a href="#" className="text-[13px] font-medium text-action-blue hover:underline">View full report →</a>
+          <button onClick={exportExceptions} className="text-[13px] font-medium text-action-blue hover:underline">View full report →</button>
         </div>
       </div>
 
@@ -425,7 +524,7 @@ export default function ExceptionReportsPage() {
             </tbody>
           </table>
           <div className="px-5 py-3 border-t border-border-soft text-right">
-            <a href="#" className="text-[13px] font-medium text-action-blue hover:underline">View full report →</a>
+            <button onClick={exportExceptions} className="text-[13px] font-medium text-action-blue hover:underline">View full report →</button>
           </div>
         </div>
 
@@ -444,7 +543,7 @@ export default function ExceptionReportsPage() {
             ))}
           </div>
           <div className="text-right mt-5 pt-3 border-t border-border-soft/60">
-            <a href="#" className="text-[13px] font-medium text-action-blue hover:underline">View full report →</a>
+            <button onClick={exportExceptions} className="text-[13px] font-medium text-action-blue hover:underline">View full report →</button>
           </div>
         </div>
 
@@ -453,15 +552,15 @@ export default function ExceptionReportsPage() {
           <h3 className="text-[15px] font-semibold text-text-primary mb-4">Quick Actions</h3>
           <div className="space-y-2">
             {[
-              { label: "Create Exception", icon: Plus },
-              { label: "Manage SLAs", icon: ShieldAlert },
-              { label: "Assign to Team", icon: UserPlus },
-              { label: "Exception Settings", icon: Settings },
-              { label: "Download Report", icon: FileDown },
+              { label: "Create Exception", icon: Plus, onClick: () => toast("New exception form opened", "info") },
+              { label: "Manage SLAs", icon: ShieldAlert, onClick: () => toast("SLA rules opened", "info") },
+              { label: "Assign to Team", icon: UserPlus, onClick: () => toast("Assignment dialog opened", "info") },
+              { label: "Exception Settings", icon: Settings, onClick: () => toast("Exception settings opened", "info") },
+              { label: "Download Report", icon: FileDown, onClick: exportExceptions },
             ].map((a) => {
               const Icon = a.icon;
               return (
-                <button key={a.label} className="w-full flex items-center gap-2.5 px-3.5 py-2.5 bg-soft-bg border border-border-soft rounded-lg text-[13px] font-medium text-text-primary hover:bg-border-blue/30 transition-colors">
+                <button key={a.label} onClick={a.onClick} className="w-full flex items-center gap-2.5 px-3.5 py-2.5 bg-soft-bg border border-border-soft rounded-lg text-[13px] font-medium text-text-primary hover:bg-border-blue/30 transition-colors">
                   <Icon className="w-4 h-4 text-text-muted" />
                   {a.label}
                 </button>
@@ -482,7 +581,7 @@ export default function ExceptionReportsPage() {
             <p className="text-[12px] text-text-on-dark-muted mt-0.5">Set up automated exception rules and SLA alerts to catch issues before they impact your customers.</p>
           </div>
         </div>
-        <button className="flex items-center gap-2 px-5 py-2.5 bg-white rounded-lg text-[13px] font-semibold text-navy hover:bg-white/90 shrink-0 transition-colors">
+        <button onClick={() => toast("Automation rules builder opened", "info")} className="flex items-center gap-2 px-5 py-2.5 bg-white rounded-lg text-[13px] font-semibold text-navy hover:bg-white/90 shrink-0 transition-colors">
           <Settings className="w-4 h-4" /> Configure Automation
         </button>
       </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useToast } from "@/components/dashboard/Toast";
 import {
   Mail,
   Bell,
@@ -83,10 +84,20 @@ function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {
 }
 
 export default function NotificationsPage() {
+  const { toast } = useToast();
   const [toggles, setToggles] = useState<Record<string, boolean>>(
     Object.fromEntries(prefs.map((p) => [p.key, true]))
   );
   const [frequency, setFrequency] = useState("Every Monday");
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = () => {
+    setSaving(true);
+    setTimeout(() => {
+      setSaving(false);
+      toast("Notification preferences saved");
+    }, 500);
+  };
 
   return (
     <div className="max-w-[640px]">
@@ -151,12 +162,14 @@ export default function NotificationsPage() {
       {/* Save Button */}
       <div className="mt-6 pt-2">
         <button
-          className="px-6 py-2.5 text-white rounded-lg text-[14px] font-semibold shadow-[0_4px_6px_-1px_rgba(0,0,0,0.1)] transition-all hover:brightness-110"
+          onClick={handleSave}
+          disabled={saving}
+          className="px-6 py-2.5 text-white rounded-lg text-[14px] font-semibold shadow-[0_4px_6px_-1px_rgba(0,0,0,0.1)] transition-all hover:brightness-110 disabled:opacity-60"
           style={{
             background: "linear-gradient(90deg, #3B82F6 0%, #1D4ED8 100%)",
           }}
         >
-          Save Changes
+          {saving ? "Saving…" : "Save Changes"}
         </button>
       </div>
     </div>

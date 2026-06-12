@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   Search,
   SlidersHorizontal,
@@ -24,6 +24,7 @@ import {
   Plus,
   MessageSquare,
 } from "lucide-react";
+import { useToast } from "@/components/dashboard/Toast";
 
 interface Conversation {
   id: string;
@@ -49,13 +50,51 @@ const conversations: Conversation[] = [
   { id: "c10", name: "System Notifications", avatar: "SY", color: "#64748B", subject: "Scheduled Maintenance", preview: "System maintenance completed.", time: "May 25", unread: 0 },
 ];
 
-const messages = [
-  { id: "m1", sender: "James Carter", isMe: false, time: "May 30, 2025 10:41 AM", content: "Can you provide an update on the status of PO-102876? We need confirmation before we schedule the pickup. Thanks!" },
-  { id: "m2", sender: "You", isMe: true, time: "May 30, 2025 10:41 AM", content: "Hi James, the shipment has been received and is currently being processed. Estimated completion time is May 31, 2025 by 12:00 PM." },
-  { id: "m3", sender: "You", isMe: true, time: "May 30, 2025 10:42 AM", content: "I'll keep you updated if anything changes. Best, Operations Team" },
-  { id: "m4", sender: "James Carter", isMe: false, time: "May 30, 2025 10:45 AM", content: "Great, thank you! Please ensure priority handling." },
-  { id: "m5", sender: "You", isMe: true, time: "May 30, 2025 10:46 AM", content: "Absolutely. We'll prioritize and keep you posted. Have a great day!" },
-];
+interface Message {
+  id: string;
+  sender: string;
+  isMe: boolean;
+  time: string;
+  content: string;
+}
+
+const initialMessages: Record<string, Message[]> = {
+  c1: [
+    { id: "m1", sender: "James Carter", isMe: false, time: "May 30, 2025 10:41 AM", content: "Can you provide an update on the status of PO-102876? We need confirmation before we schedule the pickup. Thanks!" },
+    { id: "m2", sender: "You", isMe: true, time: "May 30, 2025 10:41 AM", content: "Hi James, the shipment has been received and is currently being processed. Estimated completion time is May 31, 2025 by 12:00 PM." },
+    { id: "m3", sender: "You", isMe: true, time: "May 30, 2025 10:42 AM", content: "I'll keep you updated if anything changes. Best, Operations Team" },
+    { id: "m4", sender: "James Carter", isMe: false, time: "May 30, 2025 10:45 AM", content: "Great, thank you! Please ensure priority handling." },
+    { id: "m5", sender: "You", isMe: true, time: "May 30, 2025 10:46 AM", content: "Absolutely. We'll prioritize and keep you posted. Have a great day!" },
+  ],
+  c2: [
+    { id: "m1", sender: "Sophie Lee", isMe: false, time: "May 30, 2025 09:12 AM", content: "We found a mismatch in SKU-4421 count during the cycle count. System shows 320 but we counted 298." },
+    { id: "m2", sender: "You", isMe: true, time: "May 30, 2025 09:18 AM", content: "Thanks for flagging. Let's open an adjustment ticket and recount zone B to confirm." },
+  ],
+  c3: [
+    { id: "m1", sender: "Michael Brown", isMe: false, time: "Yesterday 02:00 PM", content: "The courier is confirmed for 2 PM today. Dock 2 is reserved." },
+  ],
+  c4: [
+    { id: "m1", sender: "DFW1 Warehouse Team", isMe: false, time: "Yesterday 07:30 AM", content: "Good morning team, here are today's priorities: clear the inbound backlog and prep the LAX transfer." },
+  ],
+  c5: [
+    { id: "m1", sender: "Ava Thomas", isMe: false, time: "Mon 11:20 AM", content: "All items passed inspection for Order #4498. Photos attached for your records." },
+  ],
+  c6: [
+    { id: "m1", sender: "LAX1 Warehouse Team", isMe: false, time: "Mon 08:45 AM", content: "Dock 3 will be closed for repairs this weekend. Please route inbound to Dock 1 and 2." },
+  ],
+  c7: [
+    { id: "m1", sender: "Ethan Taylor", isMe: false, time: "Sun 04:10 PM", content: "Variance for Zone B resolved and adjusted in the system. No further action needed." },
+  ],
+  c8: [
+    { id: "m1", sender: "Vendor: FastShip Logistics", isMe: false, time: "Sun 01:30 PM", content: "The ASN for PO-50672 is now available. Expected arrival is Tuesday before noon." },
+  ],
+  c9: [
+    { id: "m1", sender: "Returns Team", isMe: false, time: "May 26 03:15 PM", content: "Return RMA-7788 received and inspected. Item is restockable; awaiting your approval to refund." },
+  ],
+  c10: [
+    { id: "m1", sender: "System Notifications", isMe: false, time: "May 25 02:00 AM", content: "System maintenance completed successfully. All services are operational." },
+  ],
+};
 
 const participants = [
   { name: "James Carter", role: "Operations Manager", avatar: "JC", color: "#0057D8", online: true },
@@ -76,9 +115,54 @@ const quickActions = [
 ];
 
 export default function MessagesPage() {
+  const { toast } = useToast();
   const [selected, setSelected] = useState("c1");
   const [tab, setTab] = useState<"All" | "Unread">("All");
   const [composeTab, setComposeTab] = useState<"Message" | "Note">("Message");
+  const [query, setQuery] = useState("");
+  const [convos, setConvos] = useState<Conversation[]>(conversations);
+  const [threads, setThreads] = useState<Record<string, Message[]>>(initialMessages);
+  const [draft, setDraft] = useState("");
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const totalUnread = convos.reduce((sum, c) => sum + c.unread, 0);
+
+  const visibleConvos = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return convos.filter((c) => {
+      const matchesTab = tab === "All" || c.unread > 0;
+      const matchesQuery = !q || c.name.toLowerCase().includes(q) || c.subject.toLowerCase().includes(q) || c.preview.toLowerCase().includes(q);
+      return matchesTab && matchesQuery;
+    });
+  }, [convos, tab, query]);
+
+  const activeConvo = convos.find((c) => c.id === selected) ?? convos[0];
+  const activeMessages = threads[selected] ?? [];
+
+  function selectConversation(id: string) {
+    setSelected(id);
+    setConvos((cur) => cur.map((c) => (c.id === id ? { ...c, unread: 0 } : c)));
+  }
+
+  function sendMessage() {
+    const text = draft.trim();
+    if (!text) return;
+    const now = new Date();
+    const time = now.toLocaleString("en-US", { month: "short", day: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+    const msg: Message = { id: `m${Date.now()}`, sender: "You", isMe: true, time, content: text };
+    setThreads((cur) => ({ ...cur, [selected]: [...(cur[selected] ?? []), msg] }));
+    setConvos((cur) => cur.map((c) => (c.id === selected ? { ...c, preview: text, time: "Now" } : c)));
+    setDraft("");
+    toast(composeTab === "Note" ? "Internal note added" : "Message sent");
+    requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }));
+  }
+
+  function handleComposerKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -93,15 +177,17 @@ export default function MessagesPage() {
           <h1 className="text-[24px] font-semibold text-text-primary flex items-center gap-2">
             <MessageSquare className="w-6 h-6 text-action-blue" />
             Messages / Inbox
-            <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-[11px] font-semibold rounded-full bg-action-blue text-white">5</span>
+            {totalUnread > 0 && (
+              <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-[11px] font-semibold rounded-full bg-action-blue text-white">{totalUnread}</span>
+            )}
           </h1>
           <p className="text-[14px] text-text-body mt-1">Communicate with your team and partners in real time.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 px-3.5 py-2 bg-white border border-border-soft rounded-lg text-[13px] font-medium text-text-muted shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-soft-bg transition-colors">
+          <button onClick={() => toast("Opening message settings…", "info")} className="flex items-center gap-2 px-3.5 py-2 bg-white border border-border-soft rounded-lg text-[13px] font-medium text-text-muted shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-soft-bg transition-colors">
             <Settings className="w-4 h-4" /> Settings
           </button>
-          <button className="flex items-center gap-2 px-4 py-2 bg-action-blue rounded-lg text-[13px] font-medium text-white hover:bg-[#0048B5] shadow-[0_1px_2px_rgba(0,0,0,0.05)] transition-colors">
+          <button onClick={() => toast("Compose a new message", "info")} className="flex items-center gap-2 px-4 py-2 bg-action-blue rounded-lg text-[13px] font-medium text-white hover:bg-[#0048B5] shadow-[0_1px_2px_rgba(0,0,0,0.05)] transition-colors">
             <Edit className="w-4 h-4" /> Compose
           </button>
         </div>
@@ -118,24 +204,26 @@ export default function MessagesPage() {
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-light" />
                   <input
                     type="text"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
                     placeholder="Search conversations..."
                     className="w-full pl-9 pr-3 py-2 bg-soft-bg border border-border-soft rounded-lg text-[13px] text-text-primary placeholder:text-text-light focus:outline-none focus:ring-2 focus:ring-action-blue/20 focus:border-action-blue"
                   />
                 </div>
-                <button className="w-9 h-9 flex items-center justify-center bg-soft-bg border border-border-soft rounded-lg text-text-muted hover:bg-white transition-colors">
+                <button onClick={() => setTab(tab === "Unread" ? "All" : "Unread")} className="w-9 h-9 flex items-center justify-center bg-soft-bg border border-border-soft rounded-lg text-text-muted hover:bg-white transition-colors" aria-label="Toggle unread filter">
                   <SlidersHorizontal className="w-4 h-4" />
                 </button>
               </div>
               <div className="flex items-center gap-1">
                 <button onClick={() => setTab("All")} className={`px-3 py-1.5 text-[13px] font-medium rounded-md transition-colors ${tab === "All" ? "bg-action-blue/10 text-action-blue" : "text-text-muted hover:bg-soft-bg"}`}>All</button>
-                <button onClick={() => setTab("Unread")} className={`px-3 py-1.5 text-[13px] font-medium rounded-md transition-colors ${tab === "Unread" ? "bg-action-blue/10 text-action-blue" : "text-text-muted hover:bg-soft-bg"}`}>Unread (5)</button>
+                <button onClick={() => setTab("Unread")} className={`px-3 py-1.5 text-[13px] font-medium rounded-md transition-colors ${tab === "Unread" ? "bg-action-blue/10 text-action-blue" : "text-text-muted hover:bg-soft-bg"}`}>Unread ({totalUnread})</button>
               </div>
             </div>
             <div className="flex-1 overflow-y-auto">
-              {conversations.map((c) => (
+              {visibleConvos.map((c) => (
                 <button
                   key={c.id}
-                  onClick={() => setSelected(c.id)}
+                  onClick={() => selectConversation(c.id)}
                   className={`w-full flex items-start gap-3 px-4 py-3 text-left border-b border-border-soft/50 hover:bg-soft-bg/50 transition-colors ${
                     selected === c.id ? "bg-action-blue/5 border-l-2 border-l-action-blue" : "border-l-2 border-l-transparent"
                   }`}
@@ -156,6 +244,9 @@ export default function MessagesPage() {
                   </div>
                 </button>
               ))}
+              {visibleConvos.length === 0 && (
+                <p className="px-4 py-8 text-center text-[12px] text-text-light">No conversations found.</p>
+              )}
             </div>
           </div>
 
@@ -164,30 +255,30 @@ export default function MessagesPage() {
             {/* Conversation header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-border-soft">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-action-blue text-white text-[13px] font-semibold flex items-center justify-center">JC</div>
+                <div className="w-10 h-10 rounded-full text-white text-[13px] font-semibold flex items-center justify-center" style={{ backgroundColor: activeConvo.color }}>{activeConvo.avatar}</div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h2 className="text-[14px] font-semibold text-text-primary">James Carter</h2>
+                    <h2 className="text-[14px] font-semibold text-text-primary">{activeConvo.name}</h2>
                     <span className="inline-flex px-2 py-0.5 text-[10px] font-medium rounded-full bg-amber-50 text-amber-600">External</span>
                   </div>
-                  <p className="text-[12px] text-text-light">Operations Manager, ATL1 Warehouse</p>
+                  <p className="text-[12px] text-text-light">{activeConvo.subject}</p>
                 </div>
               </div>
               <div className="flex items-center gap-1">
-                <button className="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:bg-soft-bg transition-colors"><Phone className="w-4 h-4" /></button>
-                <button className="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:bg-soft-bg transition-colors"><Video className="w-4 h-4" /></button>
-                <button className="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:bg-soft-bg transition-colors"><Info className="w-4 h-4" /></button>
+                <button onClick={() => toast(`Calling ${activeConvo.name}…`, "info")} className="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:bg-soft-bg transition-colors" aria-label="Call"><Phone className="w-4 h-4" /></button>
+                <button onClick={() => toast(`Starting video call with ${activeConvo.name}…`, "info")} className="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:bg-soft-bg transition-colors" aria-label="Video call"><Video className="w-4 h-4" /></button>
+                <button onClick={() => toast("Conversation details", "info")} className="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:bg-soft-bg transition-colors" aria-label="Conversation info"><Info className="w-4 h-4" /></button>
               </div>
             </div>
 
             {/* Subject line */}
             <div className="px-4 py-2.5 bg-soft-bg border-b border-border-soft">
-              <p className="text-[13px] font-semibold text-text-primary">Re: PO-102876 — Shipment Update</p>
+              <p className="text-[13px] font-semibold text-text-primary">{activeConvo.subject}</p>
             </div>
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-              {messages.map((m) => (
+              {activeMessages.map((m) => (
                 <div key={m.id} className={`flex ${m.isMe ? "justify-end" : "justify-start"}`}>
                   <div className="max-w-[70%]">
                     <p className={`text-[11px] font-medium text-text-light mb-1 ${m.isMe ? "text-right" : "text-left"}`}>{m.sender} · {m.time.split(" ").slice(-2).join(" ")}</p>
@@ -197,6 +288,7 @@ export default function MessagesPage() {
                   </div>
                 </div>
               ))}
+              <div ref={messagesEndRef} />
             </div>
 
             {/* Composer */}
@@ -207,17 +299,20 @@ export default function MessagesPage() {
               </div>
               <div className="border border-border-soft rounded-lg bg-white">
                 <textarea
-                  placeholder="Type your message..."
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={handleComposerKey}
+                  placeholder={composeTab === "Note" ? "Add an internal note..." : "Type your message..."}
                   rows={2}
                   className="w-full px-4 py-2.5 text-[13px] text-text-primary placeholder:text-text-light resize-none focus:outline-none rounded-t-lg"
                 />
                 <div className="flex items-center justify-between px-3 py-2 border-t border-border-soft bg-soft-bg rounded-b-lg">
                   <div className="flex items-center gap-3 text-text-light">
-                    <button className="hover:text-text-muted transition-colors"><Paperclip className="w-4 h-4" /></button>
-                    <button className="hover:text-text-muted transition-colors"><Smile className="w-4 h-4" /></button>
-                    <button className="hover:text-text-muted transition-colors"><AtSign className="w-4 h-4" /></button>
+                    <button onClick={() => toast("Attach a file", "info")} className="hover:text-text-muted transition-colors" aria-label="Attach file"><Paperclip className="w-4 h-4" /></button>
+                    <button onClick={() => setDraft((d) => d + " 🙂")} className="hover:text-text-muted transition-colors" aria-label="Add emoji"><Smile className="w-4 h-4" /></button>
+                    <button onClick={() => setDraft((d) => d + " @")} className="hover:text-text-muted transition-colors" aria-label="Mention"><AtSign className="w-4 h-4" /></button>
                   </div>
-                  <button className="flex items-center gap-1.5 px-4 py-1.5 bg-action-blue rounded-lg text-[12px] font-medium text-white hover:bg-[#0048B5] transition-colors">
+                  <button onClick={sendMessage} disabled={!draft.trim()} className="flex items-center gap-1.5 px-4 py-1.5 bg-action-blue rounded-lg text-[12px] font-medium text-white hover:bg-[#0048B5] transition-colors disabled:opacity-50">
                     Send <Send className="w-3.5 h-3.5" />
                   </button>
                 </div>
@@ -243,7 +338,7 @@ export default function MessagesPage() {
             <div className="p-4 border-b border-border-soft">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-[13px] font-semibold text-text-primary">Participants (2)</h3>
-                <button className="flex items-center gap-1 text-[11px] font-medium text-action-blue hover:underline"><Plus className="w-3 h-3" />Add</button>
+                <button onClick={() => toast("Add a participant to this conversation", "info")} className="flex items-center gap-1 text-[11px] font-medium text-action-blue hover:underline"><Plus className="w-3 h-3" />Add</button>
               </div>
               <div className="space-y-3">
                 {participants.map((p) => (
@@ -265,17 +360,17 @@ export default function MessagesPage() {
             <div className="p-4 border-b border-border-soft">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-[13px] font-semibold text-text-primary">Shared Files (2)</h3>
-                <button className="text-[11px] font-medium text-action-blue hover:underline">View all</button>
+                <button onClick={() => toast("Opening shared files…", "info")} className="text-[11px] font-medium text-action-blue hover:underline">View all</button>
               </div>
               <div className="space-y-2">
                 {sharedFiles.map((f) => (
-                  <div key={f.name} className="flex items-center gap-2.5 p-2 rounded-lg hover:bg-white transition-colors">
+                  <button key={f.name} onClick={() => toast(`Downloading ${f.name}…`)} className="w-full text-left flex items-center gap-2.5 p-2 rounded-lg hover:bg-white transition-colors">
                     <div className="w-8 h-8 rounded-lg bg-action-blue/10 flex items-center justify-center shrink-0"><FileText className="w-4 h-4 text-action-blue" /></div>
                     <div className="min-w-0">
                       <p className="text-[12px] font-medium text-text-primary truncate">{f.name}</p>
                       <p className="text-[11px] text-text-light">{f.meta}</p>
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
@@ -287,7 +382,11 @@ export default function MessagesPage() {
                 {quickActions.map((a) => {
                   const Icon = a.icon;
                   return (
-                    <button key={a.label} className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg text-[12px] text-text-muted hover:bg-white transition-colors">
+                    <button
+                      key={a.label}
+                      onClick={() => toast(`${a.label} — done`)}
+                      className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg text-[12px] text-text-muted hover:bg-white transition-colors"
+                    >
                       <Icon className="w-4 h-4 text-text-light" /> {a.label}
                     </button>
                   );
@@ -323,7 +422,7 @@ export default function MessagesPage() {
             <p className="text-[12px] text-text-on-dark-muted mt-0.5">Enable notifications to never miss important updates from your team.</p>
           </div>
         </div>
-        <button className="shrink-0 px-4 py-2.5 bg-[#3B82F6] rounded-lg text-[13px] font-semibold text-white hover:bg-[#2563EB] transition-colors">
+        <button onClick={() => toast("Opening notification settings…", "info")} className="shrink-0 px-4 py-2.5 bg-[#3B82F6] rounded-lg text-[13px] font-semibold text-white hover:bg-[#2563EB] transition-colors">
           Manage Notifications
         </button>
       </div>

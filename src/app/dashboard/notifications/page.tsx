@@ -1,13 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Bell,
   Settings,
   CheckCheck,
   Search,
   SlidersHorizontal,
-  ChevronDown,
   ChevronRight,
   Truck,
   AlertTriangle,
@@ -20,7 +19,11 @@ import {
   Mail,
   Trash2,
   Archive,
+  Check,
+  X,
 } from "lucide-react";
+import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
+import { useToast } from "@/components/dashboard/Toast";
 
 const tabs = [
   { label: "All", count: 128 },
@@ -33,18 +36,29 @@ const tabs = [
   { label: "Other", count: 12 },
 ];
 
-const notifications = [
-  { icon: Truck, color: "#0057D8", title: "Shipment SO-102876 has been shipped", desc: "Order has been shipped via FedEx. Tracking #: 1Z999AA10123456784", time: "10:24 AM", unread: true },
-  { icon: AlertTriangle, color: "#F59E0B", title: "Low stock alert: SKU-10023", desc: "Product \"Wireless Headphones\" is below reorder point at ATL1.", time: "09:58 AM", unread: true },
-  { icon: PackageCheck, color: "#00B894", title: "Inbound receipt completed", desc: "Receipt PO-50672 has been received at DFW1.", time: "09:15 AM", unread: true },
-  { icon: ClipboardCheck, color: "#7C6FF6", title: "Cycle count CC-000124 completed", desc: "Cycle count for zone B at LAX1 has been completed.", time: "Yesterday 06:45 PM", unread: false },
-  { icon: FileText, color: "#0057D8", title: "Order SO-102865 placed", desc: "A new order has been placed by customer James Carter.", time: "Yesterday 04:32 PM", unread: false },
-  { icon: Truck, color: "#0057D8", title: "Return RMA-7788 received", desc: "Return for order SO-100154 has been received and inspected.", time: "Yesterday 02:10 PM", unread: false },
-  { icon: FileText, color: "#007F8C", title: "Document uploaded", desc: "\"Warehouse Safety Guide\" was uploaded by Michael Brown.", time: "Yesterday 11:05 AM", unread: false },
-  { icon: Wrench, color: "#64748B", title: "System maintenance scheduled", desc: "Platform maintenance scheduled for Jun 5, 2025, 2:00 AM – 4:00 AM EST.", time: "May 29, 09:00 AM", unread: false },
-  { icon: CreditCard, color: "#F59E0B", title: "Invoice INV-2041 generated", desc: "A new invoice has been generated for customer Acme Retail.", time: "May 29, 08:14 AM", unread: false },
-  { icon: ClipboardCheck, color: "#00B894", title: "Putaway PA-00219 completed", desc: "Putaway task at MIA1 has been completed.", time: "May 28, 03:48 PM", unread: false },
-  { icon: UserPlus, color: "#7C6FF6", title: "New message from James Carter", desc: "You have a new message regarding PO-102876.", time: "May 28, 01:22 PM", unread: false },
+interface Notification {
+  id: number;
+  icon: typeof Truck;
+  color: string;
+  title: string;
+  desc: string;
+  time: string;
+  unread: boolean;
+  category: string;
+}
+
+const initialNotifications: Notification[] = [
+  { id: 1, icon: Truck, color: "#0057D8", title: "Shipment SO-102876 has been shipped", desc: "Order has been shipped via FedEx. Tracking #: 1Z999AA10123456784", time: "10:24 AM", unread: true, category: "Shipments" },
+  { id: 2, icon: AlertTriangle, color: "#F59E0B", title: "Low stock alert: SKU-10023", desc: "Product \"Wireless Headphones\" is below reorder point at ATL1.", time: "09:58 AM", unread: true, category: "Inventory" },
+  { id: 3, icon: PackageCheck, color: "#00B894", title: "Inbound receipt completed", desc: "Receipt PO-50672 has been received at DFW1.", time: "09:15 AM", unread: true, category: "Inventory" },
+  { id: 4, icon: ClipboardCheck, color: "#7C6FF6", title: "Cycle count CC-000124 completed", desc: "Cycle count for zone B at LAX1 has been completed.", time: "Yesterday 06:45 PM", unread: false, category: "Inventory" },
+  { id: 5, icon: FileText, color: "#0057D8", title: "Order SO-102865 placed", desc: "A new order has been placed by customer James Carter.", time: "Yesterday 04:32 PM", unread: false, category: "Orders" },
+  { id: 6, icon: Truck, color: "#0057D8", title: "Return RMA-7788 received", desc: "Return for order SO-100154 has been received and inspected.", time: "Yesterday 02:10 PM", unread: false, category: "Shipments" },
+  { id: 7, icon: FileText, color: "#007F8C", title: "Document uploaded", desc: "\"Warehouse Safety Guide\" was uploaded by Michael Brown.", time: "Yesterday 11:05 AM", unread: false, category: "Other" },
+  { id: 8, icon: Wrench, color: "#64748B", title: "System maintenance scheduled", desc: "Platform maintenance scheduled for Jun 5, 2025, 2:00 AM – 4:00 AM EST.", time: "May 29, 09:00 AM", unread: false, category: "System" },
+  { id: 9, icon: CreditCard, color: "#F59E0B", title: "Invoice INV-2041 generated", desc: "A new invoice has been generated for customer Acme Retail.", time: "May 29, 08:14 AM", unread: false, category: "Billing" },
+  { id: 10, icon: ClipboardCheck, color: "#00B894", title: "Putaway PA-00219 completed", desc: "Putaway task at MIA1 has been completed.", time: "May 28, 03:48 PM", unread: false, category: "Inventory" },
+  { id: 11, icon: UserPlus, color: "#7C6FF6", title: "New message from James Carter", desc: "You have a new message regarding PO-102876.", time: "May 28, 01:22 PM", unread: false, category: "Other" },
 ];
 
 const summary = [
@@ -56,12 +70,6 @@ const summary = [
   { label: "Other", value: "12", pct: 9, color: "#007F8C" },
 ];
 
-const unread = [
-  { icon: Truck, color: "#0057D8", title: "Shipment SO-102876 shipped", time: "10:24 AM" },
-  { icon: AlertTriangle, color: "#F59E0B", title: "Low stock alert: SKU-10023", time: "09:58 AM" },
-  { icon: PackageCheck, color: "#00B894", title: "Inbound receipt completed", time: "09:15 AM" },
-];
-
 const preferences = [
   { label: "Order Updates", on: true },
   { label: "Inventory Alerts", on: true },
@@ -70,18 +78,82 @@ const preferences = [
   { label: "Billing Reminders", on: true },
 ];
 
-const quickActions = [
-  { label: "Mark all as read", icon: CheckCheck },
-  { label: "Email digest settings", icon: Mail },
-  { label: "Archive all read", icon: Archive },
-  { label: "Clear notifications", icon: Trash2 },
-];
-
 export default function NotificationsPage() {
+  const { toast } = useToast();
   const [active, setActive] = useState("All");
   const [prefs, setPrefs] = useState(preferences);
+  const [items, setItems] = useState<Notification[]>(initialNotifications);
+  const [query, setQuery] = useState("");
+  const [clearOpen, setClearOpen] = useState(false);
 
   const C = 2 * Math.PI * 40;
+
+  const unreadCount = items.filter((n) => n.unread).length;
+
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return items.filter((n) => {
+      const matchesTab =
+        active === "All" ? true :
+        active === "Unread" ? n.unread :
+        n.category === active;
+      const matchesQuery = !q || n.title.toLowerCase().includes(q) || n.desc.toLowerCase().includes(q);
+      return matchesTab && matchesQuery;
+    });
+  }, [items, active, query]);
+
+  const tabCounts = useMemo(() => {
+    const counts: Record<string, number> = { All: items.length, Unread: unreadCount };
+    for (const t of tabs) {
+      if (t.label === "All" || t.label === "Unread") continue;
+      counts[t.label] = items.filter((n) => n.category === t.label).length;
+    }
+    return counts;
+  }, [items, unreadCount]);
+
+  function markRead(id: number) {
+    const target = items.find((n) => n.id === id);
+    if (!target || !target.unread) return;
+    setItems((cur) => cur.map((n) => (n.id === id ? { ...n, unread: false } : n)));
+    toast("Notification marked as read");
+  }
+
+  function markAllRead() {
+    if (unreadCount === 0) {
+      toast("No unread notifications", "info");
+      return;
+    }
+    setItems((cur) => cur.map((n) => ({ ...n, unread: false })));
+    toast(`Marked ${unreadCount} notification${unreadCount === 1 ? "" : "s"} as read`);
+  }
+
+  function removeOne(id: number) {
+    setItems((cur) => cur.filter((n) => n.id !== id));
+    toast("Notification removed");
+  }
+
+  function archiveAllRead() {
+    const readCount = items.filter((n) => !n.unread).length;
+    if (readCount === 0) {
+      toast("No read notifications to archive", "info");
+      return;
+    }
+    setItems((cur) => cur.filter((n) => n.unread));
+    toast(`Archived ${readCount} read notification${readCount === 1 ? "" : "s"}`);
+  }
+
+  function confirmClear() {
+    setItems([]);
+    setClearOpen(false);
+    toast("All notifications cleared");
+  }
+
+  const quickActions: { label: string; icon: typeof CheckCheck; onClick: () => void }[] = [
+    { label: "Mark all as read", icon: CheckCheck, onClick: markAllRead },
+    { label: "Email digest settings", icon: Mail, onClick: () => toast("Opening email digest settings…", "info") },
+    { label: "Archive all read", icon: Archive, onClick: archiveAllRead },
+    { label: "Clear notifications", icon: Trash2, onClick: () => setClearOpen(true) },
+  ];
 
   return (
     <div className="space-y-6">
@@ -100,10 +172,10 @@ export default function NotificationsPage() {
           <p className="text-[14px] text-text-body mt-1">Stay updated on important alerts and activities across your operations.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 px-3.5 py-2 bg-white border border-border-soft rounded-lg text-[13px] font-medium text-text-muted shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-soft-bg transition-colors">
+          <button onClick={markAllRead} className="flex items-center gap-2 px-3.5 py-2 bg-white border border-border-soft rounded-lg text-[13px] font-medium text-text-muted shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-soft-bg transition-colors">
             <CheckCheck className="w-4 h-4" /> Mark all as read
           </button>
-          <button className="flex items-center gap-2 px-3.5 py-2 bg-white border border-border-soft rounded-lg text-[13px] font-medium text-text-muted shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-soft-bg transition-colors">
+          <button onClick={() => toast("Opening notification settings…", "info")} className="flex items-center gap-2 px-3.5 py-2 bg-white border border-border-soft rounded-lg text-[13px] font-medium text-text-muted shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-soft-bg transition-colors">
             <Settings className="w-4 h-4" /> Notification Settings
           </button>
         </div>
@@ -130,7 +202,7 @@ export default function NotificationsPage() {
                     : "bg-soft-bg text-text-light"
                 }`}
               >
-                {t.count}
+                {tabCounts[t.label] ?? t.count}
               </span>
               {active === t.label && (
                 <span className="absolute -bottom-px left-0 right-0 h-0.5 bg-action-blue rounded-full" />
@@ -150,26 +222,29 @@ export default function NotificationsPage() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-light" />
               <input
                 type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search notifications..."
                 className="w-full pl-9 pr-3 py-2 bg-white border border-border-soft rounded-lg text-[13px] text-text-primary placeholder:text-text-light focus:outline-none focus:ring-2 focus:ring-action-blue/20 focus:border-action-blue transition-colors"
               />
             </div>
-            <button className="flex items-center gap-2 px-3 py-2 bg-white border border-border-soft rounded-lg text-[13px] text-text-muted hover:bg-soft-bg transition-colors">
-              <SlidersHorizontal className="w-4 h-4" /> Filters
+            <button onClick={() => setActive("Unread")} className="flex items-center gap-2 px-3 py-2 bg-white border border-border-soft rounded-lg text-[13px] text-text-muted hover:bg-soft-bg transition-colors">
+              <SlidersHorizontal className="w-4 h-4" /> Unread only
             </button>
-            <button className="flex items-center gap-2 px-3 py-2 bg-white border border-border-soft rounded-lg text-[13px] text-text-muted hover:bg-soft-bg transition-colors">
-              Most Recent <ChevronDown className="w-3.5 h-3.5" />
+            <button onClick={markAllRead} className="flex items-center gap-2 px-3 py-2 bg-white border border-border-soft rounded-lg text-[13px] text-text-muted hover:bg-soft-bg transition-colors">
+              <CheckCheck className="w-4 h-4" /> Mark all read
             </button>
           </div>
 
           {/* Notification rows */}
           <div>
-            {notifications.map((n, i) => {
+            {visible.map((n) => {
               const Icon = n.icon;
               return (
                 <div
-                  key={i}
-                  className={`flex items-start gap-4 px-5 py-4 border-b border-border-soft/50 last:border-b-0 hover:bg-soft-bg/60 transition-colors cursor-pointer ${
+                  key={n.id}
+                  onClick={() => markRead(n.id)}
+                  className={`group flex items-start gap-4 px-5 py-4 border-b border-border-soft/50 last:border-b-0 hover:bg-soft-bg/60 transition-colors cursor-pointer ${
                     n.unread ? "bg-[#EFF6FF]" : ""
                   }`}
                 >
@@ -189,25 +264,42 @@ export default function NotificationsPage() {
                     <p className="text-[12px] text-text-muted mt-1 leading-relaxed truncate">{n.desc}</p>
                   </div>
 
-                  {/* Time + unread dot */}
+                  {/* Time + actions */}
                   <div className="flex items-center gap-2 shrink-0 pt-0.5">
                     <span className="text-[12px] text-text-light whitespace-nowrap">{n.time}</span>
                     {n.unread && <span className="w-2 h-2 rounded-full bg-action-blue" />}
+                    {n.unread && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); markRead(n.id); }}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-text-light hover:text-teal hover:bg-soft-bg"
+                        aria-label="Mark as read"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); removeOne(n.id); }}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-text-light hover:text-[#EF4444] hover:bg-soft-bg"
+                      aria-label="Remove notification"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
               );
             })}
+            {visible.length === 0 && (
+              <div className="px-5 py-12 text-center">
+                <p className="text-[13px] text-text-muted">No notifications match your filters.</p>
+              </div>
+            )}
           </div>
 
           {/* Pagination */}
           <div className="flex items-center justify-between px-5 py-4 border-t border-border-soft">
-            <p className="text-[13px] text-text-muted">Showing 1 to 10 of 128 notifications</p>
+            <p className="text-[13px] text-text-muted">Showing {visible.length} of {items.length} notifications</p>
             <div className="flex items-center gap-1.5">
               <button className="w-8 h-8 flex items-center justify-center rounded-lg bg-action-blue text-white text-[13px] font-medium">1</button>
-              <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-muted text-[13px] hover:bg-soft-bg transition-colors">2</button>
-              <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-muted text-[13px] hover:bg-soft-bg transition-colors">3</button>
-              <span className="px-1 text-[13px] text-text-light">...</span>
-              <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-muted text-[13px] hover:bg-soft-bg transition-colors">12</button>
             </div>
           </div>
         </div>
@@ -262,13 +354,17 @@ export default function NotificationsPage() {
           <div className="bg-white rounded-xl border border-border-soft shadow-[0_1px_3px_rgba(0,0,0,0.1)] p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-[14px] font-semibold text-text-primary">Unread Notifications</h3>
-              <span className="text-[11px] font-semibold bg-action-blue text-white px-2 py-0.5 rounded-full">{unread.length}</span>
+              <span className="text-[11px] font-semibold bg-action-blue text-white px-2 py-0.5 rounded-full">{unreadCount}</span>
             </div>
             <div className="space-y-3">
-              {unread.map((u, i) => {
+              {items.filter((n) => n.unread).map((u) => {
                 const Icon = u.icon;
                 return (
-                  <div key={i} className="flex items-start gap-3 p-2.5 rounded-lg hover:bg-soft-bg transition-colors cursor-pointer">
+                  <button
+                    key={u.id}
+                    onClick={() => markRead(u.id)}
+                    className="w-full text-left flex items-start gap-3 p-2.5 rounded-lg hover:bg-soft-bg transition-colors cursor-pointer"
+                  >
                     <div
                       className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
                       style={{ backgroundColor: `${u.color}1A` }}
@@ -279,9 +375,10 @@ export default function NotificationsPage() {
                       <p className="text-[13px] font-medium text-text-primary truncate">{u.title}</p>
                       <p className="text-[12px] text-text-light mt-0.5">{u.time}</p>
                     </div>
-                  </div>
+                  </button>
                 );
               })}
+              {unreadCount === 0 && <p className="text-[12px] text-text-light">You&apos;re all caught up.</p>}
             </div>
           </div>
 
@@ -293,7 +390,10 @@ export default function NotificationsPage() {
                 <div key={p.label} className="flex items-center justify-between">
                   <span className="text-[13px] text-text-muted">{p.label}</span>
                   <button
-                    onClick={() => setPrefs((cur) => cur.map((x, j) => (j === i ? { ...x, on: !x.on } : x)))}
+                    onClick={() => {
+                      setPrefs((cur) => cur.map((x, j) => (j === i ? { ...x, on: !x.on } : x)));
+                      toast(`${p.label} ${p.on ? "disabled" : "enabled"}`);
+                    }}
                     className={`relative w-10 h-[22px] rounded-full transition-colors duration-200 ${
                       p.on ? "bg-teal" : "bg-[#CBD5E1]"
                     }`}
@@ -318,6 +418,7 @@ export default function NotificationsPage() {
                 return (
                   <button
                     key={a.label}
+                    onClick={a.onClick}
                     className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] text-action-blue font-medium hover:bg-[#EFF6FF] transition-colors"
                   >
                     <Icon className="w-4 h-4 text-action-blue" /> {a.label}
@@ -337,10 +438,21 @@ export default function NotificationsPage() {
             Customize your notification preferences and stay on top of every alert across your operations.
           </p>
         </div>
-        <button className="flex items-center gap-2 px-5 py-2.5 bg-white rounded-lg text-[14px] font-semibold text-teal hover:bg-white/90 whitespace-nowrap shrink-0 shadow-button transition-colors">
+        <button onClick={() => toast("Opening notification preferences…", "info")} className="flex items-center gap-2 px-5 py-2.5 bg-white rounded-lg text-[14px] font-semibold text-teal hover:bg-white/90 whitespace-nowrap shrink-0 shadow-button transition-colors">
           <Settings className="w-4 h-4" /> Manage Preferences
         </button>
       </div>
+
+      {/* Clear all confirm */}
+      <ConfirmDialog
+        open={clearOpen}
+        onClose={() => setClearOpen(false)}
+        onConfirm={confirmClear}
+        title="Clear all notifications"
+        message="This will remove all notifications from your inbox. This action cannot be undone."
+        confirmLabel="Clear all"
+        destructive
+      />
     </div>
   );
 }

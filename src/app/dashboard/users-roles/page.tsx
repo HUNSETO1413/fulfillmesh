@@ -1,12 +1,17 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   Users, UserCheck, UserX, Shield, Mail,
   Search, Plus, Download, MoreHorizontal, ChevronDown, ChevronRight, ChevronLeft,
   ArrowUpRight, ArrowDownRight, CheckCircle2,
-  Check, X, Minus, Edit2, UserPlus, Copy, SlidersHorizontal,
+  Check, X, Minus, Edit2, UserPlus, Copy, SlidersHorizontal, Trash2,
 } from "lucide-react";
+import { Modal } from "@/components/dashboard/Modal";
+import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
+import { Field, TextInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
+import { useToast } from "@/components/dashboard/Toast";
+import { exportToCsv } from "@/lib/client";
 
 /* ---------------- data ---------------- */
 
@@ -30,17 +35,24 @@ const roleColors: Record<string, string> = {
   "Viewer": "bg-[#64748B]/10 text-[#64748B]",
 };
 
-const users = [
-  { name: "John Smith", email: "john.smith@fulfillmesh.com", role: "Admin", wh: "All Warehouses", status: "Active", last: "May 30, 2026", time: "09:42 AM" },
-  { name: "Sarah Rodriguez", email: "sarah.rodriguez@fulfillmesh.com", role: "Operations Manager", wh: "DFW1, ATL1, LAX1", status: "Active", last: "May 30, 2026", time: "08:15 AM" },
-  { name: "Michael Davis", email: "michael.davis@fulfillmesh.com", role: "Warehouse Manager", wh: "DFW1 - Dallas", status: "Active", last: "May 30, 2026", time: "07:58 AM" },
-  { name: "Emily Watson", email: "emily.watson@fulfillmesh.com", role: "Inventory Manager", wh: "ATL1 - Atlanta", status: "Active", last: "May 29, 2026", time: "05:21 PM" },
-  { name: "Alex Chen", email: "alex.chen@fulfillmesh.com", role: "Supervisor", wh: "LAX1 - Los Angeles", status: "Active", last: "May 29, 2026", time: "03:44 PM" },
-  { name: "Tyler Brown", email: "tyler.brown@fulfillmesh.com", role: "Team Lead", wh: "MIA1 - Miami", status: "Active", last: "May 29, 2026", time: "01:10 PM" },
-  { name: "Lisa White", email: "lisa.white@fulfillmesh.com", role: "Operator", wh: "DFW1 - Dallas", status: "Active", last: "May 28, 2026", time: "06:30 PM" },
-  { name: "Noah Garcia", email: "noah.garcia@fulfillmesh.com", role: "Operator", wh: "ATL1 - Atlanta", status: "Active", last: "May 28, 2026", time: "04:02 PM" },
-  { name: "Ava Harris", email: "ava.harris@fulfillmesh.com", role: "Billing Specialist", wh: "All Warehouses", status: "Active", last: "May 28, 2026", time: "11:48 AM" },
-  { name: "Robert Black", email: "robert.black@fulfillmesh.com", role: "Viewer", wh: "LAX1 - Los Angeles", status: "Inactive", last: "May 25, 2026", time: "09:15 AM" },
+interface UserRow {
+  id: number; name: string; email: string; role: string; wh: string; status: string; last: string; time: string;
+}
+
+const ROLE_OPTIONS = ["Admin", "Operations Manager", "Warehouse Manager", "Inventory Manager", "Team Lead", "Operator", "Supervisor", "Billing Specialist", "Viewer"];
+const WAREHOUSE_OPTIONS = ["All Warehouses", "DFW1 - Dallas", "ATL1 - Atlanta", "LAX1 - Los Angeles", "MIA1 - Miami"];
+
+const initialUsers: UserRow[] = [
+  { id: 1, name: "John Smith", email: "john.smith@fulfillmesh.com", role: "Admin", wh: "All Warehouses", status: "Active", last: "May 30, 2026", time: "09:42 AM" },
+  { id: 2, name: "Sarah Rodriguez", email: "sarah.rodriguez@fulfillmesh.com", role: "Operations Manager", wh: "DFW1, ATL1, LAX1", status: "Active", last: "May 30, 2026", time: "08:15 AM" },
+  { id: 3, name: "Michael Davis", email: "michael.davis@fulfillmesh.com", role: "Warehouse Manager", wh: "DFW1 - Dallas", status: "Active", last: "May 30, 2026", time: "07:58 AM" },
+  { id: 4, name: "Emily Watson", email: "emily.watson@fulfillmesh.com", role: "Inventory Manager", wh: "ATL1 - Atlanta", status: "Active", last: "May 29, 2026", time: "05:21 PM" },
+  { id: 5, name: "Alex Chen", email: "alex.chen@fulfillmesh.com", role: "Supervisor", wh: "LAX1 - Los Angeles", status: "Active", last: "May 29, 2026", time: "03:44 PM" },
+  { id: 6, name: "Tyler Brown", email: "tyler.brown@fulfillmesh.com", role: "Team Lead", wh: "MIA1 - Miami", status: "Active", last: "May 29, 2026", time: "01:10 PM" },
+  { id: 7, name: "Lisa White", email: "lisa.white@fulfillmesh.com", role: "Operator", wh: "DFW1 - Dallas", status: "Active", last: "May 28, 2026", time: "06:30 PM" },
+  { id: 8, name: "Noah Garcia", email: "noah.garcia@fulfillmesh.com", role: "Operator", wh: "ATL1 - Atlanta", status: "Active", last: "May 28, 2026", time: "04:02 PM" },
+  { id: 9, name: "Ava Harris", email: "ava.harris@fulfillmesh.com", role: "Billing Specialist", wh: "All Warehouses", status: "Active", last: "May 28, 2026", time: "11:48 AM" },
+  { id: 10, name: "Robert Black", email: "robert.black@fulfillmesh.com", role: "Viewer", wh: "LAX1 - Los Angeles", status: "Inactive", last: "May 25, 2026", time: "09:15 AM" },
 ];
 
 const avatarColors = ["#0057D8", "#00B894", "#F59E0B", "#7C6FF6", "#EC4899", "#007F8C", "#EF4444", "#F97316", "#84CC16", "#64748B"];
@@ -134,21 +146,127 @@ function Card({ children, className = "" }: { children: React.ReactNode; classNa
   return <div className={`bg-white rounded-xl border border-border-soft shadow-[0_1px_3px_rgba(0,0,0,0.05)] ${className}`}>{children}</div>;
 }
 
-function FilterButton({ label, icon: Icon }: { label: string; icon?: React.ElementType }) {
+function FilterButton({ label, icon: Icon, onClick }: { label: string; icon?: React.ElementType; onClick?: () => void }) {
   return (
-    <button className="inline-flex items-center gap-2 px-3 py-2 text-[13px] text-text-muted border border-border-soft rounded-lg bg-white hover:bg-soft-bg whitespace-nowrap">
+    <button onClick={onClick} className="inline-flex items-center gap-2 px-3 py-2 text-[13px] text-text-muted border border-border-soft rounded-lg bg-white hover:bg-soft-bg whitespace-nowrap">
       {Icon && <Icon className="w-4 h-4 text-text-light" />}
       {label} <ChevronDown className="w-3.5 h-3.5 text-[#9AA8B8]" />
     </button>
   );
 }
 
+type InviteDraft = { name: string; email: string; role: string; wh: string };
+const emptyInvite: InviteDraft = { name: "", email: "", role: "Operator", wh: "All Warehouses" };
+
+let userSeq = 1000;
+
 export default function UsersRolesPage() {
+  const { toast } = useToast();
   const [permTab, setPermTab] = useState<"roles" | "permissions" | "groups">("permissions");
   const [showDetail, setShowDetail] = useState(false);
 
+  const [rows, setRows] = useState<UserRow[]>(initialUsers);
+  const [query, setQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [openMenu, setOpenMenu] = useState<number | null>(null);
+
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [invite, setInvite] = useState<InviteDraft>(emptyInvite);
+  const [editing, setEditing] = useState<UserRow | null>(null);
+  const [editDraft, setEditDraft] = useState<InviteDraft>(emptyInvite);
+  const [busy, setBusy] = useState(false);
+  const [removing, setRemoving] = useState<UserRow | null>(null);
+
   const totalDist = roleDistribution.reduce((a, b) => a + b.count, 0);
   const circumference = 2 * Math.PI * 40;
+
+  const filteredUsers = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return rows.filter((u) => {
+      const matchesQuery = !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q) || u.role.toLowerCase().includes(q);
+      const matchesRole = !roleFilter || u.role === roleFilter;
+      const matchesStatus = !statusFilter || u.status === statusFilter;
+      return matchesQuery && matchesRole && matchesStatus;
+    });
+  }, [rows, query, roleFilter, statusFilter]);
+
+  function openInvite() {
+    setInvite(emptyInvite);
+    setInviteOpen(true);
+  }
+
+  function saveInvite() {
+    if (!invite.name.trim()) { toast("Name is required", "error"); return; }
+    if (!invite.email.trim() || !invite.email.includes("@")) { toast("A valid email is required", "error"); return; }
+    setBusy(true);
+    const created: UserRow = {
+      id: ++userSeq,
+      name: invite.name.trim(),
+      email: invite.email.trim(),
+      role: invite.role,
+      wh: invite.wh,
+      status: "Active",
+      last: "Invited",
+      time: "—",
+    };
+    setRows((prev) => [created, ...prev]);
+    setBusy(false);
+    setInviteOpen(false);
+    toast(`Invitation sent to ${created.email}`);
+  }
+
+  function openEdit(u: UserRow) {
+    setEditing(u);
+    setEditDraft({ name: u.name, email: u.email, role: u.role, wh: u.wh });
+    setOpenMenu(null);
+  }
+
+  function saveEdit() {
+    if (!editing) return;
+    setBusy(true);
+    setRows((cur) => cur.map((u) => (u.id === editing.id ? { ...u, name: editDraft.name.trim(), email: editDraft.email.trim(), role: editDraft.role, wh: editDraft.wh } : u)));
+    setBusy(false);
+    toast(`${editDraft.name} updated`);
+    setEditing(null);
+  }
+
+  function changeRole(id: number, role: string) {
+    setRows((cur) => cur.map((u) => (u.id === id ? { ...u, role } : u)));
+    setOpenMenu(null);
+    toast(`Role updated to ${role}`);
+  }
+
+  function toggleStatus(id: number) {
+    setRows((cur) => cur.map((u) => {
+      if (u.id !== id) return u;
+      const status = u.status === "Active" ? "Inactive" : "Active";
+      toast(`${u.name} ${status === "Active" ? "activated" : "deactivated"}`);
+      return { ...u, status };
+    }));
+    setOpenMenu(null);
+  }
+
+  function confirmRemove() {
+    if (!removing) return;
+    setRows((cur) => cur.filter((u) => u.id !== removing.id));
+    toast(`${removing.name} removed`);
+    setRemoving(null);
+  }
+
+  function handleExport() {
+    exportToCsv("users", filteredUsers, [
+      { key: "name", header: "Name" },
+      { key: "email", header: "Email" },
+      { key: "role", header: "Role" },
+      { key: "wh", header: "Warehouse Access" },
+      { key: "status", header: "Status" },
+      { key: "last", header: "Last Active" },
+    ]);
+    toast(`Exported ${filteredUsers.length} user${filteredUsers.length === 1 ? "" : "s"} to CSV`);
+  }
+
+  const selectCls = "inline-flex items-center gap-2 px-3 py-2 text-[13px] text-text-muted border border-border-soft rounded-lg bg-white hover:bg-soft-bg whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-action-blue/20";
 
   if (showDetail) return <RoleDetail onBack={() => setShowDetail(false)} />;
 
@@ -169,10 +287,10 @@ export default function UsersRolesPage() {
           <p className="text-[14px] text-text-muted mt-0.5">Manage users, roles, permissions, and access across your organization.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-border-soft bg-white text-text-body text-[13px] font-medium hover:bg-soft-bg shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+          <button onClick={handleExport} className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-border-soft bg-white text-text-body text-[13px] font-medium hover:bg-soft-bg shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
             <Download className="w-4 h-4 text-text-light" /> Export Users
           </button>
-          <button className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-action-blue text-white text-[13px] font-medium hover:bg-[#0047B3] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+          <button onClick={openInvite} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-action-blue text-white text-[13px] font-medium hover:bg-[#0047B3] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
             <Plus className="w-4 h-4" /> Add User
           </button>
         </div>
@@ -207,12 +325,20 @@ export default function UsersRolesPage() {
       <div className="bg-white rounded-xl border border-border-soft p-3 shadow-[0_1px_3px_rgba(0,0,0,0.05)] flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[240px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-light" />
-          <input placeholder="Search users by name, email, or role..." className="w-full pl-9 pr-4 py-2 border border-border-soft rounded-lg text-[13px] text-text-primary placeholder:text-text-light focus:outline-none focus:ring-2 focus:ring-action-blue/20" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search users by name, email, or role..." className="w-full pl-9 pr-4 py-2 border border-border-soft rounded-lg text-[13px] text-text-primary placeholder:text-text-light focus:outline-none focus:ring-2 focus:ring-action-blue/20" />
         </div>
-        <FilterButton label="All Roles" />
-        <FilterButton label="All Statuses" />
-        <FilterButton label="All Warehouses" />
-        <FilterButton label="Filters" icon={SlidersHorizontal} />
+        <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className={selectCls}>
+          <option value="">All Roles</option>
+          {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+        </select>
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={selectCls}>
+          <option value="">All Statuses</option>
+          <option value="Active">Active</option>
+          <option value="Inactive">Inactive</option>
+        </select>
+        <button onClick={() => { setQuery(""); setRoleFilter(""); setStatusFilter(""); toast("Filters cleared", "info"); }} className="inline-flex items-center gap-2 px-3 py-2 text-[13px] text-text-muted border border-border-soft rounded-lg bg-white hover:bg-soft-bg whitespace-nowrap">
+          <SlidersHorizontal className="w-4 h-4 text-text-light" /> Clear
+        </button>
       </div>
 
       {/* Main: table + sidebar */}
@@ -229,8 +355,8 @@ export default function UsersRolesPage() {
                 </tr>
               </thead>
               <tbody>
-                {users.map((u, i) => (
-                  <tr key={u.email} className="border-b border-border-soft last:border-b-0 hover:bg-soft-bg/60 transition-colors">
+                {filteredUsers.map((u, i) => (
+                  <tr key={u.id} className="border-b border-border-soft last:border-b-0 hover:bg-soft-bg/60 transition-colors">
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-2.5">
                         <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-semibold shrink-0" style={{ backgroundColor: avatarColors[i % avatarColors.length] }}>
@@ -245,33 +371,54 @@ export default function UsersRolesPage() {
                     </td>
                     <td className="px-5 py-3.5 text-[13px] text-text-body">{u.wh}</td>
                     <td className="px-5 py-3.5">
-                      <span className={`inline-flex items-center gap-1.5 text-[12px] font-medium ${u.status === "Active" ? "text-[#00B894]" : "text-[#9AA8B8]"}`}>
+                      <button onClick={() => toggleStatus(u.id)} className={`inline-flex items-center gap-1.5 text-[12px] font-medium ${u.status === "Active" ? "text-[#00B894]" : "text-[#9AA8B8]"}`} aria-label="Toggle status">
                         <span className={`w-1.5 h-1.5 rounded-full ${u.status === "Active" ? "bg-[#00B894]" : "bg-[#9AA8B8]"}`} />{u.status}
-                      </span>
+                      </button>
                     </td>
                     <td className="px-5 py-3.5 whitespace-nowrap">
                       <div className="text-[13px] text-text-primary">{u.last}</div>
                       <div className="text-[11px] text-text-light">{u.time}</div>
                     </td>
                     <td className="px-5 py-3.5 text-right">
-                      <button className="p-1.5 rounded-lg hover:bg-soft-bg text-text-light"><MoreHorizontal className="w-4 h-4" /></button>
+                      <div className="relative inline-block">
+                        <button onClick={() => setOpenMenu(openMenu === u.id ? null : u.id)} className="p-1.5 rounded-lg hover:bg-soft-bg text-text-light" aria-label="User actions"><MoreHorizontal className="w-4 h-4" /></button>
+                        {openMenu === u.id && (
+                          <>
+                            <div className="fixed inset-0 z-10" onClick={() => setOpenMenu(null)} />
+                            <div className="absolute right-0 mt-1 z-20 w-52 bg-white rounded-lg border border-border-soft shadow-lg py-1 text-left max-h-[280px] overflow-y-auto">
+                              <button onClick={() => openEdit(u)} className="w-full text-left px-3 py-1.5 text-[13px] text-text-primary hover:bg-soft-bg flex items-center gap-2"><Edit2 className="w-3.5 h-3.5" /> Edit user</button>
+                              <button onClick={() => toggleStatus(u.id)} className="w-full text-left px-3 py-1.5 text-[13px] text-text-primary hover:bg-soft-bg flex items-center gap-2">{u.status === "Active" ? <UserX className="w-3.5 h-3.5" /> : <UserCheck className="w-3.5 h-3.5" />} {u.status === "Active" ? "Deactivate" : "Activate"}</button>
+                              <p className="px-3 pt-2 pb-1 text-[11px] font-semibold text-text-light uppercase">Change role</p>
+                              {ROLE_OPTIONS.map((r) => (
+                                <button key={r} onClick={() => changeRole(u.id, r)} className={`w-full text-left px-3 py-1.5 text-[13px] hover:bg-soft-bg ${u.role === r ? "text-action-blue font-medium" : "text-text-primary"}`}>{r}</button>
+                              ))}
+                              <div className="my-1 border-t border-border-soft" />
+                              <button onClick={() => { setOpenMenu(null); setRemoving(u); }} className="w-full text-left px-3 py-1.5 text-[13px] text-[#EF4444] hover:bg-[#FEF2F2] flex items-center gap-2"><Trash2 className="w-3.5 h-3.5" /> Remove user</button>
+                            </div>
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
+                {filteredUsers.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="px-5 py-12 text-center">
+                      <p className="text-[13px] text-text-muted">No users match your filters.</p>
+                      <button onClick={openInvite} className="mt-3 inline-flex items-center gap-1.5 text-[13px] font-medium text-action-blue hover:underline"><Plus className="w-4 h-4" /> Invite a user</button>
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
           {/* Pagination */}
           <div className="flex items-center justify-between px-5 py-4 border-t border-border-soft">
-            <p className="text-[13px] text-text-muted">Showing 1 to 10 of 128 users</p>
+            <p className="text-[13px] text-text-muted">Showing {filteredUsers.length} of {rows.length} users</p>
             <div className="flex items-center gap-1.5">
-              <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-light hover:bg-soft-bg"><ChevronLeft className="w-4 h-4" /></button>
+              <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-light hover:bg-soft-bg" disabled><ChevronLeft className="w-4 h-4" /></button>
               <button className="w-8 h-8 flex items-center justify-center rounded-lg bg-action-blue text-white text-[13px] font-medium">1</button>
-              <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-muted text-[13px] hover:bg-soft-bg">2</button>
-              <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-muted text-[13px] hover:bg-soft-bg">3</button>
-              <span className="px-1 text-[13px] text-text-light">...</span>
-              <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-muted text-[13px] hover:bg-soft-bg">13</button>
-              <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-light hover:bg-soft-bg"><ChevronRight className="w-4 h-4" /></button>
+              <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-light hover:bg-soft-bg" disabled><ChevronRight className="w-4 h-4" /></button>
             </div>
           </div>
         </Card>
@@ -345,7 +492,7 @@ export default function UsersRolesPage() {
           <Card className="p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-[14px] font-semibold text-text-primary">Pending Invitations</h3>
-              <button className="text-[12px] font-medium text-action-blue hover:underline">View all</button>
+              <button onClick={() => toast("Opening all invitations…", "info")} className="text-[12px] font-medium text-action-blue hover:underline">View all</button>
             </div>
             <div className="space-y-4">
               {pendingInvites.map((inv) => (
@@ -475,10 +622,83 @@ export default function UsersRolesPage() {
             <p className="text-[12px] text-white/70 mt-0.5">Define roles, fine-tune permissions, and review access regularly to keep your organization secure.</p>
           </div>
         </div>
-        <button className="flex items-center gap-2 px-5 py-2.5 bg-white rounded-lg text-[13px] font-semibold text-navy hover:bg-white/90 shrink-0">
+        <button onClick={() => setPermTab("roles")} className="flex items-center gap-2 px-5 py-2.5 bg-white rounded-lg text-[13px] font-semibold text-navy hover:bg-white/90 shrink-0">
           <UserPlus className="w-4 h-4" /> Manage Roles
         </button>
       </div>
+
+      {/* Invite user modal */}
+      <Modal
+        open={inviteOpen}
+        onClose={() => setInviteOpen(false)}
+        title="Invite User"
+        description="Send an invitation to add a new team member."
+        footer={
+          <>
+            <SecondaryButton onClick={() => setInviteOpen(false)}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={saveInvite} disabled={busy}>{busy ? "Sending…" : "Send invitation"}</PrimaryButton>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Field label="Full name" required>
+            <TextInput value={invite.name} onChange={(e) => setInvite((d) => ({ ...d, name: e.target.value }))} placeholder="Jane Doe" />
+          </Field>
+          <Field label="Email" required>
+            <TextInput type="email" value={invite.email} onChange={(e) => setInvite((d) => ({ ...d, email: e.target.value }))} placeholder="jane.doe@fulfillmesh.com" />
+          </Field>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Role">
+              <Select options={ROLE_OPTIONS} value={invite.role} onChange={(e) => setInvite((d) => ({ ...d, role: e.target.value }))} />
+            </Field>
+            <Field label="Warehouse access">
+              <Select options={WAREHOUSE_OPTIONS} value={invite.wh} onChange={(e) => setInvite((d) => ({ ...d, wh: e.target.value }))} />
+            </Field>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit user modal */}
+      <Modal
+        open={!!editing}
+        onClose={() => setEditing(null)}
+        title={editing ? `Edit ${editing.name}` : "Edit user"}
+        description="Update this user's details and access."
+        footer={
+          <>
+            <SecondaryButton onClick={() => setEditing(null)}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={saveEdit} disabled={busy}>{busy ? "Saving…" : "Save changes"}</PrimaryButton>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Field label="Full name" required>
+            <TextInput value={editDraft.name} onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))} />
+          </Field>
+          <Field label="Email" required>
+            <TextInput type="email" value={editDraft.email} onChange={(e) => setEditDraft((d) => ({ ...d, email: e.target.value }))} />
+          </Field>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Role">
+              <Select options={ROLE_OPTIONS} value={editDraft.role} onChange={(e) => setEditDraft((d) => ({ ...d, role: e.target.value }))} />
+            </Field>
+            <Field label="Warehouse access">
+              <Select options={WAREHOUSE_OPTIONS} value={editDraft.wh} onChange={(e) => setEditDraft((d) => ({ ...d, wh: e.target.value }))} />
+            </Field>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Remove confirm */}
+      <ConfirmDialog
+        open={!!removing}
+        onClose={() => setRemoving(null)}
+        onConfirm={confirmRemove}
+        title="Remove user"
+        message={`Remove ${removing?.name} from your organization? They will immediately lose access. This cannot be undone.`}
+        confirmLabel="Remove"
+        destructive
+      />
     </div>
   );
 }
@@ -486,6 +706,7 @@ export default function UsersRolesPage() {
 /* ---------------- Role & Permission Detail ---------------- */
 
 function RoleDetail({ onBack }: { onBack: () => void }) {
+  const { toast } = useToast();
   const [tab, setTab] = useState<"permissions" | "users" | "groups">("permissions");
   const circumference = 2 * Math.PI * 40;
 
@@ -501,10 +722,10 @@ function RoleDetail({ onBack }: { onBack: () => void }) {
           <p className="text-[14px] text-text-muted mt-0.5">View and manage permissions for this role.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-border-soft bg-white text-text-body text-[13px] font-medium hover:bg-soft-bg shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+          <button onClick={() => toast("Role duplicated", "success")} className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-border-soft bg-white text-text-body text-[13px] font-medium hover:bg-soft-bg shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
             <Copy className="w-4 h-4 text-text-light" /> Duplicate Role
           </button>
-          <button className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-action-blue text-white text-[13px] font-medium hover:bg-[#0047B3] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+          <button onClick={() => toast("Opening role editor…", "info")} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-action-blue text-white text-[13px] font-medium hover:bg-[#0047B3] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
             <Edit2 className="w-4 h-4" /> Edit Role
           </button>
         </div>
@@ -559,9 +780,9 @@ function RoleDetail({ onBack }: { onBack: () => void }) {
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-light" />
                     <input placeholder="Search permissions..." className="w-full pl-9 pr-4 py-2 border border-border-soft rounded-lg text-[13px] text-text-primary placeholder:text-text-light focus:outline-none focus:ring-2 focus:ring-action-blue/20" />
                   </div>
-                  <FilterButton label="All Resource Groups" />
-                  <FilterButton label="All Access Levels" />
-                  <button className="px-3 py-2 text-[13px] font-medium text-action-blue hover:underline">Expand All</button>
+                  <FilterButton label="All Resource Groups" onClick={() => toast("Filter by resource group", "info")} />
+                  <FilterButton label="All Access Levels" onClick={() => toast("Filter by access level", "info")} />
+                  <button onClick={() => toast("All permission groups expanded", "info")} className="px-3 py-2 text-[13px] font-medium text-action-blue hover:underline">Expand All</button>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full">
@@ -664,7 +885,7 @@ function RoleDetail({ onBack }: { onBack: () => void }) {
             <h3 className="text-[14px] font-semibold text-text-primary mb-3">Quick Actions</h3>
             <div className="space-y-2">
               {([["Edit Role", Edit2], ["Assign Users", UserPlus], ["Duplicate Role", Copy]] as [string, typeof Edit2][]).map(([label, Icon]) => (
-                <button key={label} className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-text-primary border border-border-soft rounded-lg hover:bg-soft-bg">
+                <button key={label} onClick={() => toast(`${label} — done`)} className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-text-primary border border-border-soft rounded-lg hover:bg-soft-bg">
                   <Icon className="w-4 h-4 text-text-muted" /> {label}
                 </button>
               ))}

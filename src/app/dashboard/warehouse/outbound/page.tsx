@@ -1,11 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   Truck, PackageCheck, Navigation, AlertTriangle, XCircle,
-  Search, Filter, Columns3, Plus, ChevronDown, MoreHorizontal,
-  ArrowUpRight, ArrowDownRight,
+  Search, Columns3, Plus, ChevronDown, MoreHorizontal,
+  ArrowUpRight, ArrowDownRight, Eye, CheckCircle2, Ban,
 } from "lucide-react";
+import { Modal } from "@/components/dashboard/Modal";
+import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
+import { Field, TextInput, Select } from "@/components/dashboard/FormControls";
+import { useToast } from "@/components/dashboard/Toast";
+import { exportToCsv } from "@/lib/client";
 
 const stats = [
   { title: "Total Shipments", value: "1,532", change: "+12.4%", note: "vs last 30 days", positive: true, icon: Truck, iconBg: "bg-action-blue/10", iconColor: "text-action-blue" },
@@ -17,7 +22,13 @@ const stats = [
 
 const tabs = ["All Shipments", "Shipped", "In Transit", "Exception", "Delivered", "Cancelled"];
 
-const rows = [
+type Status = "Shipped" | "In Transit" | "Exception" | "Delayed" | "Delivered" | "Cancelled";
+type Row = {
+  so: string; shp: string; recipient: string; city: string; wh: string;
+  carrier: string; service: string; status: Status; ship: string; eta: string;
+};
+
+const initialRows: Row[] = [
   { so: "SO-102876", shp: "SHP-009870", recipient: "Acme Retail Co.", city: "ATL", wh: "ATL-1", carrier: "UPS", service: "Ground", status: "Shipped", ship: "May 20, 2025", eta: "May 23, 2025" },
   { so: "SO-102874", shp: "SHP-009869", recipient: "ShopZone Inc.", city: "LAX", wh: "LAX-1", carrier: "FedEx", service: "Express", status: "In Transit", ship: "May 20, 2025", eta: "May 22, 2025" },
   { so: "SO-102872", shp: "SHP-009868", recipient: "Roadrunner LLC", city: "ORD", wh: "ORD-1", carrier: "XPO", service: "Priority", status: "Exception", ship: "May 19, 2025", eta: "May 22, 2025" },
@@ -32,7 +43,12 @@ const rows = [
   { so: "SO-102854", shp: "SHP-009859", recipient: "Crestview Retail", city: "DFW", wh: "DFW-1", carrier: "USPS", service: "Express", status: "Delivered", ship: "May 14, 2025", eta: "May 17, 2025" },
 ];
 
-const carriers = [
+const WAREHOUSES = ["ATL-1", "LAX-1", "ORD-1", "DFW-1"];
+const CARRIERS = ["UPS", "FedEx", "USPS", "XPO"];
+const SERVICES = ["Ground", "Express", "Priority", "2nd Day Air"];
+const STATUSES: Status[] = ["Shipped", "In Transit", "Exception", "Delayed", "Delivered", "Cancelled"];
+
+const carriersData = [
   { name: "UPS", ship: "535 shipments", rate: "98.1%", change: "+1.8%", up: true },
   { name: "FedEx", ship: "428 shipments", rate: "97.2%", change: "+2.6%", up: true },
   { name: "USPS", ship: "312 shipments", rate: "95.4%", change: "-0.9%", up: false },
@@ -60,9 +76,106 @@ function Badge({ text }: { text: string }) {
 
 const card = "bg-white rounded-xl border border-border-soft shadow-soft";
 const thCls = "text-left text-[11px] font-semibold text-text-light uppercase tracking-[0.05em] px-6 py-3";
+const dropBtn = "flex items-center gap-2 text-[13px] font-medium text-text-muted bg-white border border-border-soft rounded-lg px-3.5 py-2 hover:bg-soft-bg";
+
+function Dropdown({ label, value, options, onSelect }: { label: string; value: string; options: string[]; onSelect: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen((v) => !v)} className={`${dropBtn} ${value ? "text-action-blue border-action-blue" : ""}`}>
+        {value || label} <ChevronDown className="w-3.5 h-3.5" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 mt-1 z-20 w-48 bg-white rounded-lg border border-border-soft shadow-lg py-1">
+            <button onClick={() => { onSelect(""); setOpen(false); }} className={`w-full text-left px-3 py-1.5 text-[13px] hover:bg-soft-bg ${!value ? "text-action-blue font-medium" : "text-text-primary"}`}>{label}</button>
+            {options.map((o) => (
+              <button key={o} onClick={() => { onSelect(o); setOpen(false); }} className={`w-full text-left px-3 py-1.5 text-[13px] hover:bg-soft-bg ${value === o ? "text-action-blue font-medium" : "text-text-primary"}`}>{o}</button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+type Draft = { recipient: string; wh: string; carrier: string; service: string; eta: string };
+const emptyDraft: Draft = { recipient: "", wh: "ATL-1", carrier: "UPS", service: "Ground", eta: new Date().toISOString().slice(0, 10) };
 
 export default function OutboundShipmentsPage() {
-  const [activeTab, setActiveTab] = useState("All Shipments");
+  const { toast } = useToast();
+  const [rows, setRows] = useState<Row[]>(initialRows);
+  const [activeTab, setActiveTabState] = useState("All Shipments");
+  const [query, setQueryState] = useState("");
+  const [whFilter, setWhFilterState] = useState("");
+  const [carrierFilter, setCarrierFilterState] = useState("");
+  const [statusFilter, setStatusFilterState] = useState("");
+  const [page, setPage] = useState(1);
+  const pageSize = 8;
+
+  const setActiveTab = (v: string) => { setActiveTabState(v); setPage(1); };
+  const setQuery = (v: string) => { setQueryState(v); setPage(1); };
+  const setWhFilter = (v: string) => { setWhFilterState(v); setPage(1); };
+  const setCarrierFilter = (v: string) => { setCarrierFilterState(v); setPage(1); };
+  const setStatusFilter = (v: string) => { setStatusFilterState(v); setPage(1); };
+
+  const [formOpen, setFormOpen] = useState(false);
+  const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const [busy, setBusy] = useState(false);
+  const [cancelling, setCancelling] = useState<Row | null>(null);
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  const seq = useRef(9870);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return rows.filter((r) => {
+      const tab = activeTab === "All Shipments" || r.status === activeTab;
+      const wh = !whFilter || r.wh === whFilter;
+      const carrier = !carrierFilter || r.carrier === carrierFilter;
+      const st = !statusFilter || r.status === statusFilter;
+      const search = !q || r.so.toLowerCase().includes(q) || r.shp.toLowerCase().includes(q) || r.recipient.toLowerCase().includes(q);
+      return tab && wh && carrier && st && search;
+    });
+  }, [rows, activeTab, whFilter, carrierFilter, statusFilter, query]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const start = (currentPage - 1) * pageSize;
+  const pageRows = filtered.slice(start, start + pageSize);
+
+  function handleExport() {
+    exportToCsv("outbound-shipments", filtered, [
+      { key: "so", header: "Order #" }, { key: "shp", header: "Shipment #" },
+      { key: "recipient", header: "Recipient" }, { key: "wh", header: "Warehouse" },
+      { key: "carrier", header: "Carrier" }, { key: "service", header: "Service" },
+      { key: "status", header: "Status" }, { key: "ship", header: "Ship Date" }, { key: "eta", header: "Est. Delivery" },
+    ]);
+    toast(`Exported ${filtered.length} shipments to CSV`);
+  }
+
+  function createShipment() {
+    if (!draft.recipient.trim()) { toast("Recipient is required", "error"); return; }
+    setBusy(true);
+    const n = ++seq.current;
+    const shp = `SHP-00${n}`;
+    const date = new Date(draft.eta).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    const newRow: Row = {
+      so: `SO-10${2877 + (n - 9871)}`, shp, recipient: draft.recipient.trim(), city: draft.wh.split("-")[0],
+      wh: draft.wh, carrier: draft.carrier, service: draft.service, status: "Shipped", ship: date, eta: date,
+    };
+    setRows((prev) => [newRow, ...prev]);
+    setBusy(false);
+    setFormOpen(false);
+    setDraft(emptyDraft);
+    toast(`Shipment ${shp} created`);
+  }
+
+  function setStatus(shp: string, status: Status, msg: string) {
+    setRows((prev) => prev.map((r) => (r.shp === shp ? { ...r, status } : r)));
+    setMenuFor(null);
+    toast(msg);
+  }
 
   return (
     <div className="space-y-6">
@@ -73,9 +186,9 @@ export default function OutboundShipmentsPage() {
           <p className="text-[14px] text-text-muted mt-1">Manage and track all outbound shipments across your warehouses.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 text-[13px] font-medium text-text-muted bg-white border border-border-soft rounded-lg px-3.5 py-2 shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-soft-bg"><Filter className="w-4 h-4" /> Filters</button>
-          <button className="flex items-center gap-2 text-[13px] font-medium text-text-muted bg-white border border-border-soft rounded-lg px-3.5 py-2 shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-soft-bg"><Columns3 className="w-4 h-4" /> Columns</button>
-          <button className="flex items-center gap-2 text-[13px] font-medium text-white bg-action-blue rounded-lg px-4 py-2 shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-[#004BBF]"><Plus className="w-4 h-4" /> New Shipment</button>
+          <Dropdown label="Filters" value={statusFilter} options={STATUSES} onSelect={setStatusFilter} />
+          <button onClick={handleExport} className="flex items-center gap-2 text-[13px] font-medium text-text-muted bg-white border border-border-soft rounded-lg px-3.5 py-2 shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-soft-bg"><Columns3 className="w-4 h-4" /> Export</button>
+          <button onClick={() => { setDraft(emptyDraft); setFormOpen(true); }} className="flex items-center gap-2 text-[13px] font-medium text-white bg-action-blue rounded-lg px-4 py-2 shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-[#004BBF]"><Plus className="w-4 h-4" /> New Shipment</button>
         </div>
       </div>
 
@@ -127,11 +240,11 @@ export default function OutboundShipmentsPage() {
             <div className="flex items-center gap-3 px-5 py-4 border-b border-border-soft">
               <div className="relative flex-1">
                 <Search className="w-4 h-4 text-text-light absolute left-3 top-1/2 -translate-y-1/2" />
-                <input placeholder="Search by order #, tracking #, recipient..." className="w-full text-[13px] text-text-primary placeholder:text-text-light bg-white border border-border-soft rounded-lg pl-9 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-action-blue/20 focus:border-action-blue" />
+                <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by order #, tracking #, recipient..." className="w-full text-[13px] text-text-primary placeholder:text-text-light bg-white border border-border-soft rounded-lg pl-9 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-action-blue/20 focus:border-action-blue" />
               </div>
-              <button className="flex items-center gap-2 text-[13px] font-medium text-text-muted bg-white border border-border-soft rounded-lg px-3.5 py-2 hover:bg-soft-bg">All Warehouses <ChevronDown className="w-3.5 h-3.5" /></button>
-              <button className="flex items-center gap-2 text-[13px] font-medium text-text-muted bg-white border border-border-soft rounded-lg px-3.5 py-2 hover:bg-soft-bg">All Carrier <ChevronDown className="w-3.5 h-3.5" /></button>
-              <button className="flex items-center gap-2 text-[13px] font-medium text-text-muted bg-white border border-border-soft rounded-lg px-3.5 py-2 hover:bg-soft-bg">All Statuses <ChevronDown className="w-3.5 h-3.5" /></button>
+              <Dropdown label="All Warehouses" value={whFilter} options={WAREHOUSES} onSelect={setWhFilter} />
+              <Dropdown label="All Carrier" value={carrierFilter} options={CARRIERS} onSelect={setCarrierFilter} />
+              <Dropdown label="All Statuses" value={statusFilter} options={STATUSES} onSelect={setStatusFilter} />
             </div>
             <div className="overflow-x-auto">
               <table className="w-full">
@@ -141,7 +254,7 @@ export default function OutboundShipmentsPage() {
                   <th className={thCls + " text-right"}>Actions</th>
                 </tr></thead>
                 <tbody>
-                  {rows.map((r) => (
+                  {pageRows.map((r) => (
                     <tr key={r.shp} className="border-b border-border-soft last:border-b-0 hover:bg-soft-bg/60 transition-colors">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
@@ -155,17 +268,38 @@ export default function OutboundShipmentsPage() {
                       <td className="px-6 py-4"><Badge text={r.status} /></td>
                       <td className="px-6 py-4 text-[13px] text-text-muted whitespace-nowrap">{r.ship}</td>
                       <td className="px-6 py-4 text-[13px] text-text-muted whitespace-nowrap">{r.eta}</td>
-                      <td className="px-6 py-4 text-right"><button className="text-text-light hover:text-text-muted p-1"><MoreHorizontal className="w-4 h-4" /></button></td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="relative inline-block">
+                          <button onClick={() => setMenuFor((v) => (v === r.shp ? null : r.shp))} className="text-text-light hover:text-text-muted p-1"><MoreHorizontal className="w-4 h-4" /></button>
+                          {menuFor === r.shp && (
+                            <>
+                              <div className="fixed inset-0 z-10" onClick={() => setMenuFor(null)} />
+                              <div className="absolute right-0 mt-1 z-20 w-44 bg-white rounded-lg border border-border-soft shadow-lg py-1 text-left">
+                                <button onClick={() => { setMenuFor(null); toast(`Tracking ${r.shp}`, "info"); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-[13px] text-text-primary hover:bg-soft-bg"><Eye className="w-3.5 h-3.5" /> Track shipment</button>
+                                {r.status !== "Delivered" && r.status !== "Cancelled" && (
+                                  <button onClick={() => setStatus(r.shp, "Delivered", `${r.shp} marked delivered`)} className="w-full flex items-center gap-2 px-3 py-1.5 text-[13px] text-teal hover:bg-soft-bg"><CheckCircle2 className="w-3.5 h-3.5" /> Mark delivered</button>
+                                )}
+                                {r.status !== "Delivered" && r.status !== "Cancelled" && (
+                                  <button onClick={() => { setMenuFor(null); setCancelling(r); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-[13px] text-[#EF4444] hover:bg-soft-bg"><Ban className="w-3.5 h-3.5" /> Cancel shipment</button>
+                                )}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </td>
                     </tr>
                   ))}
+                  {pageRows.length === 0 && (
+                    <tr><td colSpan={8} className="px-6 py-12 text-center text-[13px] text-text-muted">No shipments match your filters.</td></tr>
+                  )}
                 </tbody>
               </table>
             </div>
             <div className="flex items-center justify-between px-6 py-4 border-t border-border-soft">
-              <span className="text-[13px] text-text-muted">Showing 1-12 of 1,532 shipments</span>
+              <span className="text-[13px] text-text-muted">{filtered.length === 0 ? "Showing 0 shipments" : `Showing ${start + 1}-${Math.min(start + pageSize, filtered.length)} of ${filtered.length} shipments`}</span>
               <div className="flex items-center gap-1">
-                {["1", "2", "3", "...", "307"].map((p, i) => (
-                  <button key={i} className={`min-w-8 h-8 px-2 flex items-center justify-center rounded-lg text-[13px] font-medium ${p === "1" ? "bg-action-blue text-white" : "border border-border-soft text-text-muted hover:bg-soft-bg"}`}>{p}</button>
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                  <button key={p} onClick={() => setPage(p)} className={`min-w-8 h-8 px-2 flex items-center justify-center rounded-lg text-[13px] font-medium ${p === currentPage ? "bg-action-blue text-white" : "border border-border-soft text-text-muted hover:bg-soft-bg"}`}>{p}</button>
                 ))}
               </div>
             </div>
@@ -180,7 +314,7 @@ export default function OutboundShipmentsPage() {
                 <p className="text-[13px] text-white/80 mt-0.5">Generate labels, assign carriers, and dispatch orders in a few clicks.</p>
               </div>
             </div>
-            <button className="flex items-center gap-2 text-[13px] font-medium text-action-blue bg-white rounded-lg px-4 py-2.5 hover:bg-white/90 shrink-0"><Plus className="w-4 h-4" /> Create Outbound Shipment</button>
+            <button onClick={() => { setDraft(emptyDraft); setFormOpen(true); }} className="flex items-center gap-2 text-[13px] font-medium text-action-blue bg-white rounded-lg px-4 py-2.5 hover:bg-white/90 shrink-0"><Plus className="w-4 h-4" /> Create Outbound Shipment</button>
           </div>
         </div>
 
@@ -212,21 +346,21 @@ export default function OutboundShipmentsPage() {
 
           {/* Carrier Performance */}
           <div className={card + " p-5"}>
-            <div className="flex items-center justify-between mb-3"><h3 className="text-[14px] font-semibold text-text-primary">Carrier Performance</h3><button className="text-[12px] text-action-blue hover:underline">View report</button></div>
+            <div className="flex items-center justify-between mb-3"><h3 className="text-[14px] font-semibold text-text-primary">Carrier Performance</h3><button onClick={() => toast("Opening carrier report", "info")} className="text-[12px] text-action-blue hover:underline">View report</button></div>
             <div className="space-y-3">
-              {carriers.map((c) => (
-                <div key={c.name} className="flex items-center gap-3">
+              {carriersData.map((c) => (
+                <button key={c.name} onClick={() => { setCarrierFilter(c.name); toast(`Filtered by ${c.name}`, "info"); }} className="w-full flex items-center gap-3 text-left hover:bg-soft-bg rounded-lg -mx-1 px-1 py-0.5">
                   <div className="w-9 h-9 rounded-lg bg-soft-bg flex items-center justify-center shrink-0"><span className="text-[10px] font-bold text-text-muted">{c.name}</span></div>
                   <div className="flex-1"><p className="text-[12px] font-medium text-text-primary">{c.name}</p><p className="text-[11px] text-text-light">{c.ship}</p></div>
                   <div className="text-right"><p className="text-[13px] font-semibold text-text-primary">{c.rate}</p><p className={`text-[11px] font-medium ${c.up ? "text-teal" : "text-[#EF4444]"}`}>{c.change}</p></div>
-                </div>
+                </button>
               ))}
             </div>
           </div>
 
           {/* Recent Activity */}
           <div className={card + " p-5"}>
-            <div className="flex items-center justify-between mb-3"><h3 className="text-[14px] font-semibold text-text-primary">Recent Activity</h3><button className="text-[12px] text-action-blue hover:underline">View all</button></div>
+            <div className="flex items-center justify-between mb-3"><h3 className="text-[14px] font-semibold text-text-primary">Recent Activity</h3><button onClick={() => toast("Showing full activity log", "info")} className="text-[12px] text-action-blue hover:underline">View all</button></div>
             <div className="space-y-3">
               {activity.map((e, i) => {
                 const Icon = e.icon;
@@ -242,6 +376,40 @@ export default function OutboundShipmentsPage() {
           </div>
         </div>
       </div>
+
+      {/* New Shipment modal */}
+      <Modal
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
+        title="New Shipment"
+        description="Create an outbound shipment and assign a carrier."
+        footer={
+          <>
+            <button onClick={() => setFormOpen(false)} className="px-4 py-2 text-[13px] font-medium text-text-primary bg-white border border-border-soft rounded-lg hover:bg-soft-bg">Cancel</button>
+            <button onClick={createShipment} disabled={busy} className="px-4 py-2 text-[13px] font-medium text-white bg-action-blue rounded-lg hover:bg-[#004BBF] disabled:opacity-60">{busy ? "Creating…" : "Create shipment"}</button>
+          </>
+        }
+      >
+        <div className="grid grid-cols-2 gap-4">
+          <div className="col-span-2"><Field label="Recipient" required><TextInput value={draft.recipient} onChange={(e) => setDraft((d) => ({ ...d, recipient: e.target.value }))} placeholder="Acme Retail Co." /></Field></div>
+          <Field label="Warehouse"><Select options={WAREHOUSES} value={draft.wh} onChange={(e) => setDraft((d) => ({ ...d, wh: e.target.value }))} /></Field>
+          <Field label="Carrier"><Select options={CARRIERS} value={draft.carrier} onChange={(e) => setDraft((d) => ({ ...d, carrier: e.target.value }))} /></Field>
+          <Field label="Service"><Select options={SERVICES} value={draft.service} onChange={(e) => setDraft((d) => ({ ...d, service: e.target.value }))} /></Field>
+          <Field label="Ship date"><TextInput type="date" value={draft.eta} onChange={(e) => setDraft((d) => ({ ...d, eta: e.target.value }))} /></Field>
+        </div>
+      </Modal>
+
+      {/* Cancel confirm */}
+      <ConfirmDialog
+        open={!!cancelling}
+        onClose={() => setCancelling(null)}
+        onConfirm={() => { if (cancelling) { setStatus(cancelling.shp, "Cancelled", `${cancelling.shp} cancelled`); setCancelling(null); } }}
+        title="Cancel shipment"
+        message={`Are you sure you want to cancel ${cancelling?.shp}?`}
+        confirmLabel="Cancel shipment"
+        cancelLabel="Keep"
+        destructive
+      />
     </div>
   );
 }

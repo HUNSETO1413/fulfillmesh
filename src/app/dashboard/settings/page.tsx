@@ -2,12 +2,23 @@
 
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
+import { useToast } from "@/components/dashboard/Toast";
 
 export default function GeneralSettingsPage() {
+  const { toast } = useToast();
   const [companyName, setCompanyName] = useState("FulfillMesh Co.");
   const [timezone, setTimezone] = useState("(UTC-05:00) Eastern Time (US & Canada)");
   const [dateFormat, setDateFormat] = useState("May 18, 2025 (MMMM D, YYYY)");
   const [currency, setCurrency] = useState("USD - US Dollar ($)");
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = () => {
+    setSaving(true);
+    setTimeout(() => {
+      setSaving(false);
+      toast("General settings saved");
+    }, 500);
+  };
 
   const inputClasses =
     "w-full px-3.5 py-2.5 bg-white border border-[#E2E8F0] rounded-lg text-[14px] text-[#1E293B] placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#0057D8]/20 focus:border-[#0057D8] transition-colors";
@@ -113,8 +124,12 @@ export default function GeneralSettingsPage() {
 
       {/* Save Button */}
       <div className="mt-6 pt-2">
-        <button className="px-5 py-2.5 gradient-cta text-white rounded-lg text-[14px] font-medium hover:brightness-110 shadow-button transition-all">
-          Save Changes
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="px-5 py-2.5 gradient-cta text-white rounded-lg text-[14px] font-medium hover:brightness-110 shadow-button transition-all disabled:opacity-60"
+        >
+          {saving ? "Saving…" : "Save Changes"}
         </button>
       </div>
     </div>

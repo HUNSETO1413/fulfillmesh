@@ -1,11 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   ClipboardList, CheckCircle2, Activity, CalendarClock, XCircle,
-  Search, Filter, Columns3, Plus, ChevronDown, MoreHorizontal,
-  ArrowUpRight, ArrowDownRight, Calendar,
+  Search, Columns3, Plus, ChevronDown, MoreHorizontal,
+  ArrowUpRight, ArrowDownRight, Calendar, Eye, Play, Ban,
 } from "lucide-react";
+import { Modal } from "@/components/dashboard/Modal";
+import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
+import { Field, TextInput, Select } from "@/components/dashboard/FormControls";
+import { useToast } from "@/components/dashboard/Toast";
+import { exportToCsv } from "@/lib/client";
 
 const stats = [
   { title: "Total Cycle Counts", value: "124", change: "+16.3%", note: "vs last 30 days", positive: true, icon: ClipboardList, iconBg: "bg-action-blue/10", iconColor: "text-action-blue" },
@@ -17,7 +22,13 @@ const stats = [
 
 const tabs = ["All Cycle Counts", "In Progress", "Scheduled", "Completed", "Cancelled"];
 
-const rows = [
+type Status = "Completed" | "In Progress" | "Scheduled" | "Cancelled";
+type Row = {
+  cc: string; name: string; sub: string; wh: string; whSub: string;
+  status: Status; progress: number; start: string; due: string;
+};
+
+const initialRows: Row[] = [
   { cc: "CC-000124", name: "Aisle A01 – A10", sub: "Routine Cycle Count", wh: "ATL-1", whSub: "Atlanta, GA", status: "Completed", progress: 100, start: "May 30, 2025", due: "May 30, 2025" },
   { cc: "CC-000123", name: "High Value Items", sub: "Priority Count", wh: "DFW-1", whSub: "Dallas, TX", status: "In Progress", progress: 65, start: "May 31, 2025", due: "Jun 2, 2025" },
   { cc: "CC-000122", name: "Zone B – Shelves 1-20", sub: "Routine Cycle Count", wh: "LAX-1", whSub: "Los Angeles, CA", status: "In Progress", progress: 40, start: "May 31, 2025", due: "Jun 1, 2025" },
@@ -27,6 +38,11 @@ const rows = [
   { cc: "CC-000118", name: "Damaged Inventory", sub: "Ad-Hoc Count", wh: "DFW-1", whSub: "Dallas, TX", status: "Completed", progress: 100, start: "May 28, 2025", due: "May 28, 2025" },
   { cc: "CC-000117", name: "Seasonal Items", sub: "Category Count", wh: "LAX-1", whSub: "Los Angeles, CA", status: "Cancelled", progress: 0, start: "May 27, 2025", due: "May 27, 2025" },
 ];
+
+const WAREHOUSES = ["ATL-1", "DFW-1", "LAX-1", "MIA-1", "ORD-1"];
+const WH_CITY: Record<string, string> = { "ATL-1": "Atlanta, GA", "DFW-1": "Dallas, TX", "LAX-1": "Los Angeles, CA", "MIA-1": "Miami, FL", "ORD-1": "Chicago, IL" };
+const COUNT_TYPES = ["Routine Cycle Count", "Priority Count", "Category Count", "Full Warehouse Count", "Ad-Hoc Count"];
+const STATUSES: Status[] = ["In Progress", "Scheduled", "Completed", "Cancelled"];
 
 const byWh = [
   { wh: "ATL-1 (Atlanta, GA)", acc: "98.6%", change: "+1.8%", up: true },
@@ -72,9 +88,107 @@ function ProgressBar({ value, status }: { value: number; status: string }) {
 
 const card = "bg-white rounded-xl border border-border-soft shadow-soft";
 const thCls = "text-left text-[11px] font-semibold text-text-light uppercase tracking-[0.05em] px-6 py-3";
+const dropBtn = "flex items-center gap-2 text-[13px] font-medium text-text-muted bg-white border border-border-soft rounded-lg px-3.5 py-2 hover:bg-soft-bg";
+
+function Dropdown({ label, value, options, onSelect }: { label: string; value: string; options: string[]; onSelect: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen((v) => !v)} className={`${dropBtn} ${value ? "text-action-blue border-action-blue" : ""}`}>
+        {value || label} <ChevronDown className="w-3.5 h-3.5" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 mt-1 z-20 w-48 bg-white rounded-lg border border-border-soft shadow-lg py-1">
+            <button onClick={() => { onSelect(""); setOpen(false); }} className={`w-full text-left px-3 py-1.5 text-[13px] hover:bg-soft-bg ${!value ? "text-action-blue font-medium" : "text-text-primary"}`}>{label}</button>
+            {options.map((o) => (
+              <button key={o} onClick={() => { onSelect(o); setOpen(false); }} className={`w-full text-left px-3 py-1.5 text-[13px] hover:bg-soft-bg ${value === o ? "text-action-blue font-medium" : "text-text-primary"}`}>{o}</button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+type Draft = { name: string; type: string; wh: string; start: string; due: string };
+const today = new Date().toISOString().slice(0, 10);
+const emptyDraft: Draft = { name: "", type: "Routine Cycle Count", wh: "ATL-1", start: today, due: today };
 
 export default function CycleCountPage() {
-  const [activeTab, setActiveTab] = useState("All Cycle Counts");
+  const { toast } = useToast();
+  const [rows, setRows] = useState<Row[]>(initialRows);
+  const [activeTab, setActiveTabState] = useState("All Cycle Counts");
+  const [query, setQueryState] = useState("");
+  const [whFilter, setWhFilterState] = useState("");
+  const [statusFilter, setStatusFilterState] = useState("");
+  const [page, setPage] = useState(1);
+  const pageSize = 8;
+
+  const setActiveTab = (v: string) => { setActiveTabState(v); setPage(1); };
+  const setQuery = (v: string) => { setQueryState(v); setPage(1); };
+  const setWhFilter = (v: string) => { setWhFilterState(v); setPage(1); };
+  const setStatusFilter = (v: string) => { setStatusFilterState(v); setPage(1); };
+
+  const [formOpen, setFormOpen] = useState(false);
+  const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const [busy, setBusy] = useState(false);
+  const [cancelling, setCancelling] = useState<Row | null>(null);
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  const seq = useRef(124);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return rows.filter((r) => {
+      const tab = activeTab === "All Cycle Counts" || r.status === activeTab;
+      const wh = !whFilter || r.wh === whFilter;
+      const st = !statusFilter || r.status === statusFilter;
+      const search = !q || r.cc.toLowerCase().includes(q) || r.name.toLowerCase().includes(q) || r.wh.toLowerCase().includes(q) || r.sub.toLowerCase().includes(q);
+      return tab && wh && st && search;
+    });
+  }, [rows, activeTab, whFilter, statusFilter, query]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const start = (currentPage - 1) * pageSize;
+  const pageRows = filtered.slice(start, start + pageSize);
+
+  function fmt(d: string) {
+    return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  }
+
+  function handleExport() {
+    exportToCsv("cycle-counts", filtered, [
+      { key: "cc", header: "Count #" }, { key: "name", header: "Count Name" }, { key: "sub", header: "Type" },
+      { key: "wh", header: "Warehouse" }, { key: "whSub", header: "Location" },
+      { key: "status", header: "Status" }, { key: "progress", header: "Progress %" },
+      { key: "start", header: "Start Date" }, { key: "due", header: "Due Date" },
+    ]);
+    toast(`Exported ${filtered.length} cycle counts to CSV`);
+  }
+
+  function createCount() {
+    if (!draft.name.trim()) { toast("Count name is required", "error"); return; }
+    setBusy(true);
+    const n = ++seq.current;
+    const cc = `CC-000${n}`;
+    const newRow: Row = {
+      cc, name: draft.name.trim(), sub: draft.type, wh: draft.wh, whSub: WH_CITY[draft.wh],
+      status: "Scheduled", progress: 0, start: fmt(draft.start), due: fmt(draft.due),
+    };
+    setRows((prev) => [newRow, ...prev]);
+    setBusy(false);
+    setFormOpen(false);
+    setDraft(emptyDraft);
+    toast(`Cycle count ${cc} created`);
+  }
+
+  function update(cc: string, patch: Partial<Row>, msg: string) {
+    setRows((prev) => prev.map((r) => (r.cc === cc ? { ...r, ...patch } : r)));
+    setMenuFor(null);
+    toast(msg);
+  }
 
   return (
     <div className="space-y-6">
@@ -85,9 +199,9 @@ export default function CycleCountPage() {
           <p className="text-[14px] text-text-muted mt-1">Plan, manage, and track cycle counts to ensure inventory accuracy.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 text-[13px] font-medium text-text-muted bg-white border border-border-soft rounded-lg px-3.5 py-2 shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-soft-bg"><Filter className="w-4 h-4" /> Filters</button>
-          <button className="flex items-center gap-2 text-[13px] font-medium text-text-muted bg-white border border-border-soft rounded-lg px-3.5 py-2 shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-soft-bg"><Columns3 className="w-4 h-4" /> Columns</button>
-          <button className="flex items-center gap-2 text-[13px] font-medium text-white bg-action-blue rounded-lg px-4 py-2 shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-[#004BBF]"><Plus className="w-4 h-4" /> New Cycle Count</button>
+          <Dropdown label="Filters" value={statusFilter} options={STATUSES} onSelect={setStatusFilter} />
+          <button onClick={handleExport} className="flex items-center gap-2 text-[13px] font-medium text-text-muted bg-white border border-border-soft rounded-lg px-3.5 py-2 shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-soft-bg"><Columns3 className="w-4 h-4" /> Export</button>
+          <button onClick={() => { setDraft(emptyDraft); setFormOpen(true); }} className="flex items-center gap-2 text-[13px] font-medium text-white bg-action-blue rounded-lg px-4 py-2 shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-[#004BBF]"><Plus className="w-4 h-4" /> New Cycle Count</button>
         </div>
       </div>
 
@@ -138,10 +252,10 @@ export default function CycleCountPage() {
           <div className="flex items-center gap-3 px-5 py-4 border-b border-border-soft">
             <div className="relative flex-1">
               <Search className="w-4 h-4 text-text-light absolute left-3 top-1/2 -translate-y-1/2" />
-              <input placeholder="Search by count name, location, reference..." className="w-full text-[13px] text-text-primary placeholder:text-text-light bg-white border border-border-soft rounded-lg pl-9 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-action-blue/20 focus:border-action-blue" />
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by count name, location, reference..." className="w-full text-[13px] text-text-primary placeholder:text-text-light bg-white border border-border-soft rounded-lg pl-9 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-action-blue/20 focus:border-action-blue" />
             </div>
-            <button className="flex items-center gap-2 text-[13px] font-medium text-text-muted bg-white border border-border-soft rounded-lg px-3.5 py-2 hover:bg-soft-bg">All Warehouses <ChevronDown className="w-3.5 h-3.5" /></button>
-            <button className="flex items-center gap-2 text-[13px] font-medium text-text-muted bg-white border border-border-soft rounded-lg px-3.5 py-2 hover:bg-soft-bg">All Statuses <ChevronDown className="w-3.5 h-3.5" /></button>
+            <Dropdown label="All Warehouses" value={whFilter} options={WAREHOUSES} onSelect={setWhFilter} />
+            <Dropdown label="All Statuses" value={statusFilter} options={STATUSES} onSelect={setStatusFilter} />
             <button className="flex items-center gap-2 text-[13px] font-medium text-text-muted bg-white border border-border-soft rounded-lg px-3.5 py-2 hover:bg-soft-bg"><Calendar className="w-3.5 h-3.5" /> May 1 – May 31, 2025</button>
           </div>
           <div className="overflow-x-auto">
@@ -152,7 +266,7 @@ export default function CycleCountPage() {
                 <th className={thCls + " text-right"}>Actions</th>
               </tr></thead>
               <tbody>
-                {rows.map((r) => (
+                {pageRows.map((r) => (
                   <tr key={r.cc} className="border-b border-border-soft last:border-b-0 hover:bg-soft-bg/60 transition-colors">
                     <td className="px-6 py-4">
                       <p className="text-[13px] font-medium text-action-blue font-mono">{r.cc}</p>
@@ -169,17 +283,41 @@ export default function CycleCountPage() {
                     <td className="px-6 py-4"><ProgressBar value={r.progress} status={r.status} /></td>
                     <td className="px-6 py-4 text-[13px] text-text-muted whitespace-nowrap">{r.start}</td>
                     <td className="px-6 py-4 text-[13px] text-text-muted whitespace-nowrap">{r.due}</td>
-                    <td className="px-6 py-4 text-right"><button className="text-text-light hover:text-text-muted p-1"><MoreHorizontal className="w-4 h-4" /></button></td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="relative inline-block">
+                        <button onClick={() => setMenuFor((v) => (v === r.cc ? null : r.cc))} className="text-text-light hover:text-text-muted p-1"><MoreHorizontal className="w-4 h-4" /></button>
+                        {menuFor === r.cc && (
+                          <>
+                            <div className="fixed inset-0 z-10" onClick={() => setMenuFor(null)} />
+                            <div className="absolute right-0 mt-1 z-20 w-44 bg-white rounded-lg border border-border-soft shadow-lg py-1 text-left">
+                              <button onClick={() => { setMenuFor(null); toast(`Viewing ${r.cc}`, "info"); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-[13px] text-text-primary hover:bg-soft-bg"><Eye className="w-3.5 h-3.5" /> View details</button>
+                              {r.status === "Scheduled" && (
+                                <button onClick={() => update(r.cc, { status: "In Progress", progress: 10 }, `Started ${r.cc}`)} className="w-full flex items-center gap-2 px-3 py-1.5 text-[13px] text-action-blue hover:bg-soft-bg"><Play className="w-3.5 h-3.5" /> Start count</button>
+                              )}
+                              {r.status === "In Progress" && (
+                                <button onClick={() => update(r.cc, { status: "Completed", progress: 100 }, `Completed ${r.cc}`)} className="w-full flex items-center gap-2 px-3 py-1.5 text-[13px] text-teal hover:bg-soft-bg"><CheckCircle2 className="w-3.5 h-3.5" /> Complete</button>
+                              )}
+                              {r.status !== "Cancelled" && r.status !== "Completed" && (
+                                <button onClick={() => { setMenuFor(null); setCancelling(r); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-[13px] text-[#EF4444] hover:bg-soft-bg"><Ban className="w-3.5 h-3.5" /> Cancel count</button>
+                              )}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))}
+                {pageRows.length === 0 && (
+                  <tr><td colSpan={8} className="px-6 py-12 text-center text-[13px] text-text-muted">No cycle counts match your filters.</td></tr>
+                )}
               </tbody>
             </table>
           </div>
           <div className="flex items-center justify-between px-6 py-4 border-t border-border-soft">
-            <span className="text-[13px] text-text-muted">Showing 1-8 of 124 cycle counts</span>
+            <span className="text-[13px] text-text-muted">{filtered.length === 0 ? "Showing 0 cycle counts" : `Showing ${start + 1}-${Math.min(start + pageSize, filtered.length)} of ${filtered.length} cycle counts`}</span>
             <div className="flex items-center gap-1">
-              {["1", "2", "3", "...", "16"].map((p, i) => (
-                <button key={i} className={`min-w-8 h-8 px-2 flex items-center justify-center rounded-lg text-[13px] font-medium ${p === "1" ? "bg-action-blue text-white" : "border border-border-soft text-text-muted hover:bg-soft-bg"}`}>{p}</button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                <button key={p} onClick={() => setPage(p)} className={`min-w-8 h-8 px-2 flex items-center justify-center rounded-lg text-[13px] font-medium ${p === currentPage ? "bg-action-blue text-white" : "border border-border-soft text-text-muted hover:bg-soft-bg"}`}>{p}</button>
               ))}
             </div>
           </div>
@@ -213,7 +351,7 @@ export default function CycleCountPage() {
 
           {/* Accuracy Overview */}
           <div className={card + " p-5"}>
-            <div className="flex items-center justify-between mb-2"><h3 className="text-[14px] font-semibold text-text-primary">Accuracy Overview</h3><button className="text-[12px] text-action-blue hover:underline">View report</button></div>
+            <div className="flex items-center justify-between mb-2"><h3 className="text-[14px] font-semibold text-text-primary">Accuracy Overview</h3><button onClick={() => toast("Opening accuracy report", "info")} className="text-[12px] text-action-blue hover:underline">View report</button></div>
             <p className="text-[28px] font-bold text-text-primary">98.2%</p>
             <p className="text-[11px] text-text-light mb-1">Overall Accuracy</p>
             <p className="text-[11px] text-teal flex items-center gap-1 mb-3"><ArrowUpRight className="w-3 h-3" /> +1.6% vs last 30 days</p>
@@ -233,7 +371,7 @@ export default function CycleCountPage() {
 
           {/* Upcoming Cycle Counts */}
           <div className={card + " p-5"}>
-            <div className="flex items-center justify-between mb-3"><h3 className="text-[14px] font-semibold text-text-primary">Upcoming Cycle Counts</h3><button className="text-[12px] text-action-blue hover:underline">View all</button></div>
+            <div className="flex items-center justify-between mb-3"><h3 className="text-[14px] font-semibold text-text-primary">Upcoming Cycle Counts</h3><button onClick={() => toast("Showing all upcoming counts", "info")} className="text-[12px] text-action-blue hover:underline">View all</button></div>
             <div className="space-y-3">
               {upcoming.map((u, i) => (
                 <div key={i} className="flex items-center gap-3">
@@ -253,10 +391,44 @@ export default function CycleCountPage() {
           <h3 className="text-[16px] font-semibold text-white">Keep your inventory accurate</h3>
           <p className="text-[13px] text-text-on-dark-muted mt-0.5">Schedule a new cycle count to maintain accuracy across all your warehouses.</p>
         </div>
-        <button className="flex items-center gap-2 text-[13px] font-medium text-deep-navy bg-white rounded-lg px-4 py-2.5 hover:bg-white/90 shrink-0 shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+        <button onClick={() => { setDraft(emptyDraft); setFormOpen(true); }} className="flex items-center gap-2 text-[13px] font-medium text-deep-navy bg-white rounded-lg px-4 py-2.5 hover:bg-white/90 shrink-0 shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
           <Plus className="w-4 h-4" /> New Cycle Count
         </button>
       </div>
+
+      {/* New Cycle Count modal */}
+      <Modal
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
+        title="New Cycle Count"
+        description="Schedule a cycle count to verify inventory accuracy."
+        footer={
+          <>
+            <button onClick={() => setFormOpen(false)} className="px-4 py-2 text-[13px] font-medium text-text-primary bg-white border border-border-soft rounded-lg hover:bg-soft-bg">Cancel</button>
+            <button onClick={createCount} disabled={busy} className="px-4 py-2 text-[13px] font-medium text-white bg-action-blue rounded-lg hover:bg-[#004BBF] disabled:opacity-60">{busy ? "Creating…" : "Create count"}</button>
+          </>
+        }
+      >
+        <div className="grid grid-cols-2 gap-4">
+          <div className="col-span-2"><Field label="Count name" required><TextInput value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} placeholder="Aisle A01 – A10" /></Field></div>
+          <Field label="Count type"><Select options={COUNT_TYPES} value={draft.type} onChange={(e) => setDraft((d) => ({ ...d, type: e.target.value }))} /></Field>
+          <Field label="Warehouse"><Select options={WAREHOUSES} value={draft.wh} onChange={(e) => setDraft((d) => ({ ...d, wh: e.target.value }))} /></Field>
+          <Field label="Start date"><TextInput type="date" value={draft.start} onChange={(e) => setDraft((d) => ({ ...d, start: e.target.value }))} /></Field>
+          <Field label="Due date"><TextInput type="date" value={draft.due} onChange={(e) => setDraft((d) => ({ ...d, due: e.target.value }))} /></Field>
+        </div>
+      </Modal>
+
+      {/* Cancel confirm */}
+      <ConfirmDialog
+        open={!!cancelling}
+        onClose={() => setCancelling(null)}
+        onConfirm={() => { if (cancelling) { update(cancelling.cc, { status: "Cancelled", progress: 0 }, `Cancelled ${cancelling.cc}`); setCancelling(null); } }}
+        title="Cancel cycle count"
+        message={`Are you sure you want to cancel ${cancelling?.cc}?`}
+        confirmLabel="Cancel count"
+        cancelLabel="Keep"
+        destructive
+      />
     </div>
   );
 }

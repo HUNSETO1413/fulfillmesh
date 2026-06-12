@@ -1,7 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Calendar, Filter, Download, ChevronDown, ChevronRight, ShoppingBag, Truck, CheckCircle2, Clock, Target, ArrowUpRight, ArrowDownRight, Sparkles } from "lucide-react";
+import { Filter, Download, ChevronDown, ChevronRight, ShoppingBag, Truck, CheckCircle2, Clock, Target, ArrowUpRight, ArrowDownRight, Sparkles } from "lucide-react";
+import { DateRangeMenu } from "@/components/dashboard/DateRangeMenu";
+import { useToast } from "@/components/dashboard/Toast";
+import { exportToCsv } from "@/lib/client";
 
 const stats = [
   { title: "Total Orders", value: "12,456", change: "+10.8%", up: true, note: "vs Apr 30", icon: ShoppingBag, iconColor: "#3B82F6" },
@@ -84,15 +87,48 @@ function Sparkline({ color }: { color: string }) {
 const months = ["May 1", "May 6", "May 11", "May 16", "May 21", "May 26", "May 31"];
 
 export default function OrderPerformancePage() {
+  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("Overview");
+  const [range, setRange] = useState("May 1 – May 31, 2025");
+  const [gran, setGran] = useState("Daily");
+
+  function cycleGran() {
+    const opts = ["Daily", "Weekly", "Monthly"];
+    const next = opts[(opts.indexOf(gran) + 1) % opts.length];
+    setGran(next);
+    toast(`Order volume grouped by ${next.toLowerCase()}`, "info");
+  }
+
+  function exportWarehouses() {
+    exportToCsv("order-performance-by-warehouse", warehouses, [
+      { key: "name", header: "Warehouse" },
+      { key: "orders", header: "Orders" },
+      { key: "shipped", header: "Shipped" },
+      { key: "onTime", header: "On-Time Rate" },
+      { key: "cycle", header: "Avg Cycle Time" },
+      { key: "acc", header: "Order Accuracy" },
+    ]);
+    toast(`Exported ${warehouses.length} warehouses to CSV`);
+  }
+
+  function exportChannels() {
+    exportToCsv("order-performance-by-channel", channels, [
+      { key: "name", header: "Channel" },
+      { key: "orders", header: "Orders" },
+      { key: "pct", header: "% of Total" },
+      { key: "onTime", header: "On-Time Delivery" },
+      { key: "cycle", header: "Avg Cycle Time" },
+    ]);
+    toast(`Exported ${channels.length} channels to CSV`);
+  }
 
   return (
     <div className="space-y-6">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 text-[12px] text-[#94A3B8]">
-        <a href="#" className="hover:text-action-blue">Reports</a>
+        <a href="/dashboard/reports" className="hover:text-action-blue">Reports</a>
         <ChevronRight className="w-3 h-3" />
-        <a href="#" className="hover:text-action-blue">Operational Reports</a>
+        <a href="/dashboard/operational-reports" className="hover:text-action-blue">Operational Reports</a>
         <ChevronRight className="w-3 h-3" />
         <span className="text-text-muted font-medium">Order Performance</span>
       </nav>
@@ -104,13 +140,15 @@ export default function OrderPerformancePage() {
           <p className="text-[14px] text-text-muted mt-0.5">Track order metrics and performance across your operations.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] font-medium text-[#1E293B] hover:bg-[#F8FAFC] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-            <Calendar className="w-4 h-4 text-[#64748B]" />May 1 – May 31, 2025<ChevronDown className="w-3.5 h-3.5 text-[#94A3B8]" />
-          </button>
-          <button className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] font-medium text-[#1E293B] hover:bg-[#F8FAFC] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+          <DateRangeMenu
+            value={range}
+            onSelect={(r) => { setRange(r); toast(`Order performance scoped to ${r}`, "info"); }}
+            presets={["May 1 – May 31, 2025", "Last 7 days", "Last 30 days", "This quarter", "Year to date"]}
+          />
+          <button onClick={() => toast("Filter panel opened", "info")} className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] font-medium text-[#1E293B] hover:bg-[#F8FAFC] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
             <Filter className="w-4 h-4 text-[#64748B]" />Filters
           </button>
-          <button className="flex items-center gap-2 px-3.5 py-2 bg-action-blue text-white rounded-lg text-[13px] font-medium hover:bg-action-blue/90 shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+          <button onClick={exportWarehouses} className="flex items-center gap-2 px-3.5 py-2 bg-action-blue text-white rounded-lg text-[13px] font-medium hover:bg-action-blue/90 shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
             <Download className="w-4 h-4" />Export
           </button>
         </div>
@@ -147,7 +185,7 @@ export default function OrderPerformancePage() {
       {/* Tabs */}
       <div className="flex items-center gap-1 border-b border-[#E2E8F0] overflow-x-auto">
         {tabs.map((t) => (
-          <button key={t} onClick={() => setActiveTab(t)} className={`px-4 py-2.5 text-[13px] font-medium whitespace-nowrap border-b-2 -mb-px transition-colors ${activeTab === t ? "border-action-blue text-action-blue" : "border-transparent text-[#64748B] hover:text-[#1E293B]"}`}>
+          <button key={t} onClick={() => { setActiveTab(t); toast(`View: ${t}`, "info"); }} className={`px-4 py-2.5 text-[13px] font-medium whitespace-nowrap border-b-2 -mb-px transition-colors ${activeTab === t ? "border-action-blue text-action-blue" : "border-transparent text-[#64748B] hover:text-[#1E293B]"}`}>
             {t}
           </button>
         ))}
@@ -158,7 +196,7 @@ export default function OrderPerformancePage() {
         <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-sm p-5">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-[16px] font-semibold text-[#1E293B]">Order Volume Over Time</h3>
-            <span className="inline-flex items-center gap-1.5 text-[12px] text-[#64748B] bg-[#F1F5F9] px-2.5 py-1.5 rounded-lg">Daily <ChevronDown className="w-3 h-3" /></span>
+            <button onClick={cycleGran} className="inline-flex items-center gap-1.5 text-[12px] text-[#64748B] bg-[#F1F5F9] px-2.5 py-1.5 rounded-lg hover:bg-[#E2E8F0]">{gran} <ChevronDown className="w-3 h-3" /></button>
           </div>
           <div className="flex items-center gap-4 mb-2">
             <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[#3B82F6]" /><span className="text-[11px] text-[#64748B]">Orders</span></div>
@@ -231,7 +269,7 @@ export default function OrderPerformancePage() {
             ))}
           </tbody>
         </table>
-        <div className="px-5 py-3 border-t border-[#E2E8F0] text-right"><a href="#" className="text-[13px] font-medium text-action-blue hover:underline">View full report →</a></div>
+        <div className="px-5 py-3 border-t border-[#E2E8F0] text-right"><button onClick={exportWarehouses} className="text-[13px] font-medium text-action-blue hover:underline">View full report →</button></div>
       </div>
 
       {/* By Channel donut+table + Top Products */}
@@ -272,7 +310,7 @@ export default function OrderPerformancePage() {
               </table>
             </div>
           </div>
-          <div className="px-5 py-3 border-t border-[#E2E8F0] text-right"><a href="#" className="text-[13px] font-medium text-action-blue hover:underline">View full report →</a></div>
+          <div className="px-5 py-3 border-t border-[#E2E8F0] text-right"><button onClick={exportChannels} className="text-[13px] font-medium text-action-blue hover:underline">View full report →</button></div>
         </div>
 
         {/* Top Products by Orders */}
@@ -289,7 +327,7 @@ export default function OrderPerformancePage() {
               </div>
             ))}
           </div>
-          <a href="#" className="inline-block mt-4 text-[13px] font-medium text-action-blue hover:underline">View full report →</a>
+          <button onClick={() => { exportToCsv("top-products-by-orders", topProducts, [{ key: "name", header: "Product" }, { key: "orders", header: "Orders" }]); toast(`Exported ${topProducts.length} products to CSV`); }} className="inline-block mt-4 text-[13px] font-medium text-action-blue hover:underline">View full report →</button>
         </div>
       </div>
 
@@ -305,10 +343,10 @@ export default function OrderPerformancePage() {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-3">
-          <button className="rounded-lg border border-white/30 px-4 py-2.5 text-[13px] font-medium text-white hover:bg-white/10 transition-colors">
+          <button onClick={() => toast("Opening predictive analytics tour", "info")} className="rounded-lg border border-white/30 px-4 py-2.5 text-[13px] font-medium text-white hover:bg-white/10 transition-colors">
             Learn more
           </button>
-          <button className="flex items-center gap-1.5 rounded-lg bg-white px-4 py-2.5 text-[13px] font-semibold text-navy hover:bg-white/90 transition-colors">
+          <button onClick={() => toast("Redirecting to upgrade plans…", "info")} className="flex items-center gap-1.5 rounded-lg bg-white px-4 py-2.5 text-[13px] font-semibold text-navy hover:bg-white/90 transition-colors">
             Upgrade to Pro <ArrowUpRight className="h-4 w-4" />
           </button>
         </div>

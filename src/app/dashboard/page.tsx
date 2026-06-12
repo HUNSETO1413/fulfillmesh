@@ -1,10 +1,16 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import {
   ShoppingBag, DollarSign, CheckCircle2, Package,
-  ArrowUpRight, ArrowDownRight, Calendar, ChevronDown, MoreVertical,
+  ArrowUpRight, ArrowDownRight, ChevronDown, MoreVertical, Eye, Download,
 } from "lucide-react";
+import { DateRangeMenu } from "@/components/dashboard/DateRangeMenu";
+import { useToast } from "@/components/dashboard/Toast";
+import { exportToCsv } from "@/lib/client";
+
+const GRANULARITIES = ["Daily", "Weekly", "Monthly"];
 
 const stats = [
   { title: "Total Orders", value: "12,842", change: "+8.5%", positive: true, period: "vs Last 7 days", icon: ShoppingBag, iconBg: "bg-[#3B82F6]/10", iconColor: "text-[#3B82F6]" },
@@ -46,6 +52,29 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function DashboardOverview() {
+  const { toast } = useToast();
+  const [range, setRange] = useState("May 12 – May 18, 2025");
+  const [ordersGran, setOrdersGran] = useState("Daily");
+  const [rowMenu, setRowMenu] = useState<string | null>(null);
+
+  function cycleOrders() {
+    const next = GRANULARITIES[(GRANULARITIES.indexOf(ordersGran) + 1) % GRANULARITIES.length];
+    setOrdersGran(next);
+    toast(`Orders over time grouped by ${next.toLowerCase()}`, "info");
+  }
+
+  function exportRecent() {
+    exportToCsv("recent-orders", recentOrders, [
+      { key: "id", header: "Order ID" },
+      { key: "customer", header: "Customer" },
+      { key: "status", header: "Status" },
+      { key: "shipDate", header: "Ship Date" },
+      { key: "deliveryDate", header: "Delivery Date" },
+      { key: "total", header: "Total" },
+    ]);
+    toast(`Exported ${recentOrders.length} orders to CSV`);
+  }
+
   return (
     <div className="space-y-6">
       {/* Page Header */}
@@ -54,11 +83,11 @@ export default function DashboardOverview() {
           <h1 className="text-[20px] font-semibold text-[#1E293B]">Overview</h1>
           <p className="text-[14px] text-[#64748B] mt-0.5">Welcome back! Here&apos;s what&apos;s happening with your operations.</p>
         </div>
-        <button className="inline-flex items-center gap-2 bg-white border border-[#E2E8F0] rounded-lg px-3.5 py-2 text-[13px] font-medium text-[#1E293B] shadow-[0_1px_2px_rgba(0,0,0,0.05)] shrink-0">
-          <Calendar className="w-4 h-4 text-[#64748B]" />
-          May 12 – May 18, 2025
-          <ChevronDown className="w-4 h-4 text-[#94A3B8]" />
-        </button>
+        <DateRangeMenu
+          value={range}
+          onSelect={(r) => { setRange(r); toast(`Showing overview for ${r}`, "info"); }}
+          presets={["May 12 – May 18, 2025", "Last 7 days", "Last 30 days", "This quarter", "Year to date"]}
+        />
       </div>
 
       {/* Stats Cards */}
@@ -98,8 +127,8 @@ export default function DashboardOverview() {
         <div className="bg-white rounded-xl border border-[#E2E8F0] p-5 shadow-[0_1px_3px_0_rgba(0,0,0,0.1),0_1px_2px_0_rgba(0,0,0,0.06)]">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-[16px] font-semibold text-[#1E293B]">Orders Over Time</h3>
-            <button className="inline-flex items-center gap-1.5 text-[12px] text-[#64748B] border border-[#E2E8F0] px-2.5 py-1 rounded-lg">
-              Daily <ChevronDown className="w-3.5 h-3.5 text-[#94A3B8]" />
+            <button onClick={cycleOrders} className="inline-flex items-center gap-1.5 text-[12px] text-[#64748B] border border-[#E2E8F0] px-2.5 py-1 rounded-lg hover:bg-[#F8FAFC]">
+              {ordersGran} <ChevronDown className="w-3.5 h-3.5 text-[#94A3B8]" />
             </button>
           </div>
           <div className="h-[200px]">
@@ -192,9 +221,14 @@ export default function DashboardOverview() {
       <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-[0_1px_3px_0_rgba(0,0,0,0.1),0_1px_2px_0_rgba(0,0,0,0.06)]">
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#E2E8F0]">
           <h3 className="text-[16px] font-semibold text-[#1E293B]">Recent Orders</h3>
-          <Link href="/dashboard/orders" className="text-[13px] font-medium text-[#3B82F6] border border-[#E2E8F0] rounded-lg px-3 py-1.5 hover:bg-[#F8FAFC] transition-colors">
-            View all
-          </Link>
+          <div className="flex items-center gap-2">
+            <button onClick={exportRecent} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#64748B] border border-[#E2E8F0] rounded-lg px-3 py-1.5 hover:bg-[#F8FAFC] transition-colors">
+              <Download className="w-3.5 h-3.5" /> Export
+            </button>
+            <Link href="/dashboard/orders" className="text-[13px] font-medium text-[#3B82F6] border border-[#E2E8F0] rounded-lg px-3 py-1.5 hover:bg-[#F8FAFC] transition-colors">
+              View all
+            </Link>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -219,7 +253,19 @@ export default function DashboardOverview() {
                   <td className="px-5 py-3.5 text-[13px] text-[#64748B]">{order.deliveryDate}</td>
                   <td className="px-5 py-3.5 text-[13px] text-[#1E293B] font-medium">{order.total}</td>
                   <td className="px-5 py-3.5 text-right">
-                    <button className="text-[#94A3B8] hover:text-[#64748B]"><MoreVertical className="w-4 h-4" /></button>
+                    <div className="relative inline-block">
+                      <button onClick={() => setRowMenu(rowMenu === order.id ? null : order.id)} className="text-[#94A3B8] hover:text-[#64748B]"><MoreVertical className="w-4 h-4" /></button>
+                      {rowMenu === order.id && (
+                        <>
+                          <div className="fixed inset-0 z-30" onClick={() => setRowMenu(null)} />
+                          <div className="absolute right-0 mt-1 z-40 w-40 bg-white rounded-lg border border-[#E2E8F0] shadow-[0_10px_30px_rgba(0,0,0,0.12)] py-1 text-left">
+                            <Link href={`/dashboard/orders/${order.id}`} onClick={() => setRowMenu(null)} className="flex items-center gap-2 px-3 py-2 text-[13px] text-[#374151] hover:bg-[#F8FAFC]">
+                              <Eye className="w-4 h-4 text-[#64748B]" /> View details
+                            </Link>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
