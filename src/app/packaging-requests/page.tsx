@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Calendar, ChevronDown, ChevronRight, Mail, Phone } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronRight } from "lucide-react";
 
 const steps = [
   { num: 1, label: "Request Details", active: true },
@@ -9,10 +9,9 @@ const steps = [
 ];
 
 const nextSteps = [
-  { title: "We review your request", desc: "Our packaging experts will review your requirements." },
-  { title: "We contact you", desc: "We'll reach out to confirm details and discuss options." },
+  { title: "We review your request", desc: "Our team will review your request within 24 hours." },
   { title: "You receive a proposal", desc: "We'll send you a customized packaging solution and quote." },
-  { title: "Let's bring your brand to life!", desc: "Once approved, we'll proceed with production and delivery." },
+  { title: "Delivery timeline", desc: "Once approved, we'll proceed with production and delivery." },
 ];
 
 function Label({ children, required }: { children: React.ReactNode; required?: boolean }) {
@@ -133,57 +132,35 @@ export default function PackagingRequestsPage() {
                 </div>
 
                 <div>
-                  <Label required>Primary Contact</Label>
-                  <input className={inputClass} placeholder="Full name" />
-                </div>
-
-                <div className="grid sm:grid-cols-2 gap-4">
-                  <div>
-                    <Label required>Email</Label>
-                    <div className="relative">
-                      <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-light" />
-                      <input className={`${inputClass} pl-10`} placeholder="name@company.com" />
-                    </div>
-                  </div>
-                  <div>
-                    <Label>Phone</Label>
-                    <div className="relative">
-                      <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-light" />
-                      <input className={`${inputClass} pl-10`} placeholder="+1 (555) 123-4567" />
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <Label required>Company Name</Label>
-                  <input className={inputClass} placeholder="Your company name" />
-                </div>
-
-                <div>
-                  <Label>Brand / Store Name</Label>
-                  <input className={inputClass} placeholder="Your brand or store name" />
-                </div>
-
-                <div>
-                  <Label required>Estimated Monthly Volume</Label>
+                  <Label required>Request Type</Label>
                   <div className="relative">
                     <select className={`${inputClass} appearance-none pr-10 text-text-light`} defaultValue="">
-                      <option value="" disabled>Select estimated volume</option>
-                      <option>Less than 500 units</option>
-                      <option>500 - 2,000 units</option>
-                      <option>2,000 - 10,000 units</option>
-                      <option>10,000+ units</option>
+                      <option value="" disabled>Select request type</option>
+                      <option>New Packaging</option>
+                      <option>Modification</option>
+                      <option>Replacement</option>
+                      <option>Custom Design</option>
                     </select>
                     <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
                   </div>
                 </div>
 
                 <div>
-                  <Label>Target Launch Date</Label>
-                  <div className="relative">
-                    <Calendar className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-light" />
-                    <input className={`${inputClass} pl-10 text-text-light`} placeholder="Select date" />
-                  </div>
+                  <Label required>Quantity</Label>
+                  <input className={inputClass} type="number" placeholder="Enter number of units" />
+                </div>
+
+                <div>
+                  <Label required>Delivery Address</Label>
+                  <input className={inputClass} placeholder="Enter delivery address" />
+                </div>
+
+                <div>
+                  <Label>Special Instructions</Label>
+                  <textarea
+                    className={`${inputClass} min-h-[100px] resize-y`}
+                    placeholder="Enter any special requirements (e.g., Fragile, Temperature Sensitive)"
+                  />
                 </div>
 
                 <div className="flex justify-end pt-2">
@@ -217,15 +194,15 @@ export default function PackagingRequestsPage() {
               </div>
 
               <div className="rounded-2xl border border-border-soft bg-white p-6 shadow-soft">
-                <h3 className="text-[18px] font-bold text-text-primary">Need inspiration?</h3>
+                <h3 className="text-[18px] font-bold text-text-primary">Need Help?</h3>
                 <p className="mt-1.5 text-[14px] text-text-muted leading-relaxed">
-                  Explore our packaging options and materials.
+                  Contact our support team for assistance with your packaging request.
                 </p>
                 <Link
-                  href="/solutions/packaging-labeling"
+                  href="/contact"
                   className="mt-4 inline-flex items-center gap-2 rounded-[10px] border border-action-blue px-5 py-2.5 text-[14px] font-semibold text-action-blue transition-colors hover:bg-action-blue hover:text-white"
                 >
-                  View Packaging Options
+                  Chat with Support
                   <ArrowRight className="w-4 h-4" />
                 </Link>
               </div>

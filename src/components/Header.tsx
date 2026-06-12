@@ -223,12 +223,6 @@ export default function Header() {
 
         {/* Right CTA */}
         <div className="hidden lg:flex items-center gap-4">
-          <Link
-            href="/login"
-            className="text-[14px] font-normal text-text-body hover:text-teal transition-colors"
-          >
-            Log in
-          </Link>
           <button className="w-9 h-9 rounded-full bg-deep-navy flex items-center justify-center">
             <User className="w-4 h-4 text-white" />
           </button>

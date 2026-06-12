@@ -106,14 +106,14 @@ export default function ProductDetailPage() {
           <div className="flex gap-5">
             {/* Gallery */}
             <div className="flex flex-col gap-2 shrink-0">
-              {[0, 1, 2].map((i) => (
-                <div key={i} className={`w-12 h-12 rounded-lg border flex items-center justify-center overflow-hidden ${i === 0 ? "border-[#3B82F6] bg-[#3B82F6]/5" : "border-[#E2E8F0] bg-[#F1F5F9]"}`}>
-                  <BottleImage className="h-9" />
+              {["#3B82F6", "#6366F1", "#8B5CF6"].map((color, i) => (
+                <div key={i} className={`w-12 h-12 rounded-lg border flex items-center justify-center overflow-hidden ${i === 0 ? "border-[#3B82F6] ring-1 ring-[#3B82F6]/30" : "border-[#E2E8F0]"}`}>
+                  <div className="w-full h-full flex items-center justify-center text-[14px] font-bold text-white" style={{ backgroundColor: color }}>FM</div>
                 </div>
               ))}
             </div>
-            <div className="w-28 h-32 rounded-lg bg-gradient-to-b from-[#F1F5F9] to-[#E2E8F0] border border-[#E2E8F0] flex items-center justify-center shrink-0 overflow-hidden">
-              <BottleImage className="h-24" />
+            <div className="w-28 h-32 rounded-lg border border-[#E2E8F0] flex items-center justify-center shrink-0 overflow-hidden bg-[#3B82F6]">
+              <span className="text-[24px] font-bold text-white">FM</span>
             </div>
             {/* Fields */}
             <div className="flex-1 min-w-0">
@@ -362,34 +362,6 @@ export default function ProductDetailPage() {
         </div>
       </div>
     </div>
-  );
-}
-
-function BottleImage({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 48 120" className={className} fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Stainless steel water bottle">
-      <defs>
-        <linearGradient id="bottleBody" x1="0" y1="0" x2="48" y2="0" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#E2E8F0" />
-          <stop offset="0.4" stopColor="#F1F5F9" />
-          <stop offset="0.55" stopColor="#CBD5E1" />
-          <stop offset="1" stopColor="#94A3B8" />
-        </linearGradient>
-      </defs>
-      {/* Cap */}
-      <rect x="17" y="2" width="14" height="12" rx="3" fill="#475569" />
-      <rect x="18.5" y="0" width="11" height="4" rx="2" fill="#64748B" />
-      {/* Neck */}
-      <rect x="19" y="13" width="10" height="6" fill="#64748B" />
-      {/* Body */}
-      <path d="M14 26c0-4 1.6-7 5-7h10c3.4 0 5 3 5 7v82c0 5-3 8-8 8H22c-5 0-8-3-8-8V26z" fill="url(#bottleBody)" stroke="#94A3B8" strokeWidth="1" />
-      {/* Highlight */}
-      <rect x="18" y="30" width="3" height="76" rx="1.5" fill="#FFFFFF" opacity="0.7" />
-      {/* Label band */}
-      <rect x="14" y="52" width="20" height="26" fill="#3B82F6" opacity="0.85" />
-      <rect x="17" y="60" width="14" height="2.5" rx="1.25" fill="#FFFFFF" opacity="0.8" />
-      <rect x="17" y="66" width="10" height="2" rx="1" fill="#FFFFFF" opacity="0.6" />
-    </svg>
   );
 }
 

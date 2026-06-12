@@ -2,6 +2,7 @@ import Link from "next/link";
 import {
   BarChart3, FileText, Target, Truck, RotateCcw, Users, ArrowRight, CheckCircle2,
   Database, LineChart, Lightbulb, Settings, TrendingUp, ShieldCheck, Zap, Globe,
+  ChevronDown, Layers, Eye, BarChart2,
 } from "lucide-react";
 
 const heroStats = [
@@ -47,6 +48,28 @@ const shipStats = [
   { label: "On-Time Delivery", value: "97.4%", delta: "+2.1%" },
   { label: "Avg. Transit Time", value: "2.6 days", delta: "-8%" },
   { label: "Late Shipments", value: "389", delta: "-12%" },
+];
+
+const timeline = [
+  { icon: Database, title: "Data Collection", desc: "Gather data from orders, shipments, inventory, and suppliers." },
+  { icon: Settings, title: "Processing", desc: "Clean, structure, and normalize raw data from all sources." },
+  { icon: BarChart2, title: "Analysis", desc: "Apply algorithms and models to uncover trends and insights." },
+  { icon: FileText, title: "Reporting", desc: "Deliver insights via dashboards, reports, and alerts." },
+  { icon: TrendingUp, title: "Optimization", desc: "Use insights to continuously improve operations and outcomes." },
+];
+
+const stats = [
+  { icon: BarChart3, value: "50+", label: "Custom Reports" },
+  { icon: Globe, value: "30+", label: "Data Sources" },
+  { icon: Layers, value: "99.9%", label: "Platform Uptime" },
+  { icon: ShieldCheck, value: "4.9/5", label: "User Satisfaction" },
+];
+
+const faqs = [
+  { q: "What data sources can I connect?" },
+  { q: "Can I create custom dashboards?" },
+  { q: "How often is data updated?" },
+  { q: "Can I export reports to share with my team?" },
 ];
 
 export default function AnalyticsReportingPage() {
@@ -221,6 +244,77 @@ export default function AnalyticsReportingPage() {
                 <div className="w-12 h-12 rounded-2xl bg-action-blue/10 flex items-center justify-center mb-5"><o.icon className="w-6 h-6 text-action-blue" /></div>
                 <h3 className="text-[16px] font-bold text-deep-navy mb-2">{o.title}</h3>
                 <p className="text-[14px] text-text-body leading-relaxed">{o.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Timeline */}
+      <section className="bg-soft-bg">
+        <div className="max-w-[1200px] mx-auto px-6 py-20">
+          <div className="text-center max-w-[640px] mx-auto mb-16">
+            <h2 className="text-[30px] font-bold text-deep-navy leading-tight">How your data turns into optimized operations</h2>
+            <p className="mt-3 text-[16px] text-text-body">From raw data to actionable insights — a clear, transparent process.</p>
+          </div>
+          <div className="relative grid md:grid-cols-5 gap-6">
+            <div className="hidden md:block absolute top-7 left-[8%] right-[8%] h-px bg-border-blue" />
+            {timeline.map((t, i) => (
+              <div key={i} className="relative">
+                <div className="w-14 h-14 rounded-full bg-white border border-border-soft shadow-soft flex items-center justify-center mb-5 relative z-10 mx-auto">
+                  <t.icon className="w-6 h-6 text-action-blue" />
+                </div>
+                <h3 className="text-[14px] font-bold text-deep-navy text-center">
+                  <span className="text-[13px] font-semibold text-text-muted">Step {i + 1}:</span>{" "}
+                  {t.title}
+                </h3>
+                <p className="mt-2 text-[12px] text-text-muted leading-relaxed text-center">{t.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Connected platform stats */}
+      <section className="bg-white">
+        <div className="max-w-[1200px] mx-auto px-6 pb-20">
+          <div className="bg-deep-navy rounded-2xl p-10">
+            <div className="grid lg:grid-cols-2 gap-10 items-center">
+              <div>
+                <span className="inline-block text-[12px] font-bold tracking-[0.12em] text-teal bg-teal/10 rounded-full px-3 py-1">ONE CONNECTED PLATFORM</span>
+                <h2 className="mt-5 text-[28px] font-bold text-white leading-tight">
+                  Analytics & Reporting, connected to your fulfillment operations
+                </h2>
+                <p className="mt-4 text-[15px] text-text-on-dark-muted leading-relaxed max-w-[400px]">
+                  Consolidate data from orders, shipments, returns, inventory, and suppliers into one unified analytics platform.
+                </p>
+                <Link href="/solutions" className="mt-5 inline-flex items-center gap-1 text-[14px] font-semibold text-teal">
+                  Learn more about our platform <ArrowRight className="w-4 h-4" />
+                </Link>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 gap-6">
+                {stats.map((s) => (
+                  <div key={s.label} className="text-center">
+                    <s.icon className="w-8 h-8 text-teal mx-auto mb-3" />
+                    <p className="text-[32px] font-bold text-white leading-none">{s.value}</p>
+                    <p className="mt-2 text-[13px] text-text-on-dark-soft">{s.label}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section className="bg-soft-bg">
+        <div className="max-w-[800px] mx-auto px-6 py-20">
+          <h2 className="text-[30px] font-bold text-deep-navy text-center mb-12">Questions? We&apos;ve got answers.</h2>
+          <div className="space-y-4">
+            {faqs.map((f) => (
+              <div key={f.q} className="bg-white rounded-xl border border-border-soft px-5 py-4 flex items-center justify-between">
+                <span className="text-[15px] font-semibold text-deep-navy pr-4">{f.q}</span>
+                <ChevronDown className="w-5 h-5 text-text-muted shrink-0" />
               </div>
             ))}
           </div>

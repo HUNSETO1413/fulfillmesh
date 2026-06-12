@@ -3,7 +3,7 @@
 import Link from "next/link";
 import {
   ArrowLeft, Check, ArrowRight,
-  Package, CheckCircle2, Plane, DollarSign, Download, Phone, AlertTriangle,
+  Package, CheckCircle2, Plane, DollarSign, Download, Phone, AlertTriangle, User, Tag,
 } from "lucide-react";
 
 const progress = [
@@ -47,42 +47,42 @@ export default function ShipmentDetailPage() {
 
       {/* Summary card */}
       <div className="bg-white rounded-xl border border-[#E6EDF5] shadow-[0_1px_3px_rgba(0,0,0,0.1)] p-5">
-        <div className="grid items-start gap-6" style={{ gridTemplateColumns: "1.4fr 1fr 1.4fr 1fr 1fr" }}>
+        <div className="grid items-start" style={{ gridTemplateColumns: "repeat(9, minmax(0, 1fr))", gap: "20px" }}>
           <div>
-            <p className="text-[12px] text-[#9AA8B8] mb-1">Tracking Number</p>
-            <div className="flex items-center gap-2">
-              <p className="text-[15px] font-bold text-[#061A3D] font-mono">FMUS25051800123</p>
-            </div>
-            <span className="inline-flex px-2 py-0.5 text-[11px] font-medium rounded mt-2" style={{ backgroundColor: "#00B8941A", color: "#00B894" }}>Delivered</span>
+            <p className="text-[12px] text-[#9AA8B8] mb-1">Shipment ID</p>
+            <p className="text-[14px] font-semibold text-[#061A3D] font-mono">SHP-2025-0518-00123</p>
           </div>
           <div>
             <p className="text-[12px] text-[#9AA8B8] mb-1">Carrier</p>
             <p className="text-[14px] font-semibold text-[#061A3D]">FedEx Express</p>
-            <Link href="#" className="inline-flex items-center gap-1 text-[12px] font-medium text-[#0057D8] mt-2">Tracking via FedEx <ArrowRight className="w-3 h-3" /></Link>
           </div>
           <div>
-            <p className="text-[12px] text-[#9AA8B8] mb-1">Route</p>
-            <div className="flex items-center gap-3">
-              <div className="text-[13px]">
-                <p className="text-[#061A3D] font-medium">Shenzhen, CN</p>
-              </div>
-              <ArrowRight className="w-4 h-4 text-[#9AA8B8]" />
-              <div className="text-[13px]">
-                <p className="text-[#061A3D] font-medium">Los Angeles, US</p>
-              </div>
-            </div>
+            <p className="text-[12px] text-[#9AA8B8] mb-1">Origin</p>
+            <p className="text-[13px] font-medium text-[#061A3D]">Shenzhen, CN</p>
           </div>
           <div>
-            <p className="text-[12px] text-[#9AA8B8] mb-1">ETA</p>
-            <p className="text-[14px] font-bold text-[#00B894]">May 16, 2025</p>
-            <p className="text-[11px] text-[#4A5A73] mt-1">Delivered on May 16, 2025</p>
-            <p className="text-[11px] text-[#9AA8B8]">10:42 AM (PDT)</p>
+            <p className="text-[12px] text-[#9AA8B8] mb-1">Destination</p>
+            <p className="text-[13px] font-medium text-[#061A3D]">Los Angeles, US</p>
           </div>
           <div>
-            <p className="text-[12px] text-[#9AA8B8] mb-1">Shipment ID</p>
-            <p className="text-[14px] font-semibold text-[#061A3D]">SHP-2025-0518-00123</p>
-            <p className="text-[11px] text-[#9AA8B8] mt-1">Created: May 12, 2025</p>
-            <p className="text-[11px] text-[#9AA8B8]">By: System</p>
+            <p className="text-[12px] text-[#9AA8B8] mb-1">Date</p>
+            <p className="text-[13px] font-medium text-[#061A3D]">May 12, 2025</p>
+          </div>
+          <div>
+            <p className="text-[12px] text-[#9AA8B8] mb-1">Status</p>
+            <span className="inline-flex px-2 py-0.5 text-[11px] font-medium rounded" style={{ backgroundColor: "#00B8941A", color: "#00B894" }}>Delivered</span>
+          </div>
+          <div>
+            <p className="text-[12px] text-[#9AA8B8] mb-1">Weight</p>
+            <p className="text-[13px] font-medium text-[#061A3D]">48.6 kg</p>
+          </div>
+          <div>
+            <p className="text-[12px] text-[#9AA8B8] mb-1">Dimensions</p>
+            <p className="text-[13px] font-medium text-[#061A3D]">120 x 80 x 60 cm</p>
+          </div>
+          <div>
+            <p className="text-[12px] text-[#9AA8B8] mb-1">Cost</p>
+            <p className="text-[14px] font-bold text-[#061A3D]">$512.48</p>
           </div>
         </div>
       </div>
@@ -169,42 +169,46 @@ export default function ShipmentDetailPage() {
           </div>
         </div>
 
-        {/* Customs & Clearance */}
+        {/* Customer Information */}
         <div className="bg-white rounded-xl border border-[#E6EDF5] shadow-[0_1px_3px_rgba(0,0,0,0.1)] p-5">
-          <h3 className="text-[15px] font-semibold text-[#061A3D] mb-3">Customs &amp; Clearance</h3>
-          {/* region map thumbnail */}
-          <div className="rounded-lg h-[88px] mb-3 relative overflow-hidden border border-[#E6EDF5]" style={{ background: "linear-gradient(135deg,#EFF6FF 0%,#F7FAFC 100%)" }}>
-            <svg viewBox="0 0 240 88" className="w-full h-full" preserveAspectRatio="xMidYMid slice">
-              <path d="M150,18 q30,-8 55,4 q18,14 10,34 q-26,16 -56,6 q-26,-10 -9,-44 z" fill="#DCE7F4" />
-              <path d="M155,30 q22,-4 40,6 q12,12 4,26" fill="none" stroke="#CBD8EA" strokeWidth="1" />
-              <circle cx="186" cy="40" r="5" fill="#0057D8" />
-              <circle cx="186" cy="40" r="9" fill="none" stroke="#0057D8" strokeWidth="1" opacity="0.4" />
-            </svg>
-            <div className="absolute bottom-2 left-2.5 bg-white/95 rounded px-2 py-0.5 text-[10px] font-medium text-[#061A3D] border border-[#E6EDF5]">Port of Los Angeles</div>
+          <h3 className="text-[15px] font-semibold text-[#061A3D] mb-3">Customer Information</h3>
+          {/* Customer avatar placeholder */}
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 rounded-full bg-[#EFF6FF] flex items-center justify-center">
+              <User className="w-5 h-5 text-[#0057D8]" />
+            </div>
+            <div>
+              <p className="text-[14px] font-semibold text-[#061A3D]">Acme Retail</p>
+              <p className="text-[11px] text-[#9AA8B8]">Customer since Jan 2024</p>
+            </div>
           </div>
           <div className="space-y-2.5 text-[12px]">
-            <div className="flex justify-between"><span className="text-[#66758C]">Customs Status</span><span className="font-medium text-[#00B894]">Cleared</span></div>
-            <div className="flex justify-between"><span className="text-[#66758C]">Country of Export</span><span className="font-medium text-[#061A3D]">China</span></div>
-            <div className="flex justify-between"><span className="text-[#66758C]">Country of Import</span><span className="font-medium text-[#061A3D]">United States</span></div>
-            <div className="flex justify-between"><span className="text-[#66758C]">HS Code</span><span className="font-medium text-[#061A3D]">8471.30.0100</span></div>
-            <div className="flex justify-between"><span className="text-[#66758C]">Duties &amp; Taxes</span><span className="font-medium text-[#061A3D]">$0.00</span></div>
-            <div className="flex justify-between"><span className="text-[#66758C]">Cleared On</span><span className="font-medium text-[#061A3D]">May 15, 2025 11:05</span></div>
+            <div className="flex justify-between"><span className="text-[#66758C]">Contact Name</span><span className="font-medium text-[#061A3D]">John Smith</span></div>
+            <div className="flex justify-between"><span className="text-[#66758C]">Email</span><span className="font-medium text-[#061A3D]">john@acmeretail.com</span></div>
+            <div className="flex justify-between"><span className="text-[#66758C]">Phone</span><span className="font-medium text-[#061A3D]">+1 (310) 555-0142</span></div>
+            <div className="flex justify-between"><span className="text-[#66758C]">Address</span><span className="font-medium text-[#061A3D] text-right max-w-[140px]">1234 Commerce Blvd, Los Angeles, CA 90001</span></div>
           </div>
-          <Link href="#" className="inline-flex items-center gap-1 text-[12px] font-medium text-[#0057D8] mt-3">View Documents <ArrowRight className="w-3 h-3" /></Link>
+          <Link href="#" className="inline-flex items-center gap-1 text-[12px] font-medium text-[#0057D8] mt-3">View Customer Profile <ArrowRight className="w-3 h-3" /></Link>
         </div>
 
-        {/* Proof of Delivery */}
+        {/* Shipping Label */}
         <div className="bg-white rounded-xl border border-[#E6EDF5] shadow-[0_1px_3px_rgba(0,0,0,0.1)] p-5">
-          <h3 className="text-[15px] font-semibold text-[#061A3D] mb-3">Proof of Delivery</h3>
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded mb-2" style={{ backgroundColor: "#00B8941A", color: "#00B894" }}><Check className="w-3 h-3" /> Delivered May 16, 2025 at 10:42 AM (PDT)</span>
-          <div className="mt-2 rounded-lg border border-[#E6EDF5] bg-[#F7FAFC] h-[80px] flex items-center justify-center">
-            <span className="text-[11px] text-[#9AA8B8] italic" style={{ fontFamily: "cursive" }}>J. Martinez</span>
+          <h3 className="text-[15px] font-semibold text-[#061A3D] mb-3">Shipping Label</h3>
+          {/* Label preview */}
+          <div className="rounded-lg border border-[#E6EDF5] bg-[#F7FAFC] h-[88px] flex flex-col items-center justify-center mb-3">
+            <Tag className="w-6 h-6 text-[#9AA8B8] mb-1" />
+            <p className="text-[11px] text-[#9AA8B8] font-mono">FMUS25051800123</p>
           </div>
-          <div className="mt-3 space-y-1.5 text-[12px]">
-            <div className="flex justify-between"><span className="text-[#66758C]">Signed by</span><span className="font-medium text-[#061A3D]">J. Martinez</span></div>
-            <div className="flex justify-between"><span className="text-[#66758C]">Location</span><span className="font-medium text-[#061A3D]">Los Angeles, CA, USA</span></div>
+          <div className="space-y-2.5 text-[12px]">
+            <div className="flex justify-between"><span className="text-[#66758C]">Label Type</span><span className="font-medium text-[#061A3D]">Master Label</span></div>
+            <div className="flex justify-between"><span className="text-[#66758C]">Service</span><span className="font-medium text-[#061A3D]">FedEx Express</span></div>
+            <div className="flex justify-between"><span className="text-[#66758C]">Created</span><span className="font-medium text-[#061A3D]">May 12, 2025</span></div>
+            <div className="flex justify-between"><span className="text-[#66758C]">Format</span><span className="font-medium text-[#061A3D]">PDF (4x6 in)</span></div>
           </div>
-          <Link href="#" className="inline-flex items-center gap-1 text-[12px] font-medium text-[#0057D8] mt-3">View Full POD <ArrowRight className="w-3 h-3" /></Link>
+          <div className="flex items-center gap-2 mt-3">
+            <button className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0057D8] rounded text-[12px] font-medium text-white hover:bg-[#003B7A]"><Download className="w-3.5 h-3.5" /> Download</button>
+            <Link href="#" className="inline-flex items-center gap-1 text-[12px] font-medium text-[#0057D8]">Print Label <ArrowRight className="w-3 h-3" /></Link>
+          </div>
         </div>
       </div>
 

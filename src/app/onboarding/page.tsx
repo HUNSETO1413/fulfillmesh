@@ -123,10 +123,12 @@ const inputCls =
   "w-full px-4 py-2.5 rounded-[10px] border border-border-soft text-sm bg-white focus:outline-none focus:border-teal focus:ring-1 focus:ring-teal transition-colors";
 
 export default function OnboardingPage() {
-  const [active] = useState(0);
+  const [active, setActive] = useState(0);
   const [biz, setBiz] = useState("Brand owner");
   const [picked, setPicked] = useState<string[]>(["Shopify"]);
   const toggle = (n: string) => setPicked((p) => (p.includes(n) ? p.filter((x) => x !== n) : [...p, n]));
+  const next = () => setActive((s) => Math.min(s + 1, steps.length - 1));
+  const back = () => setActive((s) => Math.max(s - 1, 0));
 
   return (
     <section
@@ -265,99 +267,128 @@ export default function OnboardingPage() {
             </div>
           </aside>
 
-          {/* Center form */}
+          {/* Center form — step-based */}
           <div className="space-y-6">
-            {/* Company Information */}
-            <div className="bg-white rounded-2xl border border-border-soft p-7">
-              <h2 className="text-[18px] font-bold text-deep-navy mb-5">Company Information</h2>
-              <div className="grid sm:grid-cols-2 gap-4">
-                <div><Label>Company Name</Label><input className={inputCls} placeholder="Acme Brands Inc." /></div>
-                <div><Label>Website</Label><input className={inputCls} placeholder="https://yourstore.com" /></div>
-                <div>
-                  <Label>Industry</Label>
-                  <select className={inputCls}>
-                    {["E-commerce Retail", "Apparel & Fashion", "Electronics", "Beauty & Personal Care", "Home & Kitchen", "Other"].map((o) => <option key={o}>{o}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <Label>Company Size</Label>
-                  <select className={inputCls}>
-                    {["1–10 employees", "11–50 employees", "51–200 employees", "200+ employees"].map((o) => <option key={o}>{o}</option>)}
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            {/* Primary Contact */}
-            <div className="bg-white rounded-2xl border border-border-soft p-7">
-              <h2 className="text-[18px] font-bold text-deep-navy mb-5">Primary Contact</h2>
-              <div className="grid sm:grid-cols-2 gap-4">
-                <div><Label>First Name</Label><input className={inputCls} placeholder="Jane" /></div>
-                <div><Label>Last Name</Label><input className={inputCls} placeholder="Doe" /></div>
-                <div><Label>Email</Label><input type="email" className={inputCls} placeholder="jane@company.com" /></div>
-                <div><Label>Phone</Label><input className={inputCls} placeholder="+1 (555) 000-0000" /></div>
-                <div className="sm:col-span-2">
-                  <Label>Role</Label>
-                  <select className={inputCls}>
-                    {["Operations Manager", "Founder / CEO", "Logistics Lead", "E-commerce Manager", "Other"].map((o) => <option key={o}>{o}</option>)}
-                  </select>
+            {/* Step 0: Company Info */}
+            {active === 0 && (
+              <div className="bg-white rounded-2xl border border-border-soft p-7">
+                <h2 className="text-[18px] font-bold text-deep-navy mb-5">Company Information</h2>
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <div><Label>Company Name</Label><input className={inputCls} placeholder="Acme Brands Inc." /></div>
+                  <div><Label>Website</Label><input className={inputCls} placeholder="https://yourstore.com" /></div>
+                  <div>
+                    <Label>Industry</Label>
+                    <select className={inputCls}>
+                      {["E-commerce Retail", "Apparel & Fashion", "Electronics", "Beauty & Personal Care", "Home & Kitchen", "Other"].map((o) => <option key={o}>{o}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <Label>Company Size</Label>
+                    <select className={inputCls}>
+                      {["1–10 employees", "11–50 employees", "51–200 employees", "200+ employees"].map((o) => <option key={o}>{o}</option>)}
+                    </select>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
-            {/* Tell us about your business */}
-            <div className="bg-white rounded-2xl border border-border-soft p-7">
-              <h2 className="text-[18px] font-bold text-deep-navy mb-2">Tell us about your business</h2>
-              <p className="text-[13px] text-text-muted mb-4">What type of business are you?</p>
-              <div className="flex flex-wrap gap-2.5 mb-6">
-                {["Brand owner", "Retailer", "Wholesaler", "Dropshipper"].map((b) => (
-                  <button key={b} onClick={() => setBiz(b)}
-                    className={`px-4 py-2 rounded-full text-[13px] font-medium border transition-colors ${biz === b ? "bg-teal/10 border-teal text-teal" : "border-border-soft text-text-body hover:border-teal/40"}`}>
-                    {b}
-                  </button>
-                ))}
+            {/* Step 1: Primary Contact */}
+            {active === 1 && (
+              <div className="bg-white rounded-2xl border border-border-soft p-7">
+                <h2 className="text-[18px] font-bold text-deep-navy mb-5">Primary Contact</h2>
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <div><Label>First Name</Label><input className={inputCls} placeholder="Jane" /></div>
+                  <div><Label>Last Name</Label><input className={inputCls} placeholder="Doe" /></div>
+                  <div><Label>Email</Label><input type="email" className={inputCls} placeholder="jane@company.com" /></div>
+                  <div><Label>Phone</Label><input className={inputCls} placeholder="+1 (555) 000-0000" /></div>
+                  <div className="sm:col-span-2">
+                    <Label>Role</Label>
+                    <select className={inputCls}>
+                      {["Operations Manager", "Founder / CEO", "Logistics Lead", "E-commerce Manager", "Other"].map((o) => <option key={o}>{o}</option>)}
+                    </select>
+                  </div>
+                </div>
               </div>
-              <Label>Monthly Order Volume (Estimated)</Label>
-              <select className={inputCls}>
-                {["0 – 100 orders", "100 – 500 orders", "500 – 2,000 orders", "2,000 – 10,000 orders", "10,000+ orders"].map((o) => <option key={o}>{o}</option>)}
-              </select>
-            </div>
+            )}
 
-            {/* Sales channels */}
-            <div className="bg-white rounded-2xl border border-border-soft p-7">
-              <h2 className="text-[18px] font-bold text-deep-navy mb-2">Select your sales channels</h2>
-              <p className="text-[13px] text-text-muted mb-4">Choose all platforms where you sell today.</p>
-              <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
-                {channels.map((c) => {
-                  const on = picked.includes(c);
-                  return (
-                    <button key={c} onClick={() => toggle(c)}
-                      className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all ${on ? "border-teal bg-teal/5" : "border-border-soft hover:border-teal/40"}`}>
-                      <span className="w-8 h-8 rounded-lg flex items-center justify-center bg-soft-bg border border-border-soft shrink-0">
-                        <BrandLogo name={c} className="w-5 h-5" />
-                      </span>
-                      <span className="text-[13px] font-medium text-deep-navy flex-1">{c}</span>
-                      {on && <Check className="w-4 h-4 text-teal" />}
+            {/* Step 2: Business Profile & Order Volume */}
+            {active === 2 && (
+              <div className="bg-white rounded-2xl border border-border-soft p-7">
+                <h2 className="text-[18px] font-bold text-deep-navy mb-2">Tell us about your business</h2>
+                <p className="text-[13px] text-text-muted mb-4">What type of business are you?</p>
+                <div className="flex flex-wrap gap-2.5 mb-6">
+                  {["Brand owner", "Retailer", "Wholesaler", "Dropshipper"].map((b) => (
+                    <button key={b} onClick={() => setBiz(b)}
+                      className={`px-4 py-2 rounded-full text-[13px] font-medium border transition-colors ${biz === b ? "bg-teal/10 border-teal text-teal" : "border-border-soft text-text-body hover:border-teal/40"}`}>
+                      {b}
                     </button>
-                  );
-                })}
+                  ))}
+                </div>
+                <Label>Monthly Order Volume (Estimated)</Label>
+                <select className={inputCls}>
+                  {["0 – 100 orders", "100 – 500 orders", "500 – 2,000 orders", "2,000 – 10,000 orders", "10,000+ orders"].map((o) => <option key={o}>{o}</option>)}
+                </select>
               </div>
-            </div>
+            )}
 
-            {/* Notes */}
-            <div className="bg-white rounded-2xl border border-border-soft p-7">
-              <h2 className="text-[18px] font-bold text-deep-navy mb-3">Anything else we should know?</h2>
-              <textarea rows={3} className="w-full px-4 py-3 rounded-[10px] border border-border-soft text-sm focus:outline-none focus:border-teal focus:ring-1 focus:ring-teal transition-colors resize-none" placeholder="Tell us about your goals, current challenges, or special requirements..." />
-            </div>
+            {/* Step 3: Sales Channels */}
+            {active === 3 && (
+              <div className="bg-white rounded-2xl border border-border-soft p-7">
+                <h2 className="text-[18px] font-bold text-deep-navy mb-2">Select your sales channels</h2>
+                <p className="text-[13px] text-text-muted mb-4">Choose all platforms where you sell today.</p>
+                <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
+                  {channels.map((c) => {
+                    const on = picked.includes(c);
+                    return (
+                      <button key={c} onClick={() => toggle(c)}
+                        className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all ${on ? "border-teal bg-teal/5" : "border-border-soft hover:border-teal/40"}`}>
+                        <span className="w-8 h-8 rounded-lg flex items-center justify-center bg-soft-bg border border-border-soft shrink-0">
+                          <BrandLogo name={c} className="w-5 h-5" />
+                        </span>
+                        <span className="text-[13px] font-medium text-deep-navy flex-1">{c}</span>
+                        {on && <Check className="w-4 h-4 text-teal" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Step 4: Review & Notes */}
+            {active === 4 && (
+              <>
+                <div className="bg-white rounded-2xl border border-border-soft p-7">
+                  <h2 className="text-[18px] font-bold text-deep-navy mb-3">Anything else we should know?</h2>
+                  <textarea rows={3} className="w-full px-4 py-3 rounded-[10px] border border-border-soft text-sm focus:outline-none focus:border-teal focus:ring-1 focus:ring-teal transition-colors resize-none" placeholder="Tell us about your goals, current challenges, or special requirements..." />
+                </div>
+                <div className="bg-teal/8 rounded-2xl border border-teal/15 p-5">
+                  <p className="text-[14px] font-semibold text-deep-navy">You&apos;re all set!</p>
+                  <p className="mt-1 text-[13px] text-text-body leading-relaxed">Review your information above and click &ldquo;Complete Setup&rdquo; to finish.</p>
+                </div>
+              </>
+            )}
 
             {/* Nav */}
             <div className="flex items-center justify-between">
-              <button className="inline-flex items-center gap-2 px-6 py-3 rounded-[10px] text-sm font-semibold text-text-muted border border-border-soft hover:bg-soft-bg transition-colors">
+              <button
+                onClick={back}
+                disabled={active === 0}
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-[10px] text-sm font-semibold text-text-muted border border-border-soft hover:bg-soft-bg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
                 <ArrowLeft className="w-4 h-4" /> Back
               </button>
-              <Link href="/get-started" className="inline-flex items-center gap-2 px-7 py-3 text-sm font-semibold text-white rounded-[10px] gradient-cta hover:shadow-button transition-all">
-                Continue <ArrowRight className="w-4 h-4" />
-              </Link>
+              {active < steps.length - 1 ? (
+                <button
+                  onClick={next}
+                  className="inline-flex items-center gap-2 px-7 py-3 text-sm font-semibold text-white rounded-[10px] gradient-cta hover:shadow-button transition-all"
+                >
+                  Next <ArrowRight className="w-4 h-4" />
+                </button>
+              ) : (
+                <Link href="/get-started" className="inline-flex items-center gap-2 px-7 py-3 text-sm font-semibold text-white rounded-[10px] gradient-cta hover:shadow-button transition-all">
+                  Complete Setup <CheckCircle2 className="w-4 h-4" />
+                </Link>
+              )}
             </div>
           </div>
 

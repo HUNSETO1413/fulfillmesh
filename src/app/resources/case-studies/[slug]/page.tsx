@@ -20,9 +20,9 @@ import {
 const meta = ["Peak Supplies", "Industrial & Manufacturing", "May 5, 2025", "3 min read"];
 
 const heroStats = [
-  { icon: Clock3, value: "40%", label: "Faster Lead Times" },
-  { icon: DollarSign, value: "32%", label: "Lower Shipping Costs" },
-  { icon: TrendingUp, value: "2.6x", label: "Increase in On-Time Delivery" },
+  { icon: Clock3, value: "40%", label: "faster" },
+  { icon: DollarSign, value: "22%", label: "lower costs" },
+  { icon: TrendingUp, value: "2.4x", label: "on-time delivery increase" },
   { icon: CheckCircle2, value: "98%", label: "Order Accuracy" },
 ];
 
@@ -47,9 +47,9 @@ const implementation = [
 ];
 
 const resultsTable = [
-  { metric: "Average Lead Time", before: "6.2 days", after: "3.7 days", improvement: "40% faster" },
-  { metric: "On-Time Delivery", before: "76%", after: "98%", improvement: "2.6x improvement" },
-  { metric: "Shipping Costs", before: "$1.28M / year", after: "$0.87M / year", improvement: "32% reduction" },
+  { metric: "Average Lead Time", before: "7 days", after: "4.2 days", improvement: "40% faster" },
+  { metric: "On-Time Delivery", before: "76%", after: "98%", improvement: "2.4x improvement" },
+  { metric: "Inventory Costs", before: "$2.1M / year", after: "$1.64M / year", improvement: "22% reduction" },
   { metric: "Order Accuracy", before: "91%", after: "98%", improvement: "7 pp improvement" },
 ];
 
@@ -63,8 +63,8 @@ const companySnapshot = [
 
 const keyResults = [
   { value: "40%", label: "Faster Lead Time" },
-  { value: "32%", label: "Lower Shipping Costs" },
-  { value: "2.6x", label: "Increase in On-Time Delivery" },
+  { value: "22%", label: "Lower Inventory Costs" },
+  { value: "2.4x", label: "Increase in On-Time Delivery" },
   { value: "98%", label: "Order Accuracy" },
 ];
 

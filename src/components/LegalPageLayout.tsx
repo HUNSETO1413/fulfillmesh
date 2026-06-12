@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import Header from "@/components/Header";
+import Footer from "@/components/Footer";
 
 export interface LegalSection {
   /** Anchor id, e.g. "acceptance" */
@@ -39,9 +41,11 @@ export default function LegalPageLayout({
   sections,
 }: LegalPageProps) {
   return (
-    <div className="bg-white">
-      {/* ===== Hero ===== */}
-      <section className="border-b border-[#E2E8F0]">
+    <>
+      <Header />
+      <div className="bg-white">
+        {/* ===== Hero ===== */}
+        <section className="border-b border-[#E2E8F0]">
         <div className="max-w-[1120px] mx-auto px-10 py-10 flex items-center justify-between gap-10">
           <div className="max-w-[560px]">
             <h1 className="text-[40px] leading-[1.2] font-bold text-[#2D3748] tracking-[-0.02em]">
@@ -155,6 +159,8 @@ export default function LegalPageLayout({
           </div>
         </div>
       </section>
-    </div>
+      </div>
+      <Footer />
+    </>
   );
 }

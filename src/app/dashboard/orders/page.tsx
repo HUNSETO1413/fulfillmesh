@@ -20,8 +20,8 @@ const orders = [
 
 const statusStyles: Record<string, string> = {
   "Delivered": "bg-[#10B981] text-white",
-  "In Transit": "bg-[#F59E0B] text-white",
-  "Processing": "bg-[#3B82F6] text-white",
+  "In Transit": "bg-[#0057D8] text-white",
+  "Processing": "bg-[#F59E0B] text-white",
   "Pending": "bg-[#F59E0B] text-white",
   "Cancelled": "bg-[#EF4444] text-white",
 };

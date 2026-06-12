@@ -49,17 +49,6 @@ const sidebarGroups = [
   },
 ];
 
-const onThisPage = [
-  { label: "Overview" },
-  { label: "Create Order" },
-  { label: "List Order", active: true },
-  { label: "Request", indent: true, active: true },
-  { label: "Query Parameters", indent: true },
-  { label: "Example Response", indent: true },
-  { label: "Status Codes", indent: true },
-  { label: "Notes", indent: true },
-];
-
 const queryParams = [
   { name: "status", type: "string", required: "No", desc: "Filter by order status. Supported: pending, confirmed, in_progress, completed, cancelled." },
   { name: "created_after", type: "string (date)", required: "No", desc: "Return orders created after this date (ISO 8601)." },
@@ -420,34 +409,43 @@ export default function ApiDocumentationPage() {
           {/* ───── Right Sidebar ───── */}
           <aside className="hidden xl:block w-52 shrink-0">
             <div className="sticky top-6 space-y-6">
-              {/* On this page */}
+              {/* Quick Stats */}
               <div>
-                <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wider mb-3">On this page</p>
-                <ul className="space-y-1.5 border-l-2 border-border-soft">
-                  {onThisPage.map((item, i) => (
-                    <li key={i} className={item.indent ? "pl-6" : "pl-3"}>
-                      <span
-                        className={`text-sm cursor-pointer transition-colors ${
-                          item.active
-                            ? "text-action-blue font-medium"
-                            : "text-text-body hover:text-action-blue"
-                        }`}
-                      >
-                        {item.label}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wider mb-3">Quick Stats</p>
+                <div className="space-y-3">
+                  <div className="rounded-lg border border-border-soft bg-white p-3">
+                    <p className="text-[10px] text-text-muted uppercase tracking-wide">API Calls Today</p>
+                    <p className="text-[18px] font-bold text-deep-navy mt-0.5">1,284</p>
+                  </div>
+                  <div className="rounded-lg border border-border-soft bg-white p-3">
+                    <p className="text-[10px] text-text-muted uppercase tracking-wide">Uptime</p>
+                    <p className="text-[18px] font-bold text-teal mt-0.5">99.98%</p>
+                  </div>
+                  <div className="rounded-lg border border-border-soft bg-white p-3">
+                    <p className="text-[10px] text-text-muted uppercase tracking-wide">Avg Response Time</p>
+                    <p className="text-[18px] font-bold text-deep-navy mt-0.5">142ms</p>
+                  </div>
+                </div>
               </div>
 
-              {/* Still have questions card */}
-              <div className="p-4 rounded-2xl bg-soft-bg border border-border-soft">
-                <MessageCircle className="w-5 h-5 text-action-blue mb-2" />
-                <p className="text-sm font-semibold text-text-primary mb-1">Still have questions?</p>
-                <p className="text-xs text-text-muted leading-relaxed mb-3">Our developer support team is here to help.</p>
-                <Link href="/contact" className="text-xs font-semibold text-action-blue inline-flex items-center gap-1 hover:underline">
-                  Contact Support <ArrowRight className="w-3 h-3" />
-                </Link>
+              {/* Recent Activity */}
+              <div>
+                <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wider mb-3">Recent Activity</p>
+                <div className="space-y-2">
+                  {[
+                    { method: "GET", path: "/v1/orders", status: "200", time: "2 min ago" },
+                    { method: "POST", path: "/v1/orders", status: "201", time: "15 min ago" },
+                    { method: "GET", path: "/v1/shipments", status: "200", time: "32 min ago" },
+                    { method: "GET", path: "/v1/inventory", status: "200", time: "1 hr ago" },
+                    { method: "POST", path: "/v1/orders", status: "400", time: "2 hr ago" },
+                  ].map((call, i) => (
+                    <div key={i} className="flex items-center gap-2 text-[11px] rounded-lg border border-border-soft bg-white px-3 py-2">
+                      <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold text-white ${call.method === "GET" ? "bg-teal" : "bg-action-blue"}`}>{call.method}</span>
+                      <span className="truncate font-mono text-text-body flex-1">{call.path}</span>
+                      <span className={`shrink-0 font-mono font-semibold ${call.status.startsWith("2") ? "text-teal" : "text-red-500"}`}>{call.status}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </aside>

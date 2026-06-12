@@ -38,6 +38,7 @@ const recentRequests = [
 ];
 
 const bars = [65, 72, 58, 80, 90, 75, 85, 92, 88, 78, 95, 82, 70, 88, 93, 85, 76, 90, 87, 82, 94, 89, 78, 85, 92, 88, 95, 90, 86, 93];
+const errorBars = [3, 5, 2, 4, 6, 3, 5, 8, 4, 3, 7, 5, 2, 6, 4, 3, 5, 7, 3, 4, 6, 5, 3, 4, 8, 5, 7, 6, 4, 5];
 
 /* ---------------- components ---------------- */
 
@@ -211,7 +212,10 @@ export default function ApiKeysPage() {
           </div>
           <div className="h-[200px] flex items-end gap-1.5">
             {bars.map((h, i) => (
-              <div key={i} className="flex-1 rounded-t bg-[#0057D8]/80 hover:bg-[#0057D8] transition-colors" style={{ height: `${h}%` }} />
+              <div key={i} className="flex-1 flex flex-col justify-end gap-0.5">
+                <div className="w-full rounded-t bg-[#0057D8]/80 hover:bg-[#0057D8] transition-colors" style={{ height: `${h}%` }} />
+                <div className="w-full rounded-t bg-[#EF4444]/80 hover:bg-[#EF4444] transition-colors" style={{ height: `${errorBars[i]}%` }} />
+              </div>
             ))}
           </div>
           <div className="flex justify-between mt-2 text-[11px] text-[#94A3B8]">

@@ -1,9 +1,9 @@
 import Link from "next/link";
 import {
-  ArrowRight, CheckCircle2,
+  ArrowRight, CheckCircle2, ChevronDown,
   Users, Tag, Truck, Search, CreditCard, Box, Globe,
   RotateCcw, ShoppingCart, RefreshCw, Shirt, Cpu,
-  Smile, Star, ShieldCheck,
+  Smile, Star, ShieldCheck, Layers, FileText, Warehouse,
 } from "lucide-react";
 
 const benefits = [
@@ -43,6 +43,28 @@ const brands = [
   { icon: Shirt, title: "Apparel & Fashion", desc: "Manage size exchanges, seasonal returns, and markdown recovery with ease." },
   { icon: Cpu, title: "Electronics & Accessories", desc: "Inspect, test, and route products based on condition and warranty rules." },
   { icon: Globe, title: "Global Brands", desc: "Support cross-border returns with local processing and optimized routing." },
+];
+
+const timeline = [
+  { icon: FileText, title: "Requirement Intake", desc: "Define return policies, rules, and inspection criteria for your products." },
+  { icon: RotateCcw, title: "Portal Setup", desc: "Configure your branded return portal with automated workflows." },
+  { icon: Truck, title: "Label & Routing", desc: "Set up carrier integrations, prepaid labels, and routing rules." },
+  { icon: Search, title: "Inspection Rules", desc: "Define inspection checklists and disposition logic by product category." },
+  { icon: CheckCircle2, title: "Launch & Optimize", desc: "Go live and continuously improve based on data and feedback." },
+];
+
+const stats = [
+  { icon: RotateCcw, value: "98%", label: "Return Accuracy" },
+  { icon: Globe, value: "40+", label: "Countries Covered" },
+  { icon: Layers, value: "50+", label: "Carrier Integrations" },
+  { icon: ShieldCheck, value: "4.8/5", label: "Customer Satisfaction" },
+];
+
+const faqs = [
+  { q: "How does the self-service return portal work?" },
+  { q: "Can I customize return rules for different products?" },
+  { q: "How are refunds and exchanges handled?" },
+  { q: "Do you support international returns?" },
 ];
 
 export default function ReturnsManagementPage() {
@@ -234,6 +256,77 @@ export default function ReturnsManagementPage() {
                 <div className="w-11 h-11 rounded-xl bg-action-blue/10 flex items-center justify-center mb-4"><b.icon className="w-5 h-5 text-action-blue" /></div>
                 <h3 className="text-[14px] font-bold text-deep-navy mb-2">{b.title}</h3>
                 <p className="text-[12px] text-text-body leading-relaxed">{b.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Timeline */}
+      <section className="bg-soft-bg">
+        <div className="max-w-[1200px] mx-auto px-6 py-20">
+          <div className="text-center max-w-[640px] mx-auto mb-16">
+            <h2 className="text-[32px] font-bold text-deep-navy leading-tight">From setup to seamless returns</h2>
+            <p className="mt-3 text-[18px] text-text-muted">A transparent process to get your returns operation running smoothly.</p>
+          </div>
+          <div className="relative grid md:grid-cols-5 gap-6">
+            <div className="hidden md:block absolute top-7 left-[8%] right-[8%] h-px bg-border-blue" />
+            {timeline.map((t, i) => (
+              <div key={i} className="relative">
+                <div className="w-14 h-14 rounded-full bg-white border border-border-soft shadow-soft flex items-center justify-center mb-5 relative z-10 mx-auto">
+                  <t.icon className="w-6 h-6 text-action-blue" />
+                </div>
+                <h3 className="text-[14px] font-bold text-deep-navy text-center">
+                  <span className="text-[13px] font-semibold text-text-muted">Step {i + 1}:</span>{" "}
+                  {t.title}
+                </h3>
+                <p className="mt-2 text-[12px] text-text-muted leading-relaxed text-center">{t.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Connected platform stats */}
+      <section className="bg-white">
+        <div className="max-w-[1200px] mx-auto px-6 pb-20">
+          <div className="bg-deep-navy rounded-2xl p-10">
+            <div className="grid lg:grid-cols-2 gap-10 items-center">
+              <div>
+                <span className="inline-block text-[12px] font-bold tracking-[0.12em] text-teal bg-teal/10 rounded-full px-3 py-1">ONE CONNECTED PLATFORM</span>
+                <h2 className="mt-5 text-[28px] font-bold text-white leading-tight">
+                  Returns Management, connected to your fulfillment operations
+                </h2>
+                <p className="mt-4 text-[15px] text-text-on-dark-muted leading-relaxed max-w-[400px]">
+                  Seamlessly manage returns alongside orders, inventory, and warehouse operations — all in one platform.
+                </p>
+                <Link href="/solutions" className="mt-5 inline-flex items-center gap-1 text-[14px] font-semibold text-teal">
+                  Learn more about our platform <ArrowRight className="w-4 h-4" />
+                </Link>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 gap-6">
+                {stats.map((s) => (
+                  <div key={s.label} className="text-center">
+                    <s.icon className="w-8 h-8 text-teal mx-auto mb-3" />
+                    <p className="text-[32px] font-bold text-white leading-none">{s.value}</p>
+                    <p className="mt-2 text-[13px] text-text-on-dark-soft">{s.label}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section className="bg-soft-bg">
+        <div className="max-w-[800px] mx-auto px-6 py-20">
+          <h2 className="text-[32px] font-bold text-deep-navy text-center mb-12">Questions? We&apos;ve got answers.</h2>
+          <div className="space-y-4">
+            {faqs.map((f) => (
+              <div key={f.q} className="bg-white rounded-xl border border-border-soft px-5 py-4 flex items-center justify-between">
+                <span className="text-[15px] font-semibold text-deep-navy pr-4">{f.q}</span>
+                <ChevronDown className="w-5 h-5 text-text-muted shrink-0" />
               </div>
             ))}
           </div>

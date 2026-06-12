@@ -151,7 +151,7 @@ export default function ResourcesPage() {
               View all topics <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-5">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
             {topics.map((t, i) => (
               <Link
                 key={i}

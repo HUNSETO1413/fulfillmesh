@@ -62,7 +62,7 @@ const values = [
   { icon: Target, title: "Our Mission", items: ["Empower brands to scale globally through trusted fulfillment networks and technology."] },
   { icon: Eye, title: "Our Vision", items: ["A world where global fulfillment is transparent, efficient, and sustainable for everyone."] },
   { icon: Heart, title: "Our Values", items: ["Customer Obsession", "Integrity & Transparency", "Ownership & Accountability", "Continuous Improvement"] },
-  { icon: Globe2, title: "Our Impact", stats: [{ value: "25K+", label: "Shipments Managed" }, { value: "150+", label: "Countries Served" }] },
+  { icon: Globe2, title: "Our Impact", stats: [{ value: "250+", label: "Employees" }, { value: "10+", label: "Years" }, { value: "50+", label: "Countries" }] },
 ];
 
 const lifeCards = [
@@ -193,7 +193,7 @@ export default function CoBuildFutureDetailPage() {
                   </ul>
                 )}
                 {v.stats && (
-                  <div className="grid grid-cols-2 gap-3 mt-1">
+                  <div className={`grid gap-3 mt-1 ${v.stats.length === 3 ? "grid-cols-3" : "grid-cols-2"}`}>
                     {v.stats.map((s) => (
                       <div key={s.label}>
                         <p className="text-[24px] font-bold text-action-blue leading-none">{s.value}</p>

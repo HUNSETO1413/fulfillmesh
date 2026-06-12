@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight, CheckCircle2, ShieldCheck, Package, BadgeCheck, BarChart3, Headphones,
@@ -116,20 +119,22 @@ const testimonials = [
 ];
 
 const faqs = [
-  "How much can I earn as a partner?",
-  "Is there a minimum requirement to join?",
-  "Can I integrate with my platform or tool?",
-  "How are commissions calculated?",
-  "Can I refer international clients?",
-  "Can I co-market with FulfillMesh?",
-  "When and how are payouts made?",
-  "Do you offer marketing or sales support?",
-  "Who can I contact for support?",
+  { q: "How much can I earn as a partner?", a: "Partners can earn up to 15% revenue share on referred orders. Top partners also qualify for performance bonuses and increased commission tiers." },
+  { q: "Is there a minimum requirement to join?", a: "No minimum commitment is required. You can start referring clients as soon as your partner account is approved." },
+  { q: "Can I integrate with my platform or tool?", a: "Yes. FulfillMesh offers a RESTful API and webhooks so you can embed fulfillment capabilities directly into your own platform or tool." },
+  { q: "How are commissions calculated?", a: "Commissions are calculated as a percentage of the fulfillment fees on each order placed by your referred clients. You earn on every recurring order." },
+  { q: "Can I refer international clients?", a: "Absolutely. We serve brands worldwide and welcome referrals from any region." },
+  { q: "Can I co-market with FulfillMesh?", a: "Yes. We provide co-branded marketing materials, case studies, and joint campaign support to help you and your clients succeed." },
+  { q: "When and how are payouts made?", a: "Payouts are made monthly via bank transfer or PayPal, with a detailed breakdown of your earnings." },
+  { q: "Do you offer marketing or sales support?", a: "Yes. Partners receive dedicated sales collateral, product demos, and a partner success manager to assist with client conversations." },
+  { q: "Who can I contact for support?", a: "Each partner is assigned a dedicated partner success manager. You can also reach our support team via email or the partner portal." },
 ];
 
 const brands = [ShopifyLogo, AmazonLogo, TikTokShopLogo, BigCommerceLogo];
 
 export default function CoBuildFuturePage() {
+  const [openFaq, setOpenFaq] = useState<number | null>(null);
+
   return (
     <main>
       {/* Hero — white background with text left, map right */}
@@ -342,11 +347,21 @@ export default function CoBuildFuturePage() {
         <div className="max-w-[1200px] mx-auto px-6 py-16 lg:py-20">
           <h2 className="text-[28px] font-bold text-deep-navy text-center mb-10">Frequently asked questions</h2>
           <div className="grid md:grid-cols-3 gap-x-5 gap-y-3">
-            {faqs.map((q) => (
-              <button key={q} className="flex items-center justify-between gap-3 text-left rounded-xl border border-[#E2E8F0] bg-white px-5 py-4 hover:border-action-blue/40 transition-all">
-                <span className="text-[14px] font-medium text-deep-navy">{q}</span>
-                <ChevronDown className="w-4 h-4 text-text-muted shrink-0" />
-              </button>
+            {faqs.map((faq, i) => (
+              <div key={faq.q} className="rounded-xl border border-[#E2E8F0] bg-white overflow-hidden transition-all">
+                <button
+                  onClick={() => setOpenFaq(openFaq === i ? null : i)}
+                  className="flex items-center justify-between gap-3 text-left w-full px-5 py-4 hover:border-action-blue/40 transition-all"
+                >
+                  <span className="text-[14px] font-medium text-deep-navy">{faq.q}</span>
+                  <ChevronDown className={`w-4 h-4 text-text-muted shrink-0 transition-transform duration-200 ${openFaq === i ? "rotate-180" : ""}`} />
+                </button>
+                {openFaq === i && (
+                  <div className="px-5 pb-4 -mt-1">
+                    <p className="text-[13px] text-text-body leading-relaxed">{faq.a}</p>
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         </div>
