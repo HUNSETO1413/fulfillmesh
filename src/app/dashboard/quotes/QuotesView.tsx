@@ -2,14 +2,65 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   FileText, Users, Clock, CheckCircle2, ArrowUpRight, ArrowDownRight,
-  Search, ChevronDown, MoreVertical, Plus, Calendar, Bell, SlidersHorizontal,
-  ChevronLeft, ChevronRight, AlertCircle, Wallet,
+  Search, ChevronDown, Pencil, Trash2, Plus, Calendar, Bell, SlidersHorizontal,
+  ChevronLeft, ChevronRight, AlertCircle, Wallet, Download,
 } from "lucide-react";
-import type { Quote } from "@/types";
+import type { Quote, QuoteStatus } from "@/types";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { Modal } from "@/components/dashboard/Modal";
+import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
+import { Field, TextInput, NumberInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
+import { useToast } from "@/components/dashboard/Toast";
+import { api, exportToCsv } from "@/lib/client";
+
+const STATUSES: QuoteStatus[] = ["Draft", "Sent", "Accepted", "Declined", "Expired"];
+
+type Draft = {
+  customer: string;
+  customerId: string;
+  status: QuoteStatus;
+  createdDate: string;
+  validUntil: string;
+  total: string;
+};
+
+const emptyDraft: Draft = {
+  customer: "", customerId: "", status: "Draft",
+  createdDate: new Date().toISOString().slice(0, 10), validUntil: "", total: "",
+};
+
+function QuoteFields({ draft, set }: { draft: Draft; set: (d: Partial<Draft>) => void }) {
+  return (
+    <div className="grid grid-cols-2 gap-4">
+      <div className="col-span-2">
+        <Field label="Customer" required>
+          <TextInput value={draft.customer} onChange={(e) => set({ customer: e.target.value })} placeholder="Acme Retail" />
+        </Field>
+      </div>
+      <Field label="Customer ID">
+        <TextInput value={draft.customerId} onChange={(e) => set({ customerId: e.target.value })} placeholder="CUS-1024" />
+      </Field>
+      <Field label="Status">
+        <Select options={STATUSES} value={draft.status} onChange={(e) => set({ status: e.target.value as QuoteStatus })} />
+      </Field>
+      <Field label="Created date">
+        <TextInput type="date" value={draft.createdDate} onChange={(e) => set({ createdDate: e.target.value })} />
+      </Field>
+      <Field label="Valid until">
+        <TextInput type="date" value={draft.validUntil} onChange={(e) => set({ validUntil: e.target.value })} />
+      </Field>
+      <div className="col-span-2">
+        <Field label="Total (USD)">
+          <NumberInput value={draft.total} onChange={(e) => set({ total: e.target.value })} placeholder="0.00" step="0.01" min="0" />
+        </Field>
+      </div>
+    </div>
+  );
+}
 
 const stats = [
   { title: "Open RFQs", value: "24", change: "14.3%", positive: true, icon: FileText, iconBg: "bg-[#0057D8]/10", iconColor: "text-[#0057D8]" },
@@ -28,10 +79,22 @@ const responseLegend = [
 const tabs = ["All", "Draft", "Sent", "Accepted", "Declined", "Expired"];
 
 export default function QuotesView({ items }: { items: Quote[] }) {
+  const router = useRouter();
+  const { toast } = useToast();
+
   const [activeTab, setActiveTab] = useState("All");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const pageSize = 8;
+
+  // create / edit
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<Quote | null>(null);
+  const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const [busy, setBusy] = useState(false);
+
+  // delete
+  const [deleting, setDeleting] = useState<Quote | null>(null);
 
   const circumference = 2 * Math.PI * 40;
   const segs = [25.8, 29.2, 25.0, 20.0];
@@ -59,6 +122,83 @@ export default function QuotesView({ items }: { items: Quote[] }) {
     setPage(1);
   }
 
+  function openCreate() {
+    setEditing(null);
+    setDraft(emptyDraft);
+    setFormOpen(true);
+  }
+
+  function openEdit(q: Quote) {
+    setEditing(q);
+    setDraft({
+      customer: q.customer,
+      customerId: q.customerId ?? "",
+      status: q.status,
+      createdDate: q.createdDate,
+      validUntil: q.validUntil ?? "",
+      total: String(q.total),
+    });
+    setFormOpen(true);
+  }
+
+  async function saveQuote() {
+    if (!draft.customer.trim()) {
+      toast("Customer is required", "error");
+      return;
+    }
+    setBusy(true);
+    const payload = {
+      customer: draft.customer.trim(),
+      customerId: draft.customerId.trim() || undefined,
+      status: draft.status,
+      createdDate: draft.createdDate,
+      validUntil: draft.validUntil || undefined,
+      total: Number(draft.total) || 0,
+    };
+    try {
+      if (editing) {
+        await api.put(`/api/quotes/${editing.id}`, payload);
+        toast(`Quote ${editing.id} updated`);
+      } else {
+        const created = await api.post<Quote>("/api/quotes", payload);
+        toast(`Quote ${created.id} created`);
+      }
+      setFormOpen(false);
+      router.refresh();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not save quote", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleting) return;
+    setBusy(true);
+    try {
+      await api.del(`/api/quotes/${deleting.id}`);
+      toast(`Quote ${deleting.id} deleted`);
+      setDeleting(null);
+      router.refresh();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not delete quote", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleExport() {
+    exportToCsv("quotes", filtered, [
+      { key: "id", header: "Request ID" },
+      { key: "customer", header: "Customer" },
+      { key: "status", header: "Status" },
+      { key: "createdDate", header: "Created Date" },
+      { key: "validUntil", header: "Valid Until" },
+      { key: "total", header: "Total" },
+    ]);
+    toast(`Exported ${filtered.length} RFQs to CSV`);
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -74,7 +214,16 @@ export default function QuotesView({ items }: { items: Quote[] }) {
           <button className="w-9 h-9 flex items-center justify-center bg-white border border-border-soft rounded-lg text-text-muted hover:bg-soft-bg transition-colors">
             <Bell className="w-4 h-4" />
           </button>
-          <button className="inline-flex items-center gap-2 px-4 py-2 bg-[#3B82F6] text-white rounded-lg text-[13px] font-semibold hover:bg-[#2563EB] transition-colors shadow-[0_1px_3px_rgba(0,0,0,0.1)]">
+          <button
+            onClick={handleExport}
+            className="inline-flex items-center gap-2 px-3.5 py-2 bg-white border border-border-soft rounded-lg text-[13px] font-medium text-text-body hover:bg-soft-bg transition-colors"
+          >
+            <Download className="w-4 h-4 text-text-light" /> Export
+          </button>
+          <button
+            onClick={openCreate}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-[#3B82F6] text-white rounded-lg text-[13px] font-semibold hover:bg-[#2563EB] transition-colors shadow-[0_1px_3px_rgba(0,0,0,0.1)]"
+          >
             <Plus className="w-4 h-4" /> New RFQ
           </button>
         </div>
@@ -158,12 +307,34 @@ export default function QuotesView({ items }: { items: Quote[] }) {
                     <td className="px-4 py-3 text-[13px] text-text-body whitespace-nowrap">{formatDate(q.createdDate)}</td>
                     <td className="px-4 py-3 text-[13px] text-text-body whitespace-nowrap">{q.validUntil ? formatDate(q.validUntil) : "—"}</td>
                     <td className="px-4 py-3 text-[13px] text-text-primary">{formatCurrency(q.total)}</td>
-                    <td className="px-4 py-3"><button className="p-1 rounded hover:bg-[#F3F4F6] text-text-light transition-colors"><MoreVertical className="w-4 h-4" /></button></td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => openEdit(q)}
+                          className="w-8 h-8 flex items-center justify-center rounded-md text-text-light hover:bg-[#EFF6FF] hover:text-[#3B82F6] transition-colors"
+                          aria-label={`Edit ${q.id}`}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => setDeleting(q)}
+                          className="w-8 h-8 flex items-center justify-center rounded-md text-text-light hover:bg-[#FEF2F2] hover:text-[#EF4444] transition-colors"
+                          aria-label={`Delete ${q.id}`}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
                 {pageRows.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-10 text-center text-[13px] text-text-muted">No RFQs match your filters.</td>
+                    <td colSpan={7} className="px-4 py-10 text-center">
+                      <p className="text-[13px] text-text-muted">No RFQs match your filters.</p>
+                      <button onClick={openCreate} className="mt-3 inline-flex items-center gap-1.5 text-[13px] font-medium text-[#3B82F6] hover:underline">
+                        <Plus className="w-4 h-4" /> Create your first RFQ
+                      </button>
+                    </td>
                   </tr>
                 )}
               </tbody>
@@ -271,6 +442,36 @@ export default function QuotesView({ items }: { items: Quote[] }) {
           </div>
         </div>
       </div>
+
+      {/* Create / Edit modal */}
+      <Modal
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
+        title={editing ? `Edit ${editing.id}` : "New RFQ"}
+        description={editing ? "Update the quote details below." : "Create a new request for quotation."}
+        footer={
+          <>
+            <SecondaryButton onClick={() => setFormOpen(false)}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={saveQuote} disabled={busy}>
+              {busy ? "Saving…" : editing ? "Save changes" : "Create RFQ"}
+            </PrimaryButton>
+          </>
+        }
+      >
+        <QuoteFields draft={draft} set={(d) => setDraft((prev) => ({ ...prev, ...d }))} />
+      </Modal>
+
+      {/* Delete confirm */}
+      <ConfirmDialog
+        open={!!deleting}
+        onClose={() => setDeleting(null)}
+        onConfirm={confirmDelete}
+        title="Delete RFQ"
+        message={`Are you sure you want to delete ${deleting?.id}? This action cannot be undone.`}
+        confirmLabel="Delete"
+        destructive
+        loading={busy}
+      />
     </div>
   );
 }

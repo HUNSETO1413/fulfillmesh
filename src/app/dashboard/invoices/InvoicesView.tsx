@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   CheckCircle2,
   CreditCard,
@@ -9,7 +10,8 @@ import {
   ChevronDown,
   Calendar,
   SlidersHorizontal,
-  MoreVertical,
+  Pencil,
+  Trash2,
   FileText,
   Download,
   Send,
@@ -21,9 +23,60 @@ import {
   Clock,
   Wallet,
 } from "lucide-react";
-import type { Invoice } from "@/types";
+import type { Invoice, InvoiceStatus } from "@/types";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { Modal } from "@/components/dashboard/Modal";
+import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
+import { Field, TextInput, NumberInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
+import { useToast } from "@/components/dashboard/Toast";
+import { api, exportToCsv } from "@/lib/client";
+
+const STATUSES: InvoiceStatus[] = ["Draft", "Sent", "Paid", "Overdue", "Void"];
+
+type Draft = {
+  customer: string;
+  orderId: string;
+  status: InvoiceStatus;
+  issuedDate: string;
+  dueDate: string;
+  amount: string;
+};
+
+const emptyDraft: Draft = {
+  customer: "", orderId: "", status: "Draft",
+  issuedDate: new Date().toISOString().slice(0, 10),
+  dueDate: new Date().toISOString().slice(0, 10), amount: "",
+};
+
+function InvoiceFields({ draft, set }: { draft: Draft; set: (d: Partial<Draft>) => void }) {
+  return (
+    <div className="grid grid-cols-2 gap-4">
+      <div className="col-span-2">
+        <Field label="Customer" required>
+          <TextInput value={draft.customer} onChange={(e) => set({ customer: e.target.value })} placeholder="Acme Retail" />
+        </Field>
+      </div>
+      <Field label="Order / PO #">
+        <TextInput value={draft.orderId} onChange={(e) => set({ orderId: e.target.value })} placeholder="ORD-1024" />
+      </Field>
+      <Field label="Status">
+        <Select options={STATUSES} value={draft.status} onChange={(e) => set({ status: e.target.value as InvoiceStatus })} />
+      </Field>
+      <Field label="Issued date">
+        <TextInput type="date" value={draft.issuedDate} onChange={(e) => set({ issuedDate: e.target.value })} />
+      </Field>
+      <Field label="Due date">
+        <TextInput type="date" value={draft.dueDate} onChange={(e) => set({ dueDate: e.target.value })} />
+      </Field>
+      <div className="col-span-2">
+        <Field label="Amount (USD)">
+          <NumberInput value={draft.amount} onChange={(e) => set({ amount: e.target.value })} placeholder="0.00" step="0.01" min="0" />
+        </Field>
+      </div>
+    </div>
+  );
+}
 
 const stats = [
   { title: "Total Outstanding", value: "$24,568.75", sub: "14 invoices", color: "#3B82F6", icon: DollarSign },
@@ -79,10 +132,22 @@ const quickActions = [
 ];
 
 export default function InvoicesView({ items }: { items: Invoice[] }) {
+  const router = useRouter();
+  const { toast } = useToast();
+
   const [active, setActive] = useState("All Invoices");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const pageSize = 10;
+
+  // create / edit
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<Invoice | null>(null);
+  const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const [busy, setBusy] = useState(false);
+
+  // delete
+  const [deleting, setDeleting] = useState<Invoice | null>(null);
 
   const circumference = 2 * Math.PI * 40;
 
@@ -116,6 +181,97 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
     setPage(1);
   }
 
+  function openCreate() {
+    setEditing(null);
+    setDraft(emptyDraft);
+    setFormOpen(true);
+  }
+
+  function openEdit(inv: Invoice) {
+    setEditing(inv);
+    setDraft({
+      customer: inv.customer,
+      orderId: inv.orderId ?? "",
+      status: inv.status,
+      issuedDate: inv.issuedDate,
+      dueDate: inv.dueDate,
+      amount: String(inv.amount),
+    });
+    setFormOpen(true);
+  }
+
+  async function saveInvoice() {
+    if (!draft.customer.trim()) {
+      toast("Customer is required", "error");
+      return;
+    }
+    setBusy(true);
+    const payload = {
+      customer: draft.customer.trim(),
+      orderId: draft.orderId.trim() || undefined,
+      status: draft.status,
+      issuedDate: draft.issuedDate,
+      dueDate: draft.dueDate,
+      amount: Number(draft.amount) || 0,
+    };
+    try {
+      if (editing) {
+        await api.put(`/api/invoices/${editing.id}`, payload);
+        toast(`Invoice ${editing.id} updated`);
+      } else {
+        const created = await api.post<Invoice>("/api/invoices", payload);
+        toast(`Invoice ${created.id} created`);
+      }
+      setFormOpen(false);
+      router.refresh();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not save invoice", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleting) return;
+    setBusy(true);
+    try {
+      await api.del(`/api/invoices/${deleting.id}`);
+      toast(`Invoice ${deleting.id} deleted`);
+      setDeleting(null);
+      router.refresh();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not delete invoice", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function markPaid(inv: Invoice) {
+    setBusy(true);
+    try {
+      await api.put(`/api/invoices/${inv.id}`, { status: "Paid" });
+      toast(`Invoice ${inv.id} marked paid`);
+      router.refresh();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not update invoice", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleExport() {
+    exportToCsv("invoices", filtered, [
+      { key: "id", header: "Invoice #" },
+      { key: "customer", header: "Customer" },
+      { key: "orderId", header: "PO / Reference" },
+      { key: "status", header: "Status" },
+      { key: "issuedDate", header: "Invoice Date" },
+      { key: "dueDate", header: "Due Date" },
+      { key: "amount", header: "Amount" },
+    ]);
+    toast(`Exported ${filtered.length} invoices to CSV`);
+  }
+
   return (
     <div className="space-y-5">
       {/* Header */}
@@ -125,11 +281,17 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
           <p className="text-[14px] text-[#64748B] mt-1">View, manage, and pay your invoices and track payment history.</p>
         </div>
         <div className="flex items-center gap-2">
-          <button className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-            <CreditCard className="w-4 h-4" /> Payment Methods
+          <button
+            onClick={handleExport}
+            className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC] shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
+          >
+            <Download className="w-4 h-4" /> Export
           </button>
-          <button className="inline-flex items-center gap-2 px-3 py-2 bg-[#3B82F6] rounded-lg text-[13px] font-medium text-white hover:bg-[#2563EB] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-            <Plus className="w-4 h-4" /> New Payment
+          <button
+            onClick={openCreate}
+            className="inline-flex items-center gap-2 px-3 py-2 bg-[#3B82F6] rounded-lg text-[13px] font-medium text-white hover:bg-[#2563EB] shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
+          >
+            <Plus className="w-4 h-4" /> New Invoice
           </button>
         </div>
       </div>
@@ -226,18 +388,42 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
                     <td className="px-4 py-3 text-[13px] font-semibold text-[#1E293B]">{formatCurrency(inv.amount)}</td>
                     <td className="px-4 py-3"><StatusBadge status={inv.status} /></td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-2">
+                      <div className="flex items-center justify-end gap-1">
                         {(inv.status === "Overdue" || inv.status === "Sent") && (
-                          <button className="px-3 py-1 bg-[#3B82F6] rounded-md text-[11px] font-medium text-white hover:bg-[#2563EB]">Pay Now</button>
+                          <button
+                            onClick={() => markPaid(inv)}
+                            disabled={busy}
+                            className="px-3 py-1 bg-[#3B82F6] rounded-md text-[11px] font-medium text-white hover:bg-[#2563EB] disabled:opacity-50"
+                          >
+                            Mark Paid
+                          </button>
                         )}
-                        <button className="p-1 rounded hover:bg-[#F1F5F9] text-[#94A3B8]"><MoreVertical className="w-4 h-4" /></button>
+                        <button
+                          onClick={() => openEdit(inv)}
+                          className="w-8 h-8 flex items-center justify-center rounded-md text-[#94A3B8] hover:bg-[#EFF6FF] hover:text-[#3B82F6] transition-colors"
+                          aria-label={`Edit ${inv.id}`}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => setDeleting(inv)}
+                          className="w-8 h-8 flex items-center justify-center rounded-md text-[#94A3B8] hover:bg-[#FEF2F2] hover:text-[#EF4444] transition-colors"
+                          aria-label={`Delete ${inv.id}`}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </td>
                   </tr>
                 ))}
                 {pageRows.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-10 text-center text-[13px] text-[#64748B]">No invoices match your filters.</td>
+                    <td colSpan={7} className="px-4 py-10 text-center">
+                      <p className="text-[13px] text-[#64748B]">No invoices match your filters.</p>
+                      <button onClick={openCreate} className="mt-3 inline-flex items-center gap-1.5 text-[13px] font-medium text-[#3B82F6] hover:underline">
+                        <Plus className="w-4 h-4" /> Create your first invoice
+                      </button>
+                    </td>
                   </tr>
                 )}
               </tbody>
@@ -468,6 +654,36 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
           <CheckCircle2 className="w-4 h-4" /> Enable AutoPay
         </button>
       </div>
+
+      {/* Create / Edit modal */}
+      <Modal
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
+        title={editing ? `Edit ${editing.id}` : "New Invoice"}
+        description={editing ? "Update the invoice details below." : "Create a new invoice in your workspace."}
+        footer={
+          <>
+            <SecondaryButton onClick={() => setFormOpen(false)}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={saveInvoice} disabled={busy}>
+              {busy ? "Saving…" : editing ? "Save changes" : "Create invoice"}
+            </PrimaryButton>
+          </>
+        }
+      >
+        <InvoiceFields draft={draft} set={(d) => setDraft((prev) => ({ ...prev, ...d }))} />
+      </Modal>
+
+      {/* Delete confirm */}
+      <ConfirmDialog
+        open={!!deleting}
+        onClose={() => setDeleting(null)}
+        onConfirm={confirmDelete}
+        title="Delete invoice"
+        message={`Are you sure you want to delete ${deleting?.id}? This action cannot be undone.`}
+        confirmLabel="Delete"
+        destructive
+        loading={busy}
+      />
     </div>
   );
 }

@@ -2,11 +2,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import {
-  ArrowLeft, Package, Box, Boxes, ExternalLink, ArrowUpRight,
+  ArrowLeft, Package, Box, Boxes, ArrowUpRight,
   ShieldCheck, ClipboardCheck, BadgeCheck, Search as SearchIcon,
 } from "lucide-react";
 import { products as productsRepo } from "@/lib/repositories";
 import { formatCurrency, formatNumber } from "@/lib/format";
+import ProductDetailActions from "./ProductDetailActions";
 
 const specs: { label: string; value: string; good?: boolean; flag?: string }[] = [
   { label: "Material", value: "Stainless Steel (304)" },
@@ -105,13 +106,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
             <h1 className="text-[24px] font-bold text-[#1E293B]">Product Detail</h1>
             <p className="text-[14px] text-[#64748B] mt-0.5">View and manage product information, inventory, and performance.</p>
           </div>
-          <div className="flex items-center gap-3">
-            <button className="px-3.5 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] font-medium text-[#64748B] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">Edit Product</button>
-            <button className="px-3.5 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] font-medium text-[#64748B] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">Create RFQ</button>
-            <button className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#3B82F6] text-white rounded-lg text-[13px] font-medium shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-[#2563EB]">
-              View Supplier <ExternalLink className="w-3.5 h-3.5" />
-            </button>
-          </div>
+          <ProductDetailActions product={product} />
         </div>
       </div>
 

@@ -3,10 +3,11 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import {
   ChevronRight, ShieldCheck, Star, FileText, ClipboardCheck, Award,
-  MoreVertical, MapPin, CheckCircle, TrendingDown,
+  MapPin, CheckCircle, TrendingDown,
 } from "lucide-react";
 import { suppliers as suppliersRepo } from "@/lib/repositories";
 import { formatNumber } from "@/lib/format";
+import SupplierDetailActions from "./SupplierDetailActions";
 
 const keyStrengths = [
   "High-volume production capacity",
@@ -161,7 +162,7 @@ export default async function SupplierDetailPage({ params }: { params: Promise<{
           <button className="inline-flex items-center gap-2 px-4 py-2 bg-[#3B82F6] text-white rounded-lg text-[14px] font-medium hover:bg-[#2563EB] shadow-[0_1px_3px_rgba(0,0,0,0.1)]"><FileText className="w-4 h-4" />Request Quote</button>
           <button className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-[#3B82F6] rounded-lg text-[14px] font-medium text-[#3B82F6]"><ClipboardCheck className="w-4 h-4" />Schedule Audit</button>
           <button className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[14px] font-medium text-[#64748B]"><Award className="w-4 h-4" />View Certificates</button>
-          <button className="w-9 h-9 flex items-center justify-center bg-white border border-[#E2E8F0] rounded-lg text-[#64748B]"><MoreVertical className="w-4 h-4" /></button>
+          <SupplierDetailActions supplier={supplier} />
         </div>
       </div>
 

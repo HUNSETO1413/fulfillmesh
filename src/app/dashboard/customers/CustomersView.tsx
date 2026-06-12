@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Search,
   ChevronDown,
@@ -9,7 +10,8 @@ import {
   Bell,
   Plus,
   Download,
-  MoreVertical,
+  Pencil,
+  Trash2,
   ChevronLeft,
   ChevronRight,
   Users,
@@ -21,16 +23,92 @@ import {
 import type { Customer } from "@/types";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { formatCurrency, formatNumber } from "@/lib/format";
+import { Modal } from "@/components/dashboard/Modal";
+import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
+import { Field, TextInput, NumberInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
+import { useToast } from "@/components/dashboard/Toast";
+import { api, exportToCsv } from "@/lib/client";
 
 const tabs = ["All Customers", "Active", "Inactive", "Lead"];
 
 const accentColor = "#0057D8";
 
+const STATUSES: Customer["status"][] = ["Active", "Inactive", "Lead"];
+
+type Draft = {
+  name: string;
+  email: string;
+  company: string;
+  phone: string;
+  country: string;
+  orders: string;
+  totalSpent: string;
+  status: Customer["status"];
+  joinedDate: string;
+};
+
+const emptyDraft: Draft = {
+  name: "", email: "", company: "", phone: "", country: "",
+  orders: "0", totalSpent: "0", status: "Active",
+  joinedDate: new Date().toISOString().slice(0, 10),
+};
+
+function CustomerFields({ draft, set }: { draft: Draft; set: (d: Partial<Draft>) => void }) {
+  return (
+    <div className="grid grid-cols-2 gap-4">
+      <Field label="Name" required>
+        <TextInput value={draft.name} onChange={(e) => set({ name: e.target.value })} placeholder="Jane Doe" />
+      </Field>
+      <Field label="Email" required>
+        <TextInput type="email" value={draft.email} onChange={(e) => set({ email: e.target.value })} placeholder="jane@acme.com" />
+      </Field>
+      <Field label="Company">
+        <TextInput value={draft.company} onChange={(e) => set({ company: e.target.value })} placeholder="Acme Retail" />
+      </Field>
+      <Field label="Phone">
+        <TextInput value={draft.phone} onChange={(e) => set({ phone: e.target.value })} placeholder="+1 (555) 010-0199" />
+      </Field>
+      <Field label="Country">
+        <TextInput value={draft.country} onChange={(e) => set({ country: e.target.value })} placeholder="United States" />
+      </Field>
+      <Field label="Status">
+        <Select options={STATUSES} value={draft.status} onChange={(e) => set({ status: e.target.value as Customer["status"] })} />
+      </Field>
+      <Field label="Orders">
+        <NumberInput value={draft.orders} onChange={(e) => set({ orders: e.target.value })} min="0" step="1" />
+      </Field>
+      <Field label="Total Spent (USD)">
+        <NumberInput value={draft.totalSpent} onChange={(e) => set({ totalSpent: e.target.value })} min="0" step="0.01" />
+      </Field>
+      <div className="col-span-2">
+        <Field label="Joined date">
+          <TextInput type="date" value={draft.joinedDate} onChange={(e) => set({ joinedDate: e.target.value })} />
+        </Field>
+      </div>
+    </div>
+  );
+}
+
 export default function CustomersView({ items }: { items: Customer[] }) {
+  const router = useRouter();
+  const { toast } = useToast();
+
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState("All Customers");
   const [page, setPage] = useState(1);
   const pageSize = 10;
+
+  const [statusFilter, setStatusFilter] = useState<string>("");
+  const [filterOpen, setFilterOpen] = useState(false);
+
+  // create / edit
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<Customer | null>(null);
+  const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const [busy, setBusy] = useState(false);
+
+  // delete
+  const [deleting, setDeleting] = useState<Customer | null>(null);
 
   const stats = useMemo(() => {
     const total = items.length;
@@ -56,6 +134,7 @@ export default function CustomersView({ items }: { items: Customer[] }) {
     const q = search.trim().toLowerCase();
     return items.filter((c) => {
       if (activeTab !== "All Customers" && c.status !== activeTab) return false;
+      if (statusFilter && c.status !== statusFilter) return false;
       if (!q) return true;
       return (
         c.id.toLowerCase().includes(q) ||
@@ -64,7 +143,7 @@ export default function CustomersView({ items }: { items: Customer[] }) {
         (c.company ?? "").toLowerCase().includes(q)
       );
     });
-  }, [items, search, activeTab]);
+  }, [items, search, activeTab, statusFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, totalPages);
@@ -74,6 +153,84 @@ export default function CustomersView({ items }: { items: Customer[] }) {
   function selectTab(tab: string) {
     setActiveTab(tab);
     setPage(1);
+  }
+
+  function openCreate() {
+    setEditing(null);
+    setDraft(emptyDraft);
+    setFormOpen(true);
+  }
+
+  function openEdit(c: Customer) {
+    setEditing(c);
+    setDraft({
+      name: c.name, email: c.email, company: c.company ?? "", phone: c.phone ?? "",
+      country: c.country ?? "", orders: String(c.orders), totalSpent: String(c.totalSpent),
+      status: c.status, joinedDate: c.joinedDate ?? "",
+    });
+    setFormOpen(true);
+  }
+
+  async function saveCustomer() {
+    if (!draft.name.trim()) { toast("Name is required", "error"); return; }
+    if (!draft.email.trim()) { toast("Email is required", "error"); return; }
+    setBusy(true);
+    const payload = {
+      name: draft.name.trim(),
+      email: draft.email.trim(),
+      company: draft.company.trim() || undefined,
+      phone: draft.phone.trim() || undefined,
+      country: draft.country.trim() || undefined,
+      orders: Number(draft.orders) || 0,
+      totalSpent: Number(draft.totalSpent) || 0,
+      status: draft.status,
+      joinedDate: draft.joinedDate || undefined,
+    };
+    try {
+      if (editing) {
+        await api.put(`/api/customers/${editing.id}`, payload);
+        toast(`Customer ${editing.id} updated`);
+      } else {
+        const created = await api.post<Customer>("/api/customers", payload);
+        toast(`Customer ${created.id} created`);
+      }
+      setFormOpen(false);
+      router.refresh();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not save customer", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleting) return;
+    setBusy(true);
+    try {
+      await api.del(`/api/customers/${deleting.id}`);
+      toast(`Customer ${deleting.id} deleted`);
+      setDeleting(null);
+      router.refresh();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not delete customer", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleExport() {
+    exportToCsv("customers", filtered, [
+      { key: "id", header: "Customer ID" },
+      { key: "name", header: "Name" },
+      { key: "company", header: "Company" },
+      { key: "email", header: "Email" },
+      { key: "phone", header: "Phone" },
+      { key: "country", header: "Country" },
+      { key: "orders", header: "Orders" },
+      { key: "totalSpent", header: "Total Spent" },
+      { key: "status", header: "Status" },
+    ]);
+    toast(`Exported ${filtered.length} customers to CSV`);
   }
 
   return (
@@ -141,11 +298,11 @@ export default function CustomersView({ items }: { items: Customer[] }) {
           ))}
         </div>
         <div className="flex items-center gap-2">
-          <button className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-border-soft rounded-lg text-[13px] font-medium text-text-muted hover:bg-soft-bg">
+          <button onClick={handleExport} className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-border-soft rounded-lg text-[13px] font-medium text-text-muted hover:bg-soft-bg">
             <Download className="w-4 h-4" />
             Export
           </button>
-          <button className="inline-flex items-center gap-2 px-4 py-2 bg-action-blue hover:bg-navy rounded-lg text-[13px] font-medium text-white transition-colors">
+          <button onClick={openCreate} className="inline-flex items-center gap-2 px-4 py-2 bg-action-blue hover:bg-navy rounded-lg text-[13px] font-medium text-white transition-colors">
             <Plus className="w-4 h-4" />
             Add Customer
           </button>
@@ -168,15 +325,41 @@ export default function CustomersView({ items }: { items: Customer[] }) {
               className="w-full pl-9 pr-4 py-2 bg-white border border-border-soft rounded-lg text-[13px] text-deep-navy placeholder:text-text-light focus:outline-none focus:ring-2 focus:ring-action-blue/20 focus:border-action-blue"
             />
           </div>
-          <button className="inline-flex items-center gap-1.5 px-3 py-2 border border-border-soft rounded-lg text-[13px] text-text-muted hover:bg-soft-bg">
-            <Filter className="w-3.5 h-3.5" />
-            Filters
-            <ChevronDown className="w-3.5 h-3.5" />
-          </button>
-          <button className="inline-flex items-center gap-1.5 px-3 py-2 border border-border-soft rounded-lg text-[13px] text-text-muted hover:bg-soft-bg">
-            All Types
-            <ChevronDown className="w-3.5 h-3.5" />
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => setFilterOpen((v) => !v)}
+              className={`inline-flex items-center gap-1.5 px-3 py-2 border rounded-lg text-[13px] transition-colors ${
+                statusFilter ? "bg-action-blue/10 border-action-blue text-action-blue" : "border-border-soft text-text-muted hover:bg-soft-bg"
+              }`}
+            >
+              <Filter className="w-3.5 h-3.5" />
+              {statusFilter || "Filters"}
+              <ChevronDown className="w-3.5 h-3.5" />
+            </button>
+            {filterOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setFilterOpen(false)} />
+                <div className="absolute right-0 mt-1 z-20 w-44 bg-white rounded-lg border border-border-soft shadow-lg py-1">
+                  <p className="px-3 py-1.5 text-[11px] font-semibold text-text-light uppercase">Status</p>
+                  <button
+                    onClick={() => { setStatusFilter(""); setFilterOpen(false); setPage(1); }}
+                    className={`w-full text-left px-3 py-1.5 text-[13px] hover:bg-soft-bg ${!statusFilter ? "text-action-blue font-medium" : "text-text-body"}`}
+                  >
+                    All statuses
+                  </button>
+                  {STATUSES.map((st) => (
+                    <button
+                      key={st}
+                      onClick={() => { setStatusFilter(st); setFilterOpen(false); setPage(1); }}
+                      className={`w-full text-left px-3 py-1.5 text-[13px] hover:bg-soft-bg ${statusFilter === st ? "text-action-blue font-medium" : "text-text-body"}`}
+                    >
+                      {st}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
           <button className="inline-flex items-center gap-1.5 px-3 py-2 border border-border-soft rounded-lg text-[13px] text-text-muted hover:bg-soft-bg">
             All Time
             <ChevronDown className="w-3.5 h-3.5" />
@@ -228,10 +411,23 @@ export default function CustomersView({ items }: { items: Customer[] }) {
                   <td className="px-5 py-3 text-[13px] text-text-body">{formatNumber(c.orders)}</td>
                   <td className="px-5 py-3 text-[13px] text-deep-navy">{formatCurrency(c.totalSpent)}</td>
                   <td className="px-5 py-3"><StatusBadge status={c.status} /></td>
-                  <td className="px-5 py-3 text-right">
-                    <button className="text-text-light hover:text-text-muted p-1 rounded hover:bg-[#F1F5F9]">
-                      <MoreVertical className="w-4 h-4" />
-                    </button>
+                  <td className="px-5 py-3">
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={() => openEdit(c)}
+                        className="w-8 h-8 flex items-center justify-center rounded-md text-text-light hover:bg-[#EFF6FF] hover:text-action-blue transition-colors"
+                        aria-label={`Edit ${c.id}`}
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => setDeleting(c)}
+                        className="w-8 h-8 flex items-center justify-center rounded-md text-text-light hover:bg-[#FEF2F2] hover:text-[#EF4444] transition-colors"
+                        aria-label={`Delete ${c.id}`}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -290,6 +486,36 @@ export default function CustomersView({ items }: { items: Customer[] }) {
           </div>
         </div>
       </div>
+
+      {/* Create / Edit modal */}
+      <Modal
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
+        title={editing ? `Edit ${editing.id}` : "Add Customer"}
+        description={editing ? "Update the customer details below." : "Create a new customer in your workspace."}
+        footer={
+          <>
+            <SecondaryButton onClick={() => setFormOpen(false)}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={saveCustomer} disabled={busy}>
+              {busy ? "Saving…" : editing ? "Save changes" : "Create customer"}
+            </PrimaryButton>
+          </>
+        }
+      >
+        <CustomerFields draft={draft} set={(d) => setDraft((prev) => ({ ...prev, ...d }))} />
+      </Modal>
+
+      {/* Delete confirm */}
+      <ConfirmDialog
+        open={!!deleting}
+        onClose={() => setDeleting(null)}
+        onConfirm={confirmDelete}
+        title="Delete customer"
+        message={`Are you sure you want to delete ${deleting?.name ?? ""} (${deleting?.id ?? ""})? This action cannot be undone.`}
+        confirmLabel="Delete"
+        destructive
+        loading={busy}
+      />
     </div>
   );
 }

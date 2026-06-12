@@ -2,12 +2,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import {
-  ChevronRight, Download, MessageSquare, CheckCircle2, Star,
+  ChevronRight, CheckCircle2, Star,
   Zap, DollarSign, FileText, Image as ImageIcon,
 } from "lucide-react";
 import { quotes } from "@/lib/repositories";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { formatCurrency, formatDate } from "@/lib/format";
+import QuoteDetailActions from "./QuoteDetailActions";
 
 const suppliers = [
   { name: "Shenzhen Topway Tech", loc: "Shenzhen, China", recommended: true },
@@ -100,17 +101,7 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
           <h1 className="text-[24px] font-bold text-[#061A3D]">Quote Detail</h1>
           <p className="text-[14px] text-[#4A5A73] mt-0.5">Review and compare supplier quotes, analyze costs, and approve the best option.</p>
         </div>
-        <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E6EDF5] rounded-lg text-[13px] font-medium text-[#4A5A73] hover:bg-[#F7FAFC]">
-            <Download className="w-4 h-4" />Download Quote
-          </button>
-          <button className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E6EDF5] rounded-lg text-[13px] font-medium text-[#4A5A73] hover:bg-[#F7FAFC]">
-            <MessageSquare className="w-4 h-4" />Request Revision
-          </button>
-          <button className="flex items-center gap-2 px-4 py-2 bg-[#0057D8] hover:bg-[#003B7A] rounded-lg text-[13px] font-medium text-white">
-            <CheckCircle2 className="w-4 h-4" />Approve Supplier
-          </button>
-        </div>
+        <QuoteDetailActions quote={quote} />
       </div>
 
       {/* Info row */}

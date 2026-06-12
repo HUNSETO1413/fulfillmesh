@@ -385,6 +385,16 @@ export const invoices = {
     );
     return (await this.get(id))!;
   },
+  async update(id: string, v: Partial<Invoice>): Promise<Invoice | null> {
+    const existing = await this.get(id);
+    if (!existing) return null;
+    const m = { ...existing, ...v };
+    await query(
+      `UPDATE invoices SET customer=$1, order_id=$2, status=$3, issued_date=$4, due_date=$5, amount=$6 WHERE id=$7`,
+      [m.customer, m.orderId ?? null, m.status, m.issuedDate, m.dueDate, m.amount, id],
+    );
+    return this.get(id);
+  },
   async remove(id: string): Promise<boolean> {
     return (await query("DELETE FROM invoices WHERE id = $1 RETURNING id", [id])).length > 0;
   },
@@ -415,6 +425,16 @@ export const qcInspections = {
         q.status ?? "Scheduled", q.scheduledDate ?? new Date().toISOString().slice(0, 10), q.defectRate ?? null, q.sampleSize ?? null],
     );
     return (await this.get(id))!;
+  },
+  async update(id: string, q: Partial<QcInspection>): Promise<QcInspection | null> {
+    const existing = await this.get(id);
+    if (!existing) return null;
+    const m = { ...existing, ...q };
+    await query(
+      `UPDATE qc_inspections SET product=$1, sku=$2, supplier=$3, inspector=$4, status=$5, scheduled_date=$6, defect_rate=$7, sample_size=$8 WHERE id=$9`,
+      [m.product, m.sku ?? null, m.supplier, m.inspector ?? null, m.status, m.scheduledDate, m.defectRate ?? null, m.sampleSize ?? null, id],
+    );
+    return this.get(id);
   },
   async remove(id: string): Promise<boolean> {
     return (await query("DELETE FROM qc_inspections WHERE id = $1 RETURNING id", [id])).length > 0;

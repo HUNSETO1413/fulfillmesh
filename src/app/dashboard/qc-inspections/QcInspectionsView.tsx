@@ -2,15 +2,74 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ClipboardCheck, CheckCircle2, AlertTriangle, Clock,
   ArrowUpRight, ArrowDownRight,
-  Search, ChevronDown, MoreVertical, Plus, Calendar, Bell,
+  Search, ChevronDown, Pencil, Trash2, Plus, Calendar, Bell, Download,
   ChevronLeft, ChevronRight,
 } from "lucide-react";
-import type { QcInspection } from "@/types";
+import type { QcInspection, QcStatus } from "@/types";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { formatDate } from "@/lib/format";
+import { Modal } from "@/components/dashboard/Modal";
+import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
+import { Field, TextInput, NumberInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
+import { useToast } from "@/components/dashboard/Toast";
+import { api, exportToCsv } from "@/lib/client";
+
+const STATUSES: QcStatus[] = ["Scheduled", "In Progress", "Passed", "Failed", "On Hold"];
+
+type Draft = {
+  product: string;
+  sku: string;
+  supplier: string;
+  inspector: string;
+  status: QcStatus;
+  scheduledDate: string;
+  defectRate: string;
+  sampleSize: string;
+};
+
+const emptyDraft: Draft = {
+  product: "", sku: "", supplier: "", inspector: "", status: "Scheduled",
+  scheduledDate: new Date().toISOString().slice(0, 10), defectRate: "", sampleSize: "",
+};
+
+function QcFields({ draft, set }: { draft: Draft; set: (d: Partial<Draft>) => void }) {
+  return (
+    <div className="grid grid-cols-2 gap-4">
+      <div className="col-span-2">
+        <Field label="Product" required>
+          <TextInput value={draft.product} onChange={(e) => set({ product: e.target.value })} placeholder="Wireless Speaker" />
+        </Field>
+      </div>
+      <Field label="SKU">
+        <TextInput value={draft.sku} onChange={(e) => set({ sku: e.target.value })} placeholder="SKU-1024" />
+      </Field>
+      <Field label="Supplier" required>
+        <TextInput value={draft.supplier} onChange={(e) => set({ supplier: e.target.value })} placeholder="Shenzhen Topway" />
+      </Field>
+      <Field label="Inspector">
+        <TextInput value={draft.inspector} onChange={(e) => set({ inspector: e.target.value })} placeholder="Emily Chen" />
+      </Field>
+      <Field label="Status">
+        <Select options={STATUSES} value={draft.status} onChange={(e) => set({ status: e.target.value as QcStatus })} />
+      </Field>
+      <Field label="Scheduled date">
+        <TextInput type="date" value={draft.scheduledDate} onChange={(e) => set({ scheduledDate: e.target.value })} />
+      </Field>
+      <Field label="Sample size">
+        <NumberInput value={draft.sampleSize} onChange={(e) => set({ sampleSize: e.target.value })} placeholder="800" step="1" min="0" />
+      </Field>
+      <div className="col-span-2">
+        <Field label="Defect rate (%)">
+          <NumberInput value={draft.defectRate} onChange={(e) => set({ defectRate: e.target.value })} placeholder="0" step="0.1" min="0" />
+        </Field>
+      </div>
+    </div>
+  );
+}
 
 const stats = [
   { title: "Total Inspections", value: "248", change: "+12%", positive: true, icon: ClipboardCheck, iconBg: "bg-[#0057D8]/10", iconColor: "text-[#0057D8]" },
@@ -37,10 +96,22 @@ const stages = [
 const tabs = ["All", "Scheduled", "In Progress", "Passed", "Failed", "On Hold"];
 
 export default function QcInspectionsView({ items }: { items: QcInspection[] }) {
+  const router = useRouter();
+  const { toast } = useToast();
+
   const [activeTab, setActiveTab] = useState("All");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const pageSize = 8;
+
+  // create / edit
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<QcInspection | null>(null);
+  const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const [busy, setBusy] = useState(false);
+
+  // delete
+  const [deleting, setDeleting] = useState<QcInspection | null>(null);
 
   const circumference = 2 * Math.PI * 40;
   const maxBar = 100;
@@ -69,6 +140,94 @@ export default function QcInspectionsView({ items }: { items: QcInspection[] }) 
     setPage(1);
   }
 
+  function openCreate() {
+    setEditing(null);
+    setDraft(emptyDraft);
+    setFormOpen(true);
+  }
+
+  function openEdit(it: QcInspection) {
+    setEditing(it);
+    setDraft({
+      product: it.product,
+      sku: it.sku ?? "",
+      supplier: it.supplier,
+      inspector: it.inspector ?? "",
+      status: it.status,
+      scheduledDate: it.scheduledDate,
+      defectRate: it.defectRate != null ? String(it.defectRate) : "",
+      sampleSize: it.sampleSize != null ? String(it.sampleSize) : "",
+    });
+    setFormOpen(true);
+  }
+
+  async function saveInspection() {
+    if (!draft.product.trim()) {
+      toast("Product is required", "error");
+      return;
+    }
+    if (!draft.supplier.trim()) {
+      toast("Supplier is required", "error");
+      return;
+    }
+    setBusy(true);
+    const payload = {
+      product: draft.product.trim(),
+      sku: draft.sku.trim() || undefined,
+      supplier: draft.supplier.trim(),
+      inspector: draft.inspector.trim() || undefined,
+      status: draft.status,
+      scheduledDate: draft.scheduledDate,
+      defectRate: draft.defectRate === "" ? undefined : Number(draft.defectRate),
+      sampleSize: draft.sampleSize === "" ? undefined : Math.trunc(Number(draft.sampleSize)),
+    };
+    try {
+      if (editing) {
+        await api.put(`/api/qc-inspections/${editing.id}`, payload);
+        toast(`Inspection ${editing.id} updated`);
+      } else {
+        const created = await api.post<QcInspection>("/api/qc-inspections", payload);
+        toast(`Inspection ${created.id} created`);
+      }
+      setFormOpen(false);
+      router.refresh();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not save inspection", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleting) return;
+    setBusy(true);
+    try {
+      await api.del(`/api/qc-inspections/${deleting.id}`);
+      toast(`Inspection ${deleting.id} deleted`);
+      setDeleting(null);
+      router.refresh();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not delete inspection", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleExport() {
+    exportToCsv("qc-inspections", filtered, [
+      { key: "id", header: "Inspection ID" },
+      { key: "product", header: "Product" },
+      { key: "sku", header: "SKU" },
+      { key: "supplier", header: "Supplier" },
+      { key: "inspector", header: "Inspector" },
+      { key: "status", header: "Status" },
+      { key: "scheduledDate", header: "Scheduled" },
+      { key: "defectRate", header: "Defect Rate" },
+      { key: "sampleSize", header: "Sample Size" },
+    ]);
+    toast(`Exported ${filtered.length} inspections to CSV`);
+  }
+
   return (
     <div className="space-y-5">
       {/* Header */}
@@ -86,7 +245,17 @@ export default function QcInspectionsView({ items }: { items: QcInspection[] }) 
           <button className="w-9 h-9 flex items-center justify-center bg-white border border-border-soft rounded-lg text-text-muted hover:bg-soft-bg">
             <Bell className="w-4 h-4" />
           </button>
-          <button className="inline-flex items-center gap-2 px-4 py-2 bg-action-blue hover:bg-navy rounded-lg text-[13px] font-medium text-white transition-colors">
+          <button
+            onClick={handleExport}
+            className="inline-flex items-center gap-2 px-3.5 py-2 bg-white border border-border-soft rounded-lg text-[13px] font-medium text-text-body hover:bg-soft-bg transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            Export
+          </button>
+          <button
+            onClick={openCreate}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-action-blue hover:bg-navy rounded-lg text-[13px] font-medium text-white transition-colors"
+          >
             <Plus className="w-4 h-4" />
             New Inspection
           </button>
@@ -271,17 +440,35 @@ export default function QcInspectionsView({ items }: { items: QcInspection[] }) 
                     <td className="px-5 py-3">
                       <StatusBadge status={it.status} />
                     </td>
-                    <td className="px-5 py-3 text-right">
-                      <button className="text-text-light hover:text-text-muted p-1 rounded hover:bg-[#F1F5F9]">
-                        <MoreVertical className="w-4 h-4" />
-                      </button>
+                    <td className="px-5 py-3">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => openEdit(it)}
+                          className="w-8 h-8 flex items-center justify-center rounded-md text-text-light hover:bg-[#EFF6FF] hover:text-action-blue transition-colors"
+                          aria-label={`Edit ${it.id}`}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => setDeleting(it)}
+                          className="w-8 h-8 flex items-center justify-center rounded-md text-text-light hover:bg-[#FEF2F2] hover:text-[#EF4444] transition-colors"
+                          aria-label={`Delete ${it.id}`}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
               })}
               {pageRows.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-5 py-10 text-center text-[13px] text-text-muted">No inspections match your filters.</td>
+                  <td colSpan={7} className="px-5 py-10 text-center">
+                    <p className="text-[13px] text-text-muted">No inspections match your filters.</p>
+                    <button onClick={openCreate} className="mt-3 inline-flex items-center gap-1.5 text-[13px] font-medium text-action-blue hover:underline">
+                      <Plus className="w-4 h-4" /> Create your first inspection
+                    </button>
+                  </td>
                 </tr>
               )}
             </tbody>
@@ -332,6 +519,36 @@ export default function QcInspectionsView({ items }: { items: QcInspection[] }) 
           </div>
         </div>
       </div>
+
+      {/* Create / Edit modal */}
+      <Modal
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
+        title={editing ? `Edit ${editing.id}` : "New Inspection"}
+        description={editing ? "Update the inspection details below." : "Schedule a new QC inspection."}
+        footer={
+          <>
+            <SecondaryButton onClick={() => setFormOpen(false)}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={saveInspection} disabled={busy}>
+              {busy ? "Saving…" : editing ? "Save changes" : "Create inspection"}
+            </PrimaryButton>
+          </>
+        }
+      >
+        <QcFields draft={draft} set={(d) => setDraft((prev) => ({ ...prev, ...d }))} />
+      </Modal>
+
+      {/* Delete confirm */}
+      <ConfirmDialog
+        open={!!deleting}
+        onClose={() => setDeleting(null)}
+        onConfirm={confirmDelete}
+        title="Delete inspection"
+        message={`Are you sure you want to delete ${deleting?.id}? This action cannot be undone.`}
+        confirmLabel="Delete"
+        destructive
+        loading={busy}
+      />
     </div>
   );
 }

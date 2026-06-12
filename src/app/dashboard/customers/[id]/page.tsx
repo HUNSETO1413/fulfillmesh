@@ -4,7 +4,6 @@ import type { Metadata } from "next";
 import {
   ArrowLeft,
   Copy,
-  Calendar,
   ChevronDown,
   MoreHorizontal,
   Plus,
@@ -21,6 +20,7 @@ import {
 import { customers as customersRepo } from "@/lib/repositories";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { formatCurrency, formatDate, formatNumber } from "@/lib/format";
+import CustomerDetailActions from "./CustomerDetailActions";
 
 const recentOrders = [
   { id: "ORD-10468", date: "May 16, 2025", status: "Delivered", total: "$1,248.00" },
@@ -115,20 +115,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
             <h1 className="text-[24px] font-bold text-[#061A3D]">Customer Detail</h1>
             <p className="text-[14px] text-[#4A5A73] mt-0.5">View and manage customer information, orders, shipments, and support activity.</p>
           </div>
-          <div className="flex items-center gap-3">
-            <button className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E6EDF5] rounded-lg text-[13px] font-medium text-[#4A5A73] hover:bg-[#F7FAFC]">
-              <Calendar className="w-4 h-4" />
-              May 12 – May 18, 2025
-              <ChevronDown className="w-3.5 h-3.5" />
-            </button>
-            <button className="px-3.5 py-2 bg-white border border-[#E6EDF5] rounded-lg text-[13px] font-medium text-[#4A5A73] hover:bg-[#F7FAFC]">
-              Edit Customer
-            </button>
-            <button className="flex items-center gap-2 px-4 py-2 bg-[#0057D8] hover:bg-[#003B7A] rounded-lg text-[13px] font-medium text-white">
-              <Plus className="w-4 h-4" />
-              New Order
-            </button>
-          </div>
+          <CustomerDetailActions customer={customer} />
         </div>
       </div>
 

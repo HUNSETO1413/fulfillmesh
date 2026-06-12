@@ -2,13 +2,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import {
-  ChevronRight, Download, Edit, ChevronDown, Package,
+  ChevronRight, Download, Package,
   CheckCircle2, XCircle, MinusCircle, FileText, FileSpreadsheet, FileArchive,
   Clock, AlertTriangle, Send, RotateCcw, Ban, ArrowLeft, ArrowRight,
 } from "lucide-react";
 import { qcInspections } from "@/lib/repositories";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { formatDate } from "@/lib/format";
+import QcDetailActions from "./QcDetailActions";
 
 const checklist = [
   { item: "Product Appearance", result: "Passed" },
@@ -127,8 +128,7 @@ export default async function QcInspectionDetailPage({ params }: { params: Promi
         </div>
         <div className="flex items-center gap-2">
           <button className="inline-flex items-center gap-2 px-3.5 py-2 bg-white border border-border-soft rounded-lg text-[13px] font-medium text-text-body shadow-[0_1px_2px_rgba(0,0,0,0.05)]"><Download className="w-4 h-4" />Download Report</button>
-          <button className="inline-flex items-center gap-2 px-3.5 py-2 bg-white border border-border-soft rounded-lg text-[13px] font-medium text-text-body shadow-[0_1px_2px_rgba(0,0,0,0.05)]"><Edit className="w-4 h-4" />Edit Inspection</button>
-          <button className="inline-flex items-center gap-2 px-4 py-2 bg-action-blue hover:bg-[#003B7A] rounded-lg text-[13px] font-medium text-white shadow-[0_1px_2px_rgba(0,0,0,0.05)]">More Actions<ChevronDown className="w-3.5 h-3.5" /></button>
+          <QcDetailActions inspection={inspection} />
         </div>
       </div>
 

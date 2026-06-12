@@ -3,11 +3,12 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import {
   ArrowLeft, Check, ArrowRight,
-  Package, CheckCircle2, Plane, DollarSign, Download, Phone, AlertTriangle, User, Tag,
+  Package, CheckCircle2, Plane, DollarSign, Download, User, Tag,
 } from "lucide-react";
 import { shipments as shipmentsRepo } from "@/lib/repositories";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { formatDate } from "@/lib/format";
+import ShipmentDetailActions from "./ShipmentDetailActions";
 
 const progress = [
   { label: "Label Created", date: "May 12, 09:14", done: true },
@@ -49,11 +50,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
             <h1 className="text-[24px] font-bold text-[#061A3D]">Shipment Detail</h1>
             <p className="text-[14px] text-[#4A5A73] mt-0.5">View real-time tracking, shipment status, and delivery information.</p>
           </div>
-          <div className="flex items-center gap-3">
-            <button className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#0057D8] rounded-lg text-[13px] font-medium text-[#0057D8]"><Download className="w-4 h-4" /> Download Label</button>
-            <button className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E6EDF5] rounded-lg text-[13px] font-medium text-[#66758C]"><Phone className="w-4 h-4" /> Contact Carrier</button>
-            <button className="flex items-center gap-2 px-4 py-2 bg-[#0057D8] hover:bg-[#003B7A] rounded-lg text-[13px] font-medium text-white"><AlertTriangle className="w-4 h-4" /> Report Issue</button>
-          </div>
+          <ShipmentDetailActions shipment={shipment} />
         </div>
       </div>
 

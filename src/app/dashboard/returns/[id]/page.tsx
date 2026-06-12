@@ -4,11 +4,12 @@ import type { Metadata } from "next";
 import {
   ArrowLeft, Check, ExternalLink, ArrowRight,
   Search, Wrench, Warehouse, Truck, DollarSign, FileText,
-  Printer, Edit2, Download, Package,
+  Edit2, Download, Package,
 } from "lucide-react";
 import { returns as returnsRepo } from "@/lib/repositories";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { formatCurrency, formatDate } from "@/lib/format";
+import ReturnDetailActions from "./ReturnDetailActions";
 
 /** Neutral placeholder used wherever a returned-item photo would appear. */
 function BottleThumb({ className = "" }: { className?: string }) {
@@ -77,11 +78,7 @@ export default async function ReturnDetailPage({ params }: { params: Promise<{ i
           <h1 className="text-[24px] font-bold text-[#061A3D]">Return Detail</h1>
           <p className="text-[14px] text-[#4A5A73] mt-0.5">View and manage return request, inspection, and resolution.</p>
         </div>
-        <div className="flex items-center gap-3">
-          <button className="inline-flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E6EDF5] rounded-lg text-[13px] font-medium text-[#4A5A73]"><Printer className="w-4 h-4" /> Print Label</button>
-          <button className="inline-flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E6EDF5] rounded-lg text-[13px] font-medium text-[#4A5A73]"><Edit2 className="w-4 h-4" /> Edit Return</button>
-          <button className="inline-flex items-center gap-1 px-4 py-2 bg-[#0057D8] hover:bg-[#003B7A] rounded-lg text-[13px] font-medium text-white"><Check className="w-4 h-4" /> Approve Replacement</button>
-        </div>
+        <ReturnDetailActions ret={ret} />
       </div>
 
       {/* Summary card */}

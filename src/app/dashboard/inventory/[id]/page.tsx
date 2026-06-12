@@ -3,12 +3,13 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import {
   ArrowLeft, Calendar, Bell, MoreHorizontal, ChevronDown,
-  Pencil, FileText, Box, Lock, CheckCircle2, AlertTriangle,
+  Box, Lock, CheckCircle2, AlertTriangle,
   Clock, Tag, TrendingUp,
 } from "lucide-react";
 import { inventory as inventoryRepo } from "@/lib/repositories";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { formatNumber } from "@/lib/format";
+import InventoryDetailActions from "./InventoryDetailActions";
 
 const tabs = ["Overview", "Stock & Movements", "Purchase Orders", "Allocations", "Adjustments", "Forecast & Replenishment", "Activity Log"];
 
@@ -103,11 +104,7 @@ export default async function InventoryDetailPage({ params }: { params: Promise<
       </div>
 
       {/* Action buttons row */}
-      <div className="flex items-center justify-end gap-3">
-        <button className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] font-medium text-[#64748B] shadow-[0_1px_2px_rgba(0,0,0,0.05)]"><Pencil className="w-4 h-4" /> Edit SKU</button>
-        <button className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] font-medium text-[#64748B] shadow-[0_1px_2px_rgba(0,0,0,0.05)]"><FileText className="w-4 h-4" /> Create PO</button>
-        <button className="flex items-center gap-1.5 px-4 py-2 bg-[#3B82F6] hover:bg-[#2563EB] rounded-lg text-[13px] font-medium text-white shadow-[0_1px_2px_rgba(0,0,0,0.05)]">More Actions <ChevronDown className="w-3.5 h-3.5" /></button>
-      </div>
+      <InventoryDetailActions item={item} />
 
       {/* Hero card: Product info + Metrics */}
       <div className={`${card} p-5`}>

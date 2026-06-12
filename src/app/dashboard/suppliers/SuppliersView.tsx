@@ -2,16 +2,78 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Users, CheckCircle2, Target, Clock, ArrowUpRight,
-  Search, ChevronDown, MoreVertical, Plus, Download, Calendar, Bell,
+  Search, ChevronDown, Pencil, Trash2, Plus, Download, Calendar, Bell,
   ChevronLeft, ChevronRight,
 } from "lucide-react";
-import type { Supplier } from "@/types";
+import type { Supplier, SupplierStatus } from "@/types";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { formatNumber } from "@/lib/format";
+import { Modal } from "@/components/dashboard/Modal";
+import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
+import { Field, TextInput, NumberInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
+import { useToast } from "@/components/dashboard/Toast";
+import { api, exportToCsv } from "@/lib/client";
 
 const tabs = ["All Suppliers", "Active", "Pending", "Suspended"];
+
+const STATUSES: SupplierStatus[] = ["Active", "Pending", "Suspended"];
+const CATEGORIES = ["Electronics", "Home & Living", "Packaging", "Apparel", "Raw Materials", "Logistics"];
+
+type Draft = {
+  name: string;
+  contact: string;
+  email: string;
+  country: string;
+  category: string;
+  rating: string;
+  status: SupplierStatus;
+  leadTimeDays: string;
+  productsSupplied: string;
+};
+
+const emptyDraft: Draft = {
+  name: "", contact: "", email: "", country: "", category: "Electronics",
+  rating: "0", status: "Active", leadTimeDays: "", productsSupplied: "",
+};
+
+function SupplierFields({ draft, set }: { draft: Draft; set: (d: Partial<Draft>) => void }) {
+  return (
+    <div className="grid grid-cols-2 gap-4">
+      <Field label="Name" required>
+        <TextInput value={draft.name} onChange={(e) => set({ name: e.target.value })} placeholder="Shenzhen Components Co." />
+      </Field>
+      <Field label="Country" required>
+        <TextInput value={draft.country} onChange={(e) => set({ country: e.target.value })} placeholder="China" />
+      </Field>
+      <Field label="Contact">
+        <TextInput value={draft.contact} onChange={(e) => set({ contact: e.target.value })} placeholder="Li Wei" />
+      </Field>
+      <Field label="Email">
+        <TextInput type="email" value={draft.email} onChange={(e) => set({ email: e.target.value })} placeholder="sales@supplier.com" />
+      </Field>
+      <Field label="Category">
+        <Select options={CATEGORIES} value={draft.category} onChange={(e) => set({ category: e.target.value })} />
+      </Field>
+      <Field label="Status">
+        <Select options={STATUSES} value={draft.status} onChange={(e) => set({ status: e.target.value as SupplierStatus })} />
+      </Field>
+      <Field label="Rating (0-5)">
+        <NumberInput value={draft.rating} onChange={(e) => set({ rating: e.target.value })} min="0" max="5" step="0.1" />
+      </Field>
+      <Field label="Lead Time (days)">
+        <NumberInput value={draft.leadTimeDays} onChange={(e) => set({ leadTimeDays: e.target.value })} min="0" step="1" placeholder="e.g. 7" />
+      </Field>
+      <div className="col-span-2">
+        <Field label="Products Supplied">
+          <NumberInput value={draft.productsSupplied} onChange={(e) => set({ productsSupplied: e.target.value })} min="0" step="1" placeholder="e.g. 120" />
+        </Field>
+      </div>
+    </div>
+  );
+}
 
 const categoryColor: Record<string, string> = {
   "Electronics": "#0057D8",
@@ -55,11 +117,26 @@ function PerfRing({ pct }: { pct: number }) {
 }
 
 export default function SuppliersView({ items }: { items: Supplier[] }) {
+  const router = useRouter();
+  const { toast } = useToast();
+
   const [tab, setTab] = useState("All Suppliers");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const pageSize = 10;
   const circumference = 2 * Math.PI * 38;
+
+  const [categoryFilter, setCategoryFilter] = useState<string>("");
+  const [filterOpen, setFilterOpen] = useState(false);
+
+  // create / edit
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<Supplier | null>(null);
+  const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const [busy, setBusy] = useState(false);
+
+  // delete
+  const [deleting, setDeleting] = useState<Supplier | null>(null);
 
   const stats = useMemo(() => {
     const total = items.length;
@@ -78,6 +155,7 @@ export default function SuppliersView({ items }: { items: Supplier[] }) {
     const q = search.trim().toLowerCase();
     return items.filter((s) => {
       if (tab !== "All Suppliers" && s.status !== tab) return false;
+      if (categoryFilter && (s.category ?? "") !== categoryFilter) return false;
       if (!q) return true;
       return (
         s.id.toLowerCase().includes(q) ||
@@ -87,7 +165,7 @@ export default function SuppliersView({ items }: { items: Supplier[] }) {
         (s.category ?? "").toLowerCase().includes(q)
       );
     });
-  }, [items, tab, search]);
+  }, [items, tab, search, categoryFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, totalPages);
@@ -134,6 +212,86 @@ export default function SuppliersView({ items }: { items: Supplier[] }) {
   function selectTab(t: string) {
     setTab(t);
     setPage(1);
+  }
+
+  function openCreate() {
+    setEditing(null);
+    setDraft(emptyDraft);
+    setFormOpen(true);
+  }
+
+  function openEdit(s: Supplier) {
+    setEditing(s);
+    setDraft({
+      name: s.name, contact: s.contact ?? "", email: s.email ?? "", country: s.country,
+      category: s.category ?? "Electronics", rating: String(s.rating), status: s.status,
+      leadTimeDays: s.leadTimeDays != null ? String(s.leadTimeDays) : "",
+      productsSupplied: s.productsSupplied != null ? String(s.productsSupplied) : "",
+    });
+    setFormOpen(true);
+  }
+
+  async function saveSupplier() {
+    if (!draft.name.trim()) { toast("Name is required", "error"); return; }
+    if (!draft.country.trim()) { toast("Country is required", "error"); return; }
+    setBusy(true);
+    const payload = {
+      name: draft.name.trim(),
+      contact: draft.contact.trim() || undefined,
+      email: draft.email.trim() || undefined,
+      country: draft.country.trim(),
+      category: draft.category || undefined,
+      rating: Math.min(5, Math.max(0, Number(draft.rating) || 0)),
+      status: draft.status,
+      leadTimeDays: draft.leadTimeDays.trim() ? Number(draft.leadTimeDays) : undefined,
+      productsSupplied: draft.productsSupplied.trim() ? Number(draft.productsSupplied) : undefined,
+    };
+    try {
+      if (editing) {
+        await api.put(`/api/suppliers/${editing.id}`, payload);
+        toast(`Supplier ${editing.id} updated`);
+      } else {
+        const created = await api.post<Supplier>("/api/suppliers", payload);
+        toast(`Supplier ${created.id} created`);
+      }
+      setFormOpen(false);
+      router.refresh();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not save supplier", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleting) return;
+    setBusy(true);
+    try {
+      await api.del(`/api/suppliers/${deleting.id}`);
+      toast(`Supplier ${deleting.id} deleted`);
+      setDeleting(null);
+      router.refresh();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not delete supplier", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleExport() {
+    exportToCsv("suppliers", filtered, [
+      { key: "id", header: "Supplier ID" },
+      { key: "name", header: "Name" },
+      { key: "category", header: "Category" },
+      { key: "country", header: "Country" },
+      { key: "contact", header: "Contact" },
+      { key: "email", header: "Email" },
+      { key: "rating", header: "Rating" },
+      { key: "leadTimeDays", header: "Lead Time (days)" },
+      { key: "productsSupplied", header: "Products Supplied" },
+      { key: "status", header: "Status" },
+    ]);
+    toast(`Exported ${filtered.length} suppliers to CSV`);
   }
 
   return (
@@ -196,11 +354,11 @@ export default function SuppliersView({ items }: { items: Supplier[] }) {
           ))}
         </div>
         <div className="flex items-center gap-2">
-          <button className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-border-soft rounded-lg text-[13px] font-medium text-text-muted hover:bg-soft-bg">
+          <button onClick={handleExport} className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-border-soft rounded-lg text-[13px] font-medium text-text-muted hover:bg-soft-bg">
             <Download className="w-4 h-4" />
             Export
           </button>
-          <button className="inline-flex items-center gap-2 px-4 py-2 bg-action-blue hover:bg-navy rounded-lg text-[13px] font-medium text-white transition-colors">
+          <button onClick={openCreate} className="inline-flex items-center gap-2 px-4 py-2 bg-action-blue hover:bg-navy rounded-lg text-[13px] font-medium text-white transition-colors">
             <Plus className="w-4 h-4" />
             Add Supplier
           </button>
@@ -226,13 +384,47 @@ export default function SuppliersView({ items }: { items: Supplier[] }) {
                   className="w-full pl-9 pr-4 py-2 bg-white border border-border-soft rounded-lg text-[13px] text-deep-navy placeholder:text-text-light focus:outline-none focus:ring-2 focus:ring-action-blue/20 focus:border-action-blue"
                 />
               </div>
-              {["Category", "Location", "Certifications", "More Filters"].map((d) => (
+              <div className="relative">
+                <button
+                  onClick={() => setFilterOpen((v) => !v)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-2 border rounded-lg text-[13px] transition-colors ${
+                    categoryFilter ? "bg-action-blue/10 border-action-blue text-action-blue" : "border-border-soft text-text-muted hover:bg-soft-bg"
+                  }`}
+                >
+                  {categoryFilter || "Category"}
+                  <ChevronDown className="w-3.5 h-3.5" />
+                </button>
+                {filterOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setFilterOpen(false)} />
+                    <div className="absolute left-0 mt-1 z-20 w-48 bg-white rounded-lg border border-border-soft shadow-lg py-1">
+                      <p className="px-3 py-1.5 text-[11px] font-semibold text-text-light uppercase">Category</p>
+                      <button
+                        onClick={() => { setCategoryFilter(""); setFilterOpen(false); setPage(1); }}
+                        className={`w-full text-left px-3 py-1.5 text-[13px] hover:bg-soft-bg ${!categoryFilter ? "text-action-blue font-medium" : "text-text-body"}`}
+                      >
+                        All categories
+                      </button>
+                      {CATEGORIES.map((cat) => (
+                        <button
+                          key={cat}
+                          onClick={() => { setCategoryFilter(cat); setFilterOpen(false); setPage(1); }}
+                          className={`w-full text-left px-3 py-1.5 text-[13px] hover:bg-soft-bg ${categoryFilter === cat ? "text-action-blue font-medium" : "text-text-body"}`}
+                        >
+                          {cat}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+              {["Location", "Certifications", "More Filters"].map((d) => (
                 <button key={d} className="inline-flex items-center gap-1.5 px-3 py-2 border border-border-soft rounded-lg text-[13px] text-text-muted hover:bg-soft-bg">
                   {d}
                   <ChevronDown className="w-3.5 h-3.5" />
                 </button>
               ))}
-              <button className="px-3 py-2 text-[13px] text-action-blue font-medium hover:underline">Clear</button>
+              <button onClick={() => { setCategoryFilter(""); setSearch(""); setPage(1); }} className="px-3 py-2 text-[13px] text-action-blue font-medium hover:underline">Clear</button>
             </div>
           </div>
 
@@ -286,9 +478,22 @@ export default function SuppliersView({ items }: { items: Supplier[] }) {
                         <td className="px-5 py-3"><PerfRing pct={score} /></td>
                         <td className="px-5 py-3"><StatusBadge status={s.status} /></td>
                         <td className="px-5 py-3">
-                          <button className="text-text-light hover:text-text-muted p-1 rounded hover:bg-[#F1F5F9]">
-                            <MoreVertical className="w-4 h-4" />
-                          </button>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => openEdit(s)}
+                              className="w-8 h-8 flex items-center justify-center rounded-md text-text-light hover:bg-[#EFF6FF] hover:text-action-blue transition-colors"
+                              aria-label={`Edit ${s.id}`}
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => setDeleting(s)}
+                              className="w-8 h-8 flex items-center justify-center rounded-md text-text-light hover:bg-[#FEF2F2] hover:text-[#EF4444] transition-colors"
+                              aria-label={`Delete ${s.id}`}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -438,6 +643,36 @@ export default function SuppliersView({ items }: { items: Supplier[] }) {
           </div>
         </div>
       </div>
+
+      {/* Create / Edit modal */}
+      <Modal
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
+        title={editing ? `Edit ${editing.id}` : "Add Supplier"}
+        description={editing ? "Update the supplier details below." : "Add a new supplier to your network."}
+        footer={
+          <>
+            <SecondaryButton onClick={() => setFormOpen(false)}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={saveSupplier} disabled={busy}>
+              {busy ? "Saving…" : editing ? "Save changes" : "Create supplier"}
+            </PrimaryButton>
+          </>
+        }
+      >
+        <SupplierFields draft={draft} set={(d) => setDraft((prev) => ({ ...prev, ...d }))} />
+      </Modal>
+
+      {/* Delete confirm */}
+      <ConfirmDialog
+        open={!!deleting}
+        onClose={() => setDeleting(null)}
+        onConfirm={confirmDelete}
+        title="Delete supplier"
+        message={`Are you sure you want to delete ${deleting?.name ?? ""} (${deleting?.id ?? ""})? This action cannot be undone.`}
+        confirmLabel="Delete"
+        destructive
+        loading={busy}
+      />
     </div>
   );
 }
