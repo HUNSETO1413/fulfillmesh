@@ -1,6 +1,4 @@
 import type { ReactNode } from "react";
-import Header from "@/components/Header";
-import Footer from "@/components/Footer";
 
 export interface LegalSection {
   /** Anchor id, e.g. "acceptance" */
@@ -41,30 +39,23 @@ export default function LegalPageLayout({
   sections,
 }: LegalPageProps) {
   return (
-    <>
-      <Header />
-      <div className="bg-white">
-        {/* ===== Hero ===== */}
-        <section className="border-b border-[#E2E8F0]">
-        <div className="max-w-[1120px] mx-auto px-10 py-10 flex items-center justify-between gap-10">
+    <div className="bg-white">
+      {/* ===== Hero ===== */}
+      <section className="border-b border-border-soft">
+        <div className="max-w-[1200px] mx-auto px-6 py-12 flex items-center justify-between gap-10">
           <div className="max-w-[560px]">
-            <h1 className="text-[40px] leading-[1.2] font-bold text-[#2D3748] tracking-[-0.02em]">
+            <h1 className="text-[40px] leading-[1.15] font-bold text-deep-navy tracking-[-0.02em]">
               {title}
               {titleSuffix && (
-                <span className="text-[#9AA8B8] font-bold"> {titleSuffix}</span>
+                <span className="text-text-light font-bold"> {titleSuffix}</span>
               )}
             </h1>
-            <div className="mt-3 inline-flex items-center rounded-full bg-[#F3F4F6] px-3 py-1">
-              <span className="text-xs text-[#6B7280] leading-[1.4]">
-                Last updated: {lastUpdated}
-              </span>
-            </div>
-            <p className="mt-4 text-[18px] text-[#4A5568] leading-[1.6]">{intro}</p>
+            <p className="mt-3 text-[14px] text-text-muted leading-[1.4]">
+              Last updated: {lastUpdated}
+            </p>
+            <p className="mt-4 text-[17px] text-text-body leading-[1.6]">{intro}</p>
           </div>
-          <div
-            className="shrink-0 flex items-center justify-center rounded-2xl bg-[#EDF3FE]/60 px-6 py-4"
-            style={{ display: "flex" }}
-          >
+          <div className="shrink-0 hidden md:flex items-center justify-center">
             {heroIllustration}
           </div>
         </div>
@@ -72,37 +63,30 @@ export default function LegalPageLayout({
 
       {/* ===== Body: sidebar + sections ===== */}
       <section>
-        <div className="max-w-[1120px] mx-auto px-10 py-14 flex gap-12">
+        <div className="max-w-[1200px] mx-auto px-6 py-12 flex gap-12">
           {/* Sidebar */}
-          <aside className="w-[240px] shrink-0" style={{ display: "block" }}>
+          <aside className="w-[260px] shrink-0 hidden lg:block">
             <div className="sticky top-28">
-              <nav className="space-y-1">
+              <nav className="space-y-0.5">
                 {sections.map((s, i) => (
                   <a
                     key={s.id}
                     href={`#${s.id}`}
-                    className={`flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm transition-colors ${
+                    className={`block rounded-lg px-4 py-2.5 text-[14px] leading-[1.4] transition-colors ${
                       i === 0
-                        ? "bg-[#EDF2F7] text-[#2D3748] font-semibold"
-                        : "text-[#4A5568] hover:bg-[#F7FAFC] hover:text-[#2D3748]"
+                        ? "bg-[#EAF1FB] text-action-blue font-semibold"
+                        : "text-text-body hover:bg-soft-bg hover:text-deep-navy"
                     }`}
                   >
-                    <span className={`shrink-0 flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${
-                      i === 0
-                        ? "bg-[#3182CE] text-white"
-                        : "bg-[#E2E8F0] text-[#4A5568]"
-                    }`}>
-                      {i + 1}
-                    </span>
-                    <span className="leading-[1.4]">{s.navLabel}</span>
+                    {i + 1}. {s.navLabel}
                   </a>
                 ))}
               </nav>
 
               {/* Contact card */}
-              <div className="mt-8 rounded-xl border border-[#DBEAFE] bg-[#EFF6FF] p-5">
-                <div className="flex items-center gap-2">
-                  <span className="text-[#3182CE]" aria-hidden>
+              <div className="mt-8 rounded-xl border border-border-soft bg-white p-5 shadow-card">
+                <div className="flex items-start gap-2.5">
+                  <span className="text-action-blue mt-0.5" aria-hidden>
                     <svg
                       width="18"
                       height="18"
@@ -116,16 +100,16 @@ export default function LegalPageLayout({
                       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                     </svg>
                   </span>
-                  <span className="text-sm font-semibold text-[#2D3748] leading-[1.4]">
+                  <span className="text-[15px] font-semibold text-deep-navy leading-[1.35]">
                     {contactTitle}
                   </span>
                 </div>
-                <p className="mt-2 text-sm text-[#4A5568] leading-relaxed">
+                <p className="mt-2.5 text-[13px] text-text-body leading-[1.55]">
                   {contactText}
                 </p>
                 <a
                   href="/contact"
-                  className="mt-4 inline-flex items-center justify-center w-full rounded-md bg-[#3182CE] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#2C5282]"
+                  className="mt-4 inline-flex items-center justify-center w-full rounded-md border border-border-blue bg-white px-4 py-2.5 text-[14px] font-semibold text-action-blue transition-colors hover:bg-soft-bg"
                 >
                   Contact Us
                 </a>
@@ -134,22 +118,18 @@ export default function LegalPageLayout({
           </aside>
 
           {/* Sections */}
-          <div className="flex-1 min-w-0 space-y-6">
+          <div className="flex-1 min-w-0 space-y-10">
             {sections.map((s, i) => (
-              <div
-                key={s.id}
-                id={s.id}
-                className="scroll-mt-28 rounded-lg border border-[#E2E8F0] bg-white p-8 shadow-[0_1px_3px_rgba(0,0,0,0.1)]"
-              >
+              <div key={s.id} id={s.id} className="scroll-mt-28">
                 <div className="flex items-start gap-4">
-                  <div className="shrink-0 flex h-10 w-10 items-center justify-center rounded-lg bg-[#EDF2F7] text-[#3182CE]">
+                  <div className="shrink-0 flex h-10 w-10 items-center justify-center rounded-lg bg-[#EAF1FB] text-action-blue">
                     {s.icon}
                   </div>
                   <div className="min-w-0">
-                    <h2 className="text-2xl font-bold text-[#2D3748] leading-[1.2]">
+                    <h2 className="text-[22px] font-bold text-deep-navy leading-[1.25]">
                       {i + 1}. {s.title}
                     </h2>
-                    <div className="mt-3 text-base text-[#4A5568] leading-[1.6] space-y-3">
+                    <div className="mt-2.5 text-[15px] text-text-body leading-[1.7] space-y-3">
                       {s.body}
                     </div>
                   </div>
@@ -159,8 +139,6 @@ export default function LegalPageLayout({
           </div>
         </div>
       </section>
-      </div>
-      <Footer />
-    </>
+    </div>
   );
 }

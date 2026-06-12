@@ -162,24 +162,24 @@ export default function GuidesPage() {
       <section className="bg-white">
         <div className="max-w-[1200px] mx-auto px-6 py-14">
           <div className="flex items-center justify-between mb-10">
-            <h2 className="text-2xl font-bold text-navy">Browse guides by category</h2>
+            <h2 className="text-2xl font-bold text-deep-navy">Explore guide categories</h2>
             <Link href="/resources/guides" className="inline-flex items-center gap-1 text-sm font-medium text-action-blue hover:underline">
               View all categories <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
             {categories.map((c, i) => (
               <Link
                 key={i}
                 href="/resources/guides/supplier-vetting"
-                className="group flex flex-col p-6 rounded-2xl border border-border-soft hover:shadow-card hover:-translate-y-0.5 transition-all duration-300"
+                className="group flex flex-col p-4 rounded-2xl border border-border-soft hover:shadow-card hover:-translate-y-0.5 transition-all duration-300"
               >
-                <div className="w-11 h-11 rounded-xl bg-soft-bg flex items-center justify-center mb-4">
+                <div className="w-10 h-10 rounded-xl bg-soft-bg flex items-center justify-center mb-3">
                   <c.icon className="w-5 h-5 text-action-blue" />
                 </div>
-                <h3 className="text-base font-semibold text-text-primary mb-2">{c.title}</h3>
-                <p className="text-xs text-text-body leading-relaxed flex-1">{c.desc}</p>
-                <span className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-action-blue">
+                <h3 className="text-sm font-semibold text-text-primary mb-1.5 leading-snug">{c.title}</h3>
+                <p className="text-[11px] text-text-body leading-relaxed flex-1">{c.desc}</p>
+                <span className="mt-3 inline-flex items-center gap-1 text-[11px] font-semibold text-action-blue">
                   Explore <ArrowRight className="w-3 h-3" />
                 </span>
               </Link>
@@ -242,99 +242,100 @@ export default function GuidesPage() {
         </div>
       </section>
 
-      {/* All guides */}
+      {/* All guides + sidebar */}
       <section className="bg-white">
         <div className="max-w-[1200px] mx-auto px-6 py-14">
-          <div className="flex items-center justify-between mb-8">
-            <h2 className="text-2xl font-bold text-navy">All guides</h2>
-            <Link href="/resources/guides" className="inline-flex items-center gap-1 text-sm font-medium text-action-blue hover:underline">
-              View all guides <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
-          </div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {guides.map((g, i) => (
-              <Link
-                key={i}
-                href="/resources/guides/supplier-vetting"
-                className="group rounded-2xl border border-border-soft overflow-hidden hover:shadow-card transition-all flex flex-col"
-              >
-                <div className="relative aspect-[16/10] overflow-hidden bg-soft-bg">
-                  <Image
-                    src={g.image}
-                    alt={g.title}
-                    fill
-                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 280px"
-                    className="object-cover transition-transform duration-300 group-hover:scale-105"
-                  />
-                </div>
-                <div className="p-5 flex flex-col flex-1">
-                  <span className="self-start text-[11px] font-semibold text-action-blue bg-action-blue/8 px-2.5 py-1 rounded-full mb-3">
-                    {g.category}
-                  </span>
-                  <h3 className="font-semibold text-deep-navy group-hover:text-action-blue leading-snug">{g.title}</h3>
-                  <p className="mt-2 text-xs text-text-body leading-relaxed flex-1">{g.desc}</p>
-                  <p className="mt-4 flex items-center gap-2 text-[11px] text-text-muted">
-                    <span>{g.date}</span>
-                    <span className="w-1 h-1 rounded-full bg-text-light" />
-                    <span>{g.read}</span>
-                  </p>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Tools & Newsletter */}
-      <section className="bg-white border-t border-border-soft">
-        <div className="max-w-[1200px] mx-auto px-6 py-14">
-          <div className="grid lg:grid-cols-2 gap-6">
-            {/* Tools & templates */}
-            <div className="rounded-2xl bg-soft-bg border border-border-soft p-7">
-              <div className="flex items-start gap-4">
-                <div className="w-11 h-11 rounded-xl bg-white border border-border-soft flex items-center justify-center shrink-0">
-                  <ClipboardList className="w-5 h-5 text-teal" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-deep-navy">Tools &amp; templates</h3>
-                  <p className="mt-1 text-sm text-text-body">Download ready-to-use resources to streamline your operations.</p>
-                </div>
+          <div className="grid lg:grid-cols-[1fr_320px] gap-8 items-start">
+            {/* Left: guides */}
+            <div>
+              <div className="flex items-center justify-between mb-8">
+                <h2 className="text-2xl font-bold text-deep-navy">All guides</h2>
+                <Link href="/resources/guides" className="inline-flex items-center gap-1 text-sm font-medium text-action-blue hover:underline">
+                  View all guides <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
               </div>
-              <ul className="mt-5 grid sm:grid-cols-2 gap-3">
-                {downloads.map((d) => (
-                  <li key={d} className="flex items-center gap-2 text-sm text-text-body">
-                    <CheckCircle2 className="w-4 h-4 text-teal shrink-0" />
-                    {d}
-                  </li>
+              <div className="grid sm:grid-cols-2 gap-6">
+                {guides.map((g, i) => (
+                  <Link
+                    key={i}
+                    href="/resources/guides/supplier-vetting"
+                    className="group rounded-2xl border border-border-soft overflow-hidden hover:shadow-card transition-all flex flex-col"
+                  >
+                    <div className="relative aspect-[16/10] overflow-hidden bg-soft-bg">
+                      <Image
+                        src={g.image}
+                        alt={g.title}
+                        fill
+                        sizes="(max-width: 640px) 100vw, 360px"
+                        className="object-cover transition-transform duration-300 group-hover:scale-105"
+                      />
+                    </div>
+                    <div className="p-5 flex flex-col flex-1">
+                      <span className="self-start text-[11px] font-semibold text-action-blue bg-action-blue/8 px-2.5 py-1 rounded-full mb-3">
+                        {g.category}
+                      </span>
+                      <h3 className="font-semibold text-deep-navy group-hover:text-action-blue leading-snug">{g.title}</h3>
+                      <p className="mt-2 text-xs text-text-body leading-relaxed flex-1">{g.desc}</p>
+                      <p className="mt-4 flex items-center gap-2 text-[11px] text-text-muted">
+                        <span>{g.date}</span>
+                        <span className="w-1 h-1 rounded-full bg-text-light" />
+                        <span>{g.read}</span>
+                      </p>
+                    </div>
+                  </Link>
                 ))}
-              </ul>
-              <Link href="/resources" className="mt-5 inline-flex items-center gap-1 text-sm font-semibold text-action-blue hover:underline">
-                View all downloads <ArrowRight className="w-3.5 h-3.5" />
-              </Link>
-            </div>
-            {/* Newsletter */}
-            <div className="rounded-2xl bg-soft-bg border border-border-soft p-7">
-              <div className="flex items-start gap-4">
-                <div className="w-11 h-11 rounded-xl bg-white border border-border-soft flex items-center justify-center shrink-0">
-                  <Mail className="w-5 h-5 text-action-blue" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-deep-navy">Stay ahead with insights</h3>
-                  <p className="mt-1 text-sm text-text-body">Get the latest guides, expert tips, and industry updates delivered straight to your inbox.</p>
-                </div>
               </div>
-              <div className="mt-5 flex gap-3">
-                <input
-                  type="email"
-                  placeholder="Enter your email"
-                  className="flex-1 px-4 py-3 rounded-lg border border-border-soft bg-white text-sm text-text-body placeholder:text-text-light focus:outline-none focus:border-action-blue"
-                />
-                <button className="px-6 py-3 rounded-lg bg-navy text-white text-sm font-semibold hover:bg-deep-navy transition-colors">
-                  Subscribe
-                </button>
-              </div>
-              <p className="mt-3 text-xs text-text-muted">We respect your privacy. Unsubscribe anytime.</p>
             </div>
+
+            {/* Right: sidebar */}
+            <aside className="flex flex-col gap-6 lg:sticky lg:top-24">
+              {/* Tools & templates */}
+              <div className="rounded-2xl bg-soft-bg border border-border-soft p-6">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-white border border-border-soft flex items-center justify-center shrink-0">
+                    <ClipboardList className="w-5 h-5 text-teal" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-deep-navy">Tools &amp; templates</h3>
+                    <p className="mt-1 text-xs text-text-body leading-relaxed">Download ready-to-use resources to streamline your operations.</p>
+                  </div>
+                </div>
+                <ul className="mt-4 space-y-3">
+                  {downloads.map((d) => (
+                    <li key={d} className="flex items-center gap-2 text-sm text-text-body">
+                      <CheckCircle2 className="w-4 h-4 text-teal shrink-0" />
+                      {d}
+                    </li>
+                  ))}
+                </ul>
+                <Link href="/resources" className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-action-blue hover:underline">
+                  View all downloads <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
+              {/* Newsletter */}
+              <div className="rounded-2xl bg-soft-bg border border-border-soft p-6">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-white border border-border-soft flex items-center justify-center shrink-0">
+                    <Mail className="w-5 h-5 text-action-blue" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-deep-navy">Stay ahead with insights</h3>
+                    <p className="mt-1 text-xs text-text-body leading-relaxed">Get the latest guides, expert tips, and industry updates delivered straight to your inbox.</p>
+                  </div>
+                </div>
+                <div className="mt-4 flex flex-col gap-3">
+                  <input
+                    type="email"
+                    placeholder="Enter your email"
+                    className="w-full px-4 py-3 rounded-lg border border-border-soft bg-white text-sm text-text-body placeholder:text-text-light focus:outline-none focus:border-action-blue"
+                  />
+                  <button className="px-6 py-3 rounded-lg bg-navy text-white text-sm font-semibold hover:bg-deep-navy transition-colors">
+                    Subscribe
+                  </button>
+                </div>
+                <p className="mt-3 text-xs text-text-muted">We respect your privacy. Unsubscribe anytime.</p>
+              </div>
+            </aside>
           </div>
         </div>
       </section>

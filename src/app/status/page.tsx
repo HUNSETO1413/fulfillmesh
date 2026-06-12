@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import {
   Check,
-  RefreshCw,
+  Clock,
   Globe,
   LayoutDashboard,
   ShoppingCart,
@@ -15,8 +15,6 @@ import {
   Bell,
   TrendingUp,
   Shield,
-  FileText,
-  Scale,
 } from "lucide-react";
 import { pageMetadata } from "@/lib/seo";
 
@@ -113,22 +111,22 @@ export default function StatusPage() {
         <div className="flex items-start justify-between gap-10">
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-[32px] leading-tight font-bold text-[#1A202C] tracking-[-0.02em]">
+              <h1 className="text-[40px] leading-[1.1] font-bold text-deep-navy tracking-[-0.02em]">
                 Status Page
               </h1>
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-teal text-white">
-                <Check className="w-3.5 h-3.5" strokeWidth={3} />
+              <span className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-teal text-teal">
+                <Check className="w-4 h-4" strokeWidth={3} />
               </span>
             </div>
-            <p className="mt-3 text-base text-[#6B7280]">
-              All systems are running smoothly. No active incidents.
+            <p className="mt-3 text-[16px] text-text-body">
+              Real-time updates on the status of FulfillMesh services.
             </p>
-            <div className="mt-4 flex items-center gap-2 text-sm text-[#9CA3AF]">
-              <RefreshCw className="w-3.5 h-3.5" />
+            <div className="mt-4 flex items-center gap-2 text-[13px] text-text-light">
+              <Clock className="w-3.5 h-3.5" />
               Last updated: May 12, 2025 10:30 AM (UTC)
             </div>
           </div>
-          <div className="shrink-0" style={{ display: "flex" }}>
+          <div className="shrink-0 hidden md:flex">
             <HeroChart />
           </div>
         </div>
@@ -211,22 +209,6 @@ export default function StatusPage() {
             <button className="rounded-lg bg-action-blue px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-[#2563EB]">
               Subscribe
             </button>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="mt-10 border-t border-[#E5E7EB] pt-6">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold text-[#1A202C]">Status Page</span>
-            <span className="text-sm text-[#6B7280]">&copy; 2025 FulfillMesh. All rights reserved.</span>
-            <div className="flex items-center gap-4">
-              <Link href="/legal/terms" className="inline-flex items-center gap-1 text-sm text-action-blue hover:underline">
-                <FileText className="w-3.5 h-3.5" /> Terms of Service
-              </Link>
-              <Link href="/legal/privacy" className="inline-flex items-center gap-1 text-sm text-action-blue hover:underline">
-                <Scale className="w-3.5 h-3.5" /> Privacy Policy
-              </Link>
-            </div>
           </div>
         </div>
       </div>

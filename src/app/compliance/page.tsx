@@ -6,7 +6,7 @@ import {
   Lock,
   Cloud,
   ClipboardCheck,
-  Activity,
+  Monitor,
   Users,
   ShieldCheck,
 } from "lucide-react";
@@ -29,40 +29,34 @@ export const metadata: Metadata = pageMetadata({
 
 const certifications = [
   {
-    badge: "ISO 27001",
-    badgeColor: "bg-teal text-white",
-    name: "ISO 27001:2022",
-    desc: "Information Security Management System",
+    badge: "ISO\n27001",
+    badgeColor: "border-action-blue text-action-blue",
+    name: "ISO/IEC 27001",
+    desc: "Information security management system certified.",
+  },
+  {
+    badge: "SOC\n2",
+    badgeColor: "border-action-blue text-action-blue",
+    name: "SOC 2 Type II",
+    desc: "Independent audit for security, availability, and confidentiality.",
   },
   {
     badge: "GDPR",
-    badgeColor: "bg-action-blue text-white",
+    badgeColor: "border-[#F2B705] text-[#F2B705]",
     name: "GDPR",
-    desc: "General Data Protection Regulation",
+    desc: "Compliant with the EU General Data Protection Regulation.",
   },
   {
     badge: "HIPAA",
-    badgeColor: "bg-blue-teal text-white",
-    name: "HIPAA",
-    desc: "Health Insurance Portability and Accountability Act",
+    badgeColor: "border-action-blue text-action-blue",
+    name: "HIPAA Compliant",
+    desc: "Safeguarding protected health information in compliance with HIPAA.",
   },
   {
-    badge: "PCI DSS",
-    badgeColor: "bg-navy text-white",
+    badge: "PCI",
+    badgeColor: "border-teal text-teal",
     name: "PCI DSS",
-    desc: "Payment Card Industry Data Security Standard",
-  },
-  {
-    badge: "SOC 2",
-    badgeColor: "bg-teal text-white",
-    name: "SOC 2 Type II",
-    desc: "Service Organization Control 2",
-  },
-  {
-    badge: "CCPA",
-    badgeColor: "bg-action-blue text-white",
-    name: "CCPA",
-    desc: "California Consumer Privacy Act",
+    desc: "Compliant with payment card industry data security standards.",
   },
 ];
 
@@ -70,32 +64,32 @@ const practices = [
   {
     icon: Lock,
     title: "Data Encryption",
-    desc: "End-to-end encryption for all data in transit and at rest",
+    desc: "All data is encrypted in transit and at rest using industry-standard protocols.",
   },
   {
     icon: ShieldCheck,
     title: "Access Control",
-    desc: "Role-based access to limit data exposure",
+    desc: "Role-based access control (RBAC) ensures that only authorized users can access data.",
   },
   {
-    icon: Activity,
+    icon: Monitor,
     title: "24/7 Monitoring",
-    desc: "Real-time threat detection and response",
+    desc: "Our systems are monitored around the clock to detect and respond to potential threats.",
   },
   {
     icon: Cloud,
     title: "Secure Infrastructure",
-    desc: "Encrypted servers and regular security audits",
+    desc: "Hosted on secure cloud platforms with firewalls, intrusion detection, and DDoS protection.",
   },
   {
     icon: ClipboardCheck,
     title: "Regular Audits",
-    desc: "Third-party penetration testing and compliance reviews",
+    desc: "We conduct regular security assessments and penetration testing.",
   },
   {
     icon: Users,
     title: "Security Training",
-    desc: "Ongoing employee training on security best practices",
+    desc: "Our team undergoes regular security training and follows best practices.",
   },
 ];
 
@@ -148,11 +142,12 @@ export default function CompliancePage() {
         <div className="max-w-[1200px] mx-auto px-6 py-16 lg:py-20">
           <div className="grid lg:grid-cols-2 gap-10 items-center">
             <div>
-              <h1 className="text-[36px] lg:text-[44px] font-bold text-deep-navy leading-tight">
+              <h1 className="text-[44px] font-bold text-deep-navy leading-tight tracking-[-0.02em]">
                 Compliance / Security
               </h1>
               <p className="mt-5 text-[18px] text-text-body leading-relaxed max-w-[480px]">
-                We adhere to the highest standards of security and compliance to protect your data.
+                At FulfillMesh, protecting your data and ensuring compliance with
+                industry standards is at the core of everything we do.
               </p>
               <div className="mt-6 flex items-center gap-3 rounded-xl border border-border-soft bg-soft-bg px-5 py-4">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-teal/10 text-teal">
@@ -179,21 +174,21 @@ export default function CompliancePage() {
           <p className="mt-3 text-[18px] text-text-body text-center">
             We comply with globally recognized standards and frameworks.
           </p>
-          <div className="mt-12 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-5">
+          <div className="mt-12 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-5">
             {certifications.map((cert, i) => (
               <div
                 key={i}
-                className="flex flex-col items-center text-center bg-white rounded-xl border border-[#E5E7EB] p-6 hover:shadow-[0_4px_6px_-1px_rgba(0,0,0,0.1)] hover:scale-[1.02] transition-all duration-200"
+                className="flex flex-col items-center text-center bg-white rounded-xl border border-border-soft p-6 shadow-card hover:scale-[1.02] transition-all duration-200"
               >
                 <span
-                  className={`inline-flex items-center justify-center rounded-md px-3 py-1 text-[12px] font-bold ${cert.badgeColor}`}
+                  className={`flex h-16 w-16 items-center justify-center rounded-full border-2 bg-white text-[12px] font-bold leading-[1.1] whitespace-pre-line ${cert.badgeColor}`}
                 >
                   {cert.badge}
                 </span>
-                <h3 className="mt-3 text-[14px] font-bold text-deep-navy">
+                <h3 className="mt-4 text-[15px] font-bold text-deep-navy">
                   {cert.name}
                 </h3>
-                <p className="mt-1.5 text-[12px] text-text-muted leading-relaxed">
+                <p className="mt-2 text-[12px] text-text-muted leading-relaxed">
                   {cert.desc}
                 </p>
               </div>
@@ -209,22 +204,19 @@ export default function CompliancePage() {
             Our Security Practices
           </h2>
           <p className="mt-3 text-[18px] text-text-body text-center">
-            Protecting your data with industry-leading security measures
+            We implement proactive measures to keep your data and operations secure.
           </p>
-          <div className="mt-12 grid md:grid-cols-2 gap-5">
+          <div className="mt-12 grid sm:grid-cols-2 lg:grid-cols-3 gap-x-10 gap-y-10">
             {practices.map((p, i) => (
-              <div
-                key={i}
-                className="flex items-start gap-4 bg-white rounded-xl border border-[#E5E7EB] p-5 hover:shadow-[0_4px_6px_-1px_rgba(0,0,0,0.1)] transition-all duration-200"
-              >
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-action-blue/10 text-action-blue">
+              <div key={i} className="flex items-start gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-teal/10 text-teal">
                   <p.icon className="w-5 h-5" />
                 </div>
                 <div>
                   <h3 className="text-[16px] font-bold text-deep-navy">
                     {p.title}
                   </h3>
-                  <p className="mt-1 text-[14px] text-text-muted leading-relaxed">
+                  <p className="mt-1.5 text-[14px] text-text-muted leading-relaxed">
                     {p.desc}
                   </p>
                 </div>
@@ -235,32 +227,27 @@ export default function CompliancePage() {
       </section>
 
       {/* CTA Banner */}
-      <section className="bg-soft-bg">
+      <section className="bg-white">
         <div className="max-w-[1200px] mx-auto px-6 pb-20">
-          <div className="bg-deep-navy rounded-2xl px-10 py-14 text-center relative overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-r from-deep-navy via-navy to-[#1E3A8A] opacity-80" />
-            <div className="relative z-10">
-              <h2 className="text-[32px] font-bold text-white leading-tight">
-                Security &amp; Compliance is Our Priority
-              </h2>
-              <p className="mt-4 text-[17px] text-text-on-dark-muted max-w-[520px] mx-auto">
-                We continuously evaluate and improve our security and compliance programs to align with evolving industry standards.
-              </p>
-              <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
-                <Link
-                  href="/contact"
-                  className="inline-flex items-center gap-2 px-7 py-3.5 text-[15px] font-semibold text-white rounded-lg gradient-cta hover:shadow-button transition-all"
-                >
-                  Contact Compliance Team <ArrowRight className="w-4 h-4" />
-                </Link>
-                <Link
-                  href="/book-a-demo"
-                  className="inline-flex items-center gap-2 px-7 py-3.5 text-[15px] font-semibold text-white rounded-lg border-2 border-white hover:bg-white/10 transition-all"
-                >
-                  Book a Demo
-                </Link>
-              </div>
+          <div className="flex flex-col md:flex-row md:items-center gap-5 rounded-2xl border border-border-soft bg-soft-bg px-8 py-7">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-teal/10 text-teal">
+              <ShieldCheck className="w-6 h-6" />
             </div>
+            <div className="flex-1">
+              <h2 className="text-[18px] font-bold text-deep-navy">
+                Compliance is our priority.
+              </h2>
+              <p className="mt-1 text-[14px] text-text-body leading-relaxed max-w-[560px]">
+                We continuously evaluate and improve our security and compliance
+                programs to align with evolving industry standards and regulations.
+              </p>
+            </div>
+            <Link
+              href="/contact"
+              className="shrink-0 inline-flex items-center gap-2 px-5 py-2.5 text-[14px] font-semibold text-action-blue rounded-lg border border-border-blue bg-white hover:bg-soft-bg transition-all"
+            >
+              Contact Compliance Team <ArrowRight className="w-4 h-4" />
+            </Link>
           </div>
         </div>
       </section>

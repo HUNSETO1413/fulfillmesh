@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowRight, CheckCircle, Loader2 } from "lucide-react";
+import { ArrowRight, CheckCircle, Loader2, Lock } from "lucide-react";
 
 const inputBase =
   "w-full rounded-lg border border-border-soft bg-white px-4 py-2.5 text-[14px] text-text-primary placeholder:text-text-light focus:outline-none focus:border-action-blue focus:ring-1 focus:ring-action-blue transition-colors";
@@ -134,15 +134,21 @@ export default function ContactForm() {
           {error}
         </p>
       )}
-      <button
-        type="submit"
-        disabled={loading}
-        className="mt-5 w-full inline-flex items-center justify-center gap-2 px-8 py-3 text-[14px] font-semibold text-white rounded-lg gradient-cta hover:shadow-button transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-      >
-        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-        {loading ? "Sending…" : "Submit"}
-        {!loading && <ArrowRight className="w-4 h-4" />}
-      </button>
+      <div className="mt-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <p className="inline-flex items-center gap-1.5 text-[12px] text-text-muted">
+          <Lock className="w-3.5 h-3.5 text-teal" />
+          Your information is secure and will never be shared.
+        </p>
+        <button
+          type="submit"
+          disabled={loading}
+          className="inline-flex items-center justify-center gap-2 px-7 py-3 text-[14px] font-semibold text-white rounded-lg bg-navy hover:bg-deep-navy transition-all disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
+        >
+          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+          {loading ? "Sending…" : "Send Message"}
+          {!loading && <ArrowRight className="w-4 h-4" />}
+        </button>
+      </div>
     </form>
   );
 }

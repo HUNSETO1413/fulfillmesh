@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import {
   Check, X, Minus, ArrowRight,
-  Globe, DollarSign, Zap, LayoutDashboard, Link2, Headphones, Target, Tag,
+  Globe, DollarSign, Zap, LayoutDashboard, Link2, Headphones, Target, Tag, Box, Truck,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import FinalCTA from "@/components/FinalCTA";
@@ -22,7 +22,7 @@ export const metadata: Metadata = pageMetadata({
   ],
 });
 
-const tabs = ["All e-Brands", "Features", "Pricing", "Integrations", "Best For"];
+const tabs = ["At a Glance", "Features", "Pricing", "Integrations", "Best For"];
 const columns = ["FulfillMesh", "ShipBob", "Flexport", "Deliverr"];
 
 type Cell = { mark?: "yes" | "no" | "partial"; text: string };
@@ -30,48 +30,48 @@ type Row = { icon: LucideIcon; name: string; desc: string; cells: Cell[] };
 
 const rows: Row[] = [
   {
-    icon: Globe, name: "Global Fulfillment Network", desc: "Vetted suppliers across China, US, EU & Asia",
+    icon: Globe, name: "Global Fulfillment Network", desc: "Multiple warehouses across US, EU and Asia",
     cells: [
-      { mark: "yes", text: "60+ locations" },
+      { mark: "yes", text: "50+ locations" },
       { mark: "yes", text: "40+ locations" },
-      { mark: "yes", text: "Global freight" },
-      { mark: "partial", text: "US-focused" },
+      { mark: "yes", text: "20+ locations" },
+      { mark: "yes", text: "20+ locations" },
     ],
   },
   {
-    icon: DollarSign, name: "Transparent Pricing", desc: "Upfront pricing with no hidden fees",
+    icon: DollarSign, name: "Transparent Pricing", desc: "Upfront rates with no hidden fees",
     cells: [
       { mark: "yes", text: "Upfront & transparent" },
       { mark: "partial", text: "Some hidden fees" },
-      { mark: "no", text: "Quote-based" },
-      { mark: "yes", text: "Flat-rate" },
+      { mark: "partial", text: "Quote-based" },
+      { mark: "yes", text: "Transparent" },
     ],
   },
   {
-    icon: Zap, name: "Fast Shipping", desc: "2-day delivery or less",
+    icon: Zap, name: "Fast Shipping", desc: "2-day delivery in major markets",
     cells: [
-      { mark: "yes", text: "2-day or less" },
-      { mark: "yes", text: "2-day" },
-      { mark: "no", text: "Freight timelines" },
-      { mark: "yes", text: "2-day" },
+      { mark: "yes", text: "2-day express" },
+      { mark: "yes", text: "2-3 days" },
+      { mark: "partial", text: "Varies" },
+      { mark: "yes", text: "1-2 days" },
     ],
   },
   {
     icon: LayoutDashboard, name: "Technology & Dashboard", desc: "Real-time tracking and analytics",
     cells: [
       { mark: "yes", text: "Advanced dashboard" },
-      { mark: "yes", text: "Standard" },
+      { mark: "yes", text: "Good" },
       { mark: "yes", text: "Advanced" },
-      { mark: "partial", text: "Basic" },
+      { mark: "yes", text: "Basic" },
     ],
   },
   {
-    icon: Link2, name: "Integrations", desc: "Connect with your store and tools",
+    icon: Link2, name: "Integrations", desc: "E-commerce platforms, marketplaces, and more",
     cells: [
       { mark: "yes", text: "100+ integrations" },
-      { mark: "yes", text: "80+ integrations" },
-      { mark: "yes", text: "60+ integrations" },
-      { mark: "yes", text: "40+ integrations" },
+      { mark: "yes", text: "90+ integrations" },
+      { mark: "yes", text: "100+ integrations" },
+      { mark: "yes", text: "30+ integrations" },
     ],
   },
   {
@@ -80,25 +80,25 @@ const rows: Row[] = [
       { mark: "yes", text: "24/7 dedicated" },
       { mark: "yes", text: "24/7" },
       { mark: "partial", text: "Business hours" },
-      { mark: "partial", text: "Business hours" },
+      { mark: "yes", text: "24/7" },
     ],
   },
   {
-    icon: Target, name: "Best For", desc: "Who each platform fits best",
+    icon: Target, name: "Best For", desc: "Ideal use cases",
     cells: [
       { text: "Growing brands & enterprises" },
-      { text: "SMB & mid-market" },
-      { text: "Enterprise & freight" },
-      { text: "SMB & startups" },
+      { text: "DTC brands & mid-market" },
+      { text: "Large enterprises & complex supply chains" },
+      { text: "DTC brands looking for fast delivery" },
     ],
   },
   {
-    icon: Tag, name: "Starting Price", desc: "Entry cost to get started",
+    icon: Tag, name: "Starting Price", desc: "Fulfillment pricing",
     cells: [
-      { text: "From $0.10 / order" },
+      { text: "From $0.70 / order" },
       { text: "From $0.85 / order" },
       { text: "Custom quote" },
-      { text: "From $0.95 / order" },
+      { text: "From $0.65 / order" },
     ],
   },
 ];
@@ -145,39 +145,63 @@ export default function ComparePage() {
               </p>
             </div>
 
-            {/* Comparison illustration card */}
-            <div className="hidden lg:flex items-center justify-center">
-              <div className="w-[360px] bg-white rounded-2xl shadow-card border border-[#E2E8F0] p-6">
-                {/* Column icon header */}
-                <div className="grid grid-cols-4 gap-4 pb-4 border-b border-border-soft">
-                  <div className="flex justify-center">
-                    <span className="w-11 h-11 rounded-xl gradient-logo inline-flex items-center justify-center shadow-sm">
-                      <span className="text-white text-[12px] font-bold">FM</span>
-                    </span>
-                  </div>
-                  {["SB", "FP", "DL"].map((c, i) => (
-                    <div key={i} className="flex justify-center">
-                      <span className="w-11 h-11 rounded-xl bg-soft-bg border border-border-soft inline-flex items-center justify-center">
-                        <span className="text-[12px] font-bold text-text-muted">{c}</span>
-                      </span>
-                    </div>
-                  ))}
+            {/* Comparison clipboard illustration */}
+            <div className="hidden lg:flex items-center justify-center relative">
+              {/* Decorative accents */}
+              <div className="absolute left-2 top-1/2 -translate-y-1/2 w-44 h-44 rounded-full bg-soft-bg/70" aria-hidden="true" />
+              <div className="absolute -bottom-2 right-8 w-16 h-16 rounded-full bg-teal/80" aria-hidden="true" />
+              <span className="absolute left-8 bottom-10 text-action-blue/30 text-2xl select-none" aria-hidden="true">+</span>
+              <span className="absolute right-6 top-1/2 text-action-blue/30 text-2xl select-none" aria-hidden="true">+</span>
+
+              <div className="relative w-[380px]">
+                {/* Clip */}
+                <div className="absolute left-1/2 -top-3 -translate-x-1/2 w-24 h-7 rounded-md bg-action-blue z-10 flex items-center justify-center shadow-button">
+                  <span className="w-2.5 h-2.5 rounded-full bg-white/90" />
                 </div>
-                {/* Rows of marks */}
-                {[
-                  ["yes", "yes", "partial", "no"],
-                  ["yes", "partial", "no", "yes"],
-                  ["yes", "yes", "no", "yes"],
-                  ["yes", "partial", "partial", "no"],
-                ].map((row, ri) => (
-                  <div key={ri} className="grid grid-cols-4 gap-4 py-4 border-b border-border-soft/50 last:border-0">
-                    {row.map((m, ci) => (
-                      <div key={ci} className="flex justify-center">
-                        <Mark mark={m as "yes" | "no" | "partial"} />
+                {/* Clipboard body */}
+                <div className="rounded-2xl bg-[#EEF3FB] border border-border-soft shadow-card pt-7 pb-6 px-6">
+                  <div className="rounded-xl bg-white border border-border-soft p-5">
+                    {/* Column icon header */}
+                    <div className="grid grid-cols-3 gap-3 pb-4 mb-1">
+                      {[
+                        <span key="fm" className="text-[15px] font-extrabold"><span className="text-deep-navy">F</span><span className="text-teal">M</span></span>,
+                        <Box key="box" className="w-6 h-6 text-action-blue" strokeWidth={1.75} />,
+                        <Truck key="truck" className="w-6 h-6 text-deep-navy" strokeWidth={1.75} />,
+                      ].map((node, i) => (
+                        <div key={i} className="flex justify-center">
+                          <span className="w-14 h-14 rounded-xl bg-soft-bg inline-flex items-center justify-center">
+                            {node}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    {/* Rows of marks */}
+                    {[
+                      ["yes", "yes", "yes"],
+                      ["yes", "partial", "yes"],
+                      ["yes", "partial", "no"],
+                      ["yes", "yes", "yes"],
+                    ].map((row, ri) => (
+                      <div key={ri} className="grid grid-cols-3 gap-3 py-3 border-t border-border-soft/70">
+                        {row.map((m, ci) => (
+                          <div key={ci} className="flex justify-center text-text-muted">
+                            {m === "yes" ? (
+                              <Check className="w-4 h-4 text-teal" strokeWidth={3} />
+                            ) : m === "partial" ? (
+                              <Minus className="w-4 h-4 text-amber-400" strokeWidth={3} />
+                            ) : (
+                              <X className="w-4 h-4 text-text-muted" strokeWidth={3} />
+                            )}
+                          </div>
+                        ))}
                       </div>
                     ))}
                   </div>
-                ))}
+                </div>
+                {/* Floating teal check badge */}
+                <span className="absolute -bottom-4 right-6 w-11 h-11 rounded-full bg-teal inline-flex items-center justify-center shadow-button ring-4 ring-white z-10">
+                  <Check className="w-5 h-5 text-white" strokeWidth={3} />
+                </span>
               </div>
             </div>
           </div>

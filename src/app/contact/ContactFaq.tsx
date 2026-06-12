@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 
 const faqs = [
+  { q: "How quickly can you get started?", a: "Most brands are fully onboarded within 5 to 7 business days. After a quick call to understand your products and goals, we match you with vetted partners and get your first orders moving fast." },
   { q: "Do you work with businesses of all sizes?", a: "Yes, we work with businesses of all sizes — from startups just launching their first product to established brands shipping thousands of orders per month. Our solutions are designed to scale with your growth." },
   { q: "Where are your warehouses located?", a: "Our main fulfillment centers are located in Shenzhen and Guangzhou, China, with additional partner warehouses in the US, Europe, and Southeast Asia for global distribution." },
   { q: "How do you ensure product quality?", a: "We conduct rigorous on-site inspections at every stage — from pre-production checks to final random inspections before shipping, ensuring your products meet your specifications." },

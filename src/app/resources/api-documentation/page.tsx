@@ -11,6 +11,7 @@ import {
   Layers,
   Filter,
   Clock,
+  MessageCircle,
 } from "lucide-react";
 import { pageMetadata } from "@/lib/seo";
 
@@ -29,6 +30,19 @@ export const metadata: Metadata = pageMetadata({
 });
 
 const noteIcons = [Layers, Filter, Clock];
+
+const onThisPage: { label: string; heading?: boolean }[] = [
+  { label: "List Orders", heading: true },
+  { label: "Request URL" },
+  { label: "Query Parameters" },
+  { label: "Example Request" },
+  { label: "Example Response" },
+  { label: "Create Order", heading: true },
+  { label: "Request Body" },
+  { label: "Example Response" },
+  { label: "Status Codes" },
+  { label: "Notes" },
+];
 
 const sidebarGroups = [
   {
@@ -421,46 +435,33 @@ export default function ApiDocumentationPage() {
             </section>
           </main>
 
-          {/* ───── Right Sidebar ───── */}
+          {/* ───── Right Sidebar — On this page ───── */}
           <aside className="hidden xl:block w-52 shrink-0">
             <div className="sticky top-6 space-y-6">
-              {/* Quick Stats */}
-              <div>
-                <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wider mb-3">Quick Stats</p>
-                <div className="space-y-3">
-                  <div className="rounded-lg border border-border-soft bg-white p-3">
-                    <p className="text-[10px] text-text-muted uppercase tracking-wide">API Calls Today</p>
-                    <p className="text-[18px] font-bold text-deep-navy mt-0.5">1,284</p>
-                  </div>
-                  <div className="rounded-lg border border-border-soft bg-white p-3">
-                    <p className="text-[10px] text-text-muted uppercase tracking-wide">Uptime</p>
-                    <p className="text-[18px] font-bold text-teal mt-0.5">99.98%</p>
-                  </div>
-                  <div className="rounded-lg border border-border-soft bg-white p-3">
-                    <p className="text-[10px] text-text-muted uppercase tracking-wide">Avg Response Time</p>
-                    <p className="text-[18px] font-bold text-deep-navy mt-0.5">142ms</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Recent Activity */}
-              <div>
-                <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wider mb-3">Recent Activity</p>
-                <div className="space-y-2">
-                  {[
-                    { method: "GET", path: "/v1/orders", status: "200", time: "2 min ago" },
-                    { method: "POST", path: "/v1/orders", status: "201", time: "15 min ago" },
-                    { method: "GET", path: "/v1/shipments", status: "200", time: "32 min ago" },
-                    { method: "GET", path: "/v1/inventory", status: "200", time: "1 hr ago" },
-                    { method: "POST", path: "/v1/orders", status: "400", time: "2 hr ago" },
-                  ].map((call, i) => (
-                    <div key={i} className="flex items-center gap-2 text-[11px] rounded-lg border border-border-soft bg-white px-3 py-2">
-                      <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold text-white ${call.method === "GET" ? "bg-teal" : "bg-action-blue"}`}>{call.method}</span>
-                      <span className="truncate font-mono text-text-body flex-1">{call.path}</span>
-                      <span className={`shrink-0 font-mono font-semibold ${call.status.startsWith("2") ? "text-teal" : "text-red-500"}`}>{call.status}</span>
-                    </div>
+              {/* On this page TOC */}
+              <nav>
+                <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wider mb-3">On this page</p>
+                <ul className="space-y-1 text-sm">
+                  {onThisPage.map((entry, i) => (
+                    <li key={i}>
+                      <span className={`block py-1 cursor-pointer transition-colors ${entry.heading ? "font-semibold text-text-primary mt-2 first:mt-0" : "text-text-muted hover:text-action-blue pl-3 border-l border-border-soft"}`}>
+                        {entry.label}
+                      </span>
+                    </li>
                   ))}
+                </ul>
+              </nav>
+
+              {/* Still have questions card */}
+              <div className="rounded-2xl bg-soft-bg border border-border-soft p-4">
+                <div className="w-9 h-9 rounded-lg bg-white border border-border-soft flex items-center justify-center mb-3">
+                  <MessageCircle className="w-4 h-4 text-action-blue" />
                 </div>
+                <p className="text-sm font-semibold text-deep-navy mb-1">Still have questions?</p>
+                <p className="text-xs text-text-muted leading-relaxed mb-3">Our developer support team is here to help.</p>
+                <Link href="/contact" className="text-xs font-semibold text-action-blue inline-flex items-center gap-1 hover:underline">
+                  Contact Support <ArrowRight className="w-3 h-3" />
+                </Link>
               </div>
             </div>
           </aside>

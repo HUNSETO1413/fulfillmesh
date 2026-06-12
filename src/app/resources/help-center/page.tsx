@@ -158,7 +158,7 @@ export default function HelpCenterPage() {
       <section className="bg-white">
         <div className="max-w-[1200px] mx-auto px-6 py-14">
           <div className="flex items-center justify-between mb-10">
-            <h2 className="text-2xl font-bold text-navy">Browse help by category</h2>
+            <h2 className="text-2xl font-bold text-deep-navy">Browse help by category</h2>
             <Link href="/resources/help-center" className="inline-flex items-center gap-1 text-sm font-medium text-action-blue hover:underline">
               View all categories <ArrowRight className="w-3.5 h-3.5" />
             </Link>
@@ -170,10 +170,12 @@ export default function HelpCenterPage() {
                 href="/resources/help-center/getting-started"
                 className="group flex flex-col p-6 rounded-2xl border border-border-soft hover:shadow-card hover:-translate-y-0.5 transition-all duration-300"
               >
-                <div className="w-11 h-11 rounded-xl bg-soft-bg flex items-center justify-center mb-4">
-                  <c.icon className="w-5 h-5 text-action-blue" />
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-10 h-10 rounded-xl bg-soft-bg flex items-center justify-center shrink-0">
+                    <c.icon className="w-5 h-5 text-action-blue" />
+                  </div>
+                  <h3 className="text-base font-semibold text-text-primary leading-snug">{c.title}</h3>
                 </div>
-                <h3 className="text-base font-semibold text-text-primary mb-2">{c.title}</h3>
                 <p className="text-xs text-text-body leading-relaxed flex-1">{c.desc}</p>
                 <span className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-action-blue">
                   Explore <ArrowRight className="w-3 h-3" />
@@ -188,7 +190,7 @@ export default function HelpCenterPage() {
       <section className="bg-white">
         <div className="max-w-[1200px] mx-auto px-6 pb-14">
           <div className="flex items-center justify-between mb-8">
-            <h2 className="text-2xl font-bold text-navy">Popular articles</h2>
+            <h2 className="text-2xl font-bold text-deep-navy">Popular articles</h2>
             <Link href="/resources/help-center" className="inline-flex items-center gap-1 text-sm font-medium text-action-blue hover:underline">
               View all articles <ArrowRight className="w-3.5 h-3.5" />
             </Link>
@@ -230,7 +232,7 @@ export default function HelpCenterPage() {
         <div className="max-w-[1200px] mx-auto px-6 py-14 grid lg:grid-cols-3 gap-8">
           {/* FAQ */}
           <div>
-            <h2 className="text-xl font-bold text-navy mb-5">Frequently asked questions</h2>
+            <h2 className="text-xl font-bold text-deep-navy mb-5">Frequently asked questions</h2>
             <div className="space-y-3">
               {faqs.map((q, i) => (
                 <details key={i} className="group rounded-xl border border-border-soft bg-white overflow-hidden">
@@ -253,7 +255,7 @@ export default function HelpCenterPage() {
 
           {/* Quick links */}
           <div>
-            <h2 className="text-xl font-bold text-navy mb-5">Quick links</h2>
+            <h2 className="text-xl font-bold text-deep-navy mb-5">Quick links</h2>
             <div className="space-y-3">
               {quickLinks.map((l, i) => (
                 <Link key={i} href="/resources" className="flex items-center gap-3 p-3 rounded-xl bg-white border border-border-soft hover:shadow-soft transition-all">

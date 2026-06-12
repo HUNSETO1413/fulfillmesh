@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import {
   Eye, Building2, Bell, Truck, Box, BarChart3, ArrowRight, CheckCircle2,
-  Users, Warehouse, MonitorCheck, ChevronDown, Layers, Globe, ShieldCheck,
+  Users, Warehouse, MonitorCheck,
 } from "lucide-react";
 import { pageMetadata } from "@/lib/seo";
 
@@ -64,28 +64,6 @@ const insightStats = [
   { label: "Sell-Through", value: "97.4%", delta: "+2.1%" },
   { label: "Stockout Rate", value: "1.2%", delta: "-0.4%" },
   { label: "Days of Supply", value: "28", delta: "-3" },
-];
-
-const timeline = [
-  { icon: Users, title: "Connect Sources", desc: "Link suppliers, warehouses, and sales channels to one platform." },
-  { icon: Eye, title: "Real-Time Sync", desc: "Inventory updates automatically as stock moves through your supply chain." },
-  { icon: Bell, title: "Alerts & Rules", desc: "Set up low-stock alerts, reorder points, and automated triggers." },
-  { icon: BarChart3, title: "Analyze Trends", desc: "Use historical data and forecasts to optimize inventory levels." },
-  { icon: CheckCircle2, title: "Optimize & Scale", desc: "Continuously improve planning accuracy and scale with confidence." },
-];
-
-const stats = [
-  { icon: Warehouse, value: "100+", label: "Warehouse Locations" },
-  { icon: Globe, value: "40+", label: "Countries Covered" },
-  { icon: Layers, value: "99.2%", label: "Inventory Accuracy" },
-  { icon: ShieldCheck, value: "24/7", label: "Real-Time Monitoring" },
-];
-
-const faqs = [
-  { q: "How often is inventory data updated?" },
-  { q: "Can I track inventory across multiple warehouses?" },
-  { q: "Do you support multi-channel inventory sync?" },
-  { q: "How does demand forecasting work?" },
 ];
 
 export default function InventoryVisibilityPage() {
@@ -257,9 +235,11 @@ export default function InventoryVisibilityPage() {
           <div className="relative grid md:grid-cols-4 gap-6">
             {works.map((w, i) => (
               <div key={w.title} className="relative bg-soft-bg rounded-xl border border-border-soft p-6">
-                <div className="w-12 h-12 rounded-2xl bg-action-blue/10 flex items-center justify-center mb-4"><w.icon className="w-6 h-6 text-action-blue" /></div>
-                <h3 className="text-[15px] font-bold text-deep-navy">{w.title}</h3>
-                <p className="mt-2 text-[13px] text-text-muted leading-relaxed">{w.desc}</p>
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-11 h-11 rounded-2xl bg-action-blue/10 flex items-center justify-center shrink-0"><w.icon className="w-5 h-5 text-action-blue" /></div>
+                  <h3 className="text-[15px] font-bold text-deep-navy">{w.title}</h3>
+                </div>
+                <p className="text-[13px] text-text-muted leading-relaxed">{w.desc}</p>
                 {i < works.length - 1 && (<ArrowRight className="hidden md:block absolute top-1/2 -right-4 -translate-y-1/2 w-4 h-4 text-[#ABB9DB]" />)}
               </div>
             ))}
@@ -302,79 +282,8 @@ export default function InventoryVisibilityPage() {
         </div>
       </section>
 
-      {/* Timeline */}
-      <section className="bg-soft-bg">
-        <div className="max-w-[1200px] mx-auto px-6 py-20">
-          <div className="text-center max-w-[640px] mx-auto mb-16">
-            <h2 className="text-[30px] font-bold text-deep-navy leading-tight">From connection to complete visibility</h2>
-            <p className="mt-3 text-[16px] text-text-body">A transparent process to get your inventory fully visible and under control.</p>
-          </div>
-          <div className="relative grid md:grid-cols-5 gap-6">
-            <div className="hidden md:block absolute top-7 left-[8%] right-[8%] h-px bg-border-blue" />
-            {timeline.map((t, i) => (
-              <div key={i} className="relative">
-                <div className="w-14 h-14 rounded-full bg-white border border-border-soft shadow-soft flex items-center justify-center mb-5 relative z-10 mx-auto">
-                  <t.icon className="w-6 h-6 text-action-blue" />
-                </div>
-                <h3 className="text-[14px] font-bold text-deep-navy text-center">
-                  <span className="text-[13px] font-semibold text-text-muted">Step {i + 1}:</span>{" "}
-                  {t.title}
-                </h3>
-                <p className="mt-2 text-[12px] text-text-muted leading-relaxed text-center">{t.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Connected platform stats */}
-      <section className="bg-white">
-        <div className="max-w-[1200px] mx-auto px-6 pb-20">
-          <div className="bg-deep-navy rounded-2xl p-10">
-            <div className="grid lg:grid-cols-2 gap-10 items-center">
-              <div>
-                <span className="inline-block text-[12px] font-bold tracking-[0.12em] text-teal bg-teal/10 rounded-full px-3 py-1">ONE CONNECTED PLATFORM</span>
-                <h2 className="mt-5 text-[28px] font-bold text-white leading-tight">
-                  Inventory Visibility, connected to your fulfillment operations
-                </h2>
-                <p className="mt-4 text-[15px] text-text-on-dark-muted leading-relaxed max-w-[400px]">
-                  Seamlessly sync inventory data across orders, warehouses, suppliers, and sales channels — all in one platform.
-                </p>
-                <Link href="/solutions" className="mt-5 inline-flex items-center gap-1 text-[14px] font-semibold text-teal">
-                  Learn more about our platform <ArrowRight className="w-4 h-4" />
-                </Link>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 gap-6">
-                {stats.map((s) => (
-                  <div key={s.label} className="text-center">
-                    <s.icon className="w-8 h-8 text-teal mx-auto mb-3" />
-                    <p className="text-[32px] font-bold text-white leading-none">{s.value}</p>
-                    <p className="mt-2 text-[13px] text-text-on-dark-soft">{s.label}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* FAQ */}
-      <section className="bg-soft-bg">
-        <div className="max-w-[800px] mx-auto px-6 py-20">
-          <h2 className="text-[30px] font-bold text-deep-navy text-center mb-12">Questions? We&apos;ve got answers.</h2>
-          <div className="space-y-4">
-            {faqs.map((f) => (
-              <div key={f.q} className="bg-white rounded-xl border border-border-soft px-5 py-4 flex items-center justify-between">
-                <span className="text-[15px] font-semibold text-deep-navy pr-4">{f.q}</span>
-                <ChevronDown className="w-5 h-5 text-text-muted shrink-0" />
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* CTA */}
-      <section className="bg-white pb-20">
+      <section className="bg-white py-20">
         <div className="max-w-[1100px] mx-auto px-6">
           <div className="rounded-2xl text-white text-center px-6 py-14" style={{ background: "linear-gradient(135deg, #001F5E 0%, #00216A 50%, #001B52 100%)" }}>
             <h2 className="text-[30px] font-bold leading-tight">Ready to gain total inventory visibility?</h2>

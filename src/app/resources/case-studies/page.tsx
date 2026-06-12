@@ -346,7 +346,7 @@ export default function CaseStudiesPage() {
       <section id="all-case-studies" className="bg-white">
         <div className="max-w-[1200px] mx-auto px-6 py-14">
           <div className="flex items-center justify-between mb-8">
-            <h2 className="text-2xl font-bold text-navy">All case studies</h2>
+            <h2 className="text-2xl font-bold text-deep-navy">All case studies</h2>
             <Link href="/resources/case-studies" className="inline-flex items-center gap-1 text-sm font-medium text-action-blue hover:underline">
               View all case studies <ArrowRight className="w-3.5 h-3.5" />
             </Link>
