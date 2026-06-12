@@ -1,22 +1,34 @@
-"use client";
+import type { Metadata } from "next";
+import { ClipboardList, Search, FileCheck, Rocket, ShieldCheck, Clock, BadgeDollarSign } from "lucide-react";
+import { pageMetadata } from "@/lib/seo";
+import GetStartedForm from "./GetStartedForm";
 
-import { useState } from "react";
-import Link from "next/link";
-import { ArrowRight, CheckCircle2, ClipboardList } from "lucide-react";
+export const metadata: Metadata = pageMetadata({
+  title: "Get Started",
+  description:
+    "Tell us about your business and we'll match you with the right China-powered fulfillment partners and build a personalized plan. Free to get started, no obligations.",
+  path: "/get-started",
+  keywords: [
+    "get started fulfillment",
+    "fulfillment matching",
+    "china fulfillment quote",
+    "find fulfillment partner",
+  ],
+});
 
-const steps = [
-  { id: 1, title: "Your Business", fields: ["company", "website", "platform"] },
-  { id: 2, title: "Your Products", fields: ["category", "volume", "destinations"] },
-  { id: 3, title: "Your Needs", fields: ["solutions", "timeline", "budget"] },
+const next = [
+  { icon: Search, title: "We review your needs", desc: "Our team analyzes your products, volume and goals to understand the best fit." },
+  { icon: FileCheck, title: "Get matched partners", desc: "Within 24 hours you'll receive vetted suppliers and fulfillment partners." },
+  { icon: Rocket, title: "Launch with confidence", desc: "Onboard, connect your store and start shipping smarter from China." },
 ];
 
-const inputBase = "w-full rounded-xl border border-border-soft bg-white px-4 py-3 text-sm text-text-primary placeholder:text-text-light focus:outline-none focus:border-teal focus:ring-1 focus:ring-teal transition-colors";
-
-const selectBase = "w-full rounded-xl border border-border-soft bg-white px-4 py-3 text-sm text-text-body focus:outline-none focus:border-teal focus:ring-1 focus:ring-teal transition-colors";
+const perks = [
+  { icon: BadgeDollarSign, label: "Free to get started" },
+  { icon: ShieldCheck, label: "No obligations" },
+  { icon: Clock, label: "Reply within 24 hours" },
+];
 
 export default function GetStartedPage() {
-  const [currentStep, setCurrentStep] = useState(0);
-
   return (
     <main>
       {/* Hero */}
@@ -34,144 +46,48 @@ export default function GetStartedPage() {
         </div>
       </section>
 
-      <section className="bg-white">
-        <div className="max-w-[800px] mx-auto px-6 py-20 lg:py-24">
-          {/* Progress */}
-          <div className="flex items-center gap-3 mb-12">
-            {steps.map((step, i) => (
-              <div key={step.id} className="flex items-center gap-3 flex-1">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold ${
-                  i <= currentStep ? "gradient-cta text-white" : "bg-soft-bg text-text-muted"
-                }`}>
-                  {i < currentStep ? <CheckCircle2 className="w-5 h-5" /> : step.id}
-                </div>
-                <span className={`text-sm font-medium hidden sm:block ${i <= currentStep ? "text-navy" : "text-text-muted"}`}>
-                  {step.title}
-                </span>
-                {i < steps.length - 1 && <div className="flex-1 h-px bg-border-soft" />}
-              </div>
-            ))}
-          </div>
+      <section className="bg-soft-bg">
+        <div className="max-w-[1200px] mx-auto px-6 py-16 lg:py-20">
+          <div className="grid lg:grid-cols-[5fr_7fr] gap-10 items-start">
+            {/* Sidebar */}
+            <aside className="lg:sticky lg:top-24">
+              <h2 className="text-[22px] font-bold text-deep-navy leading-tight">What happens next</h2>
+              <p className="mt-2 text-[14px] text-text-body leading-relaxed">
+                Three simple steps from your details to a fulfillment plan built around your brand.
+              </p>
+              <ul className="mt-6 space-y-5">
+                {next.map((n, i) => (
+                  <li key={n.title} className="flex gap-4">
+                    <div className="relative shrink-0">
+                      <div className="w-10 h-10 rounded-lg bg-action-blue/10 flex items-center justify-center">
+                        <n.icon className="w-5 h-5 text-action-blue" />
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[12px] font-bold text-teal">Step {i + 1}</span>
+                        <h3 className="text-[15px] font-semibold text-deep-navy">{n.title}</h3>
+                      </div>
+                      <p className="mt-1 text-[13px] text-text-body leading-relaxed">{n.desc}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
 
-          {/* Form */}
-          <div className="bg-white rounded-2xl p-8 border border-border-soft shadow-soft">
-            {currentStep === 0 && (
-              <div className="space-y-5">
-                <h2 className="text-xl font-bold text-navy">Tell us about your business</h2>
-                <div>
-                  <label className="block text-sm font-medium text-text-primary mb-1.5">Company name</label>
-                  <input type="text" className={inputBase} placeholder="Your company name" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-text-primary mb-1.5">Website</label>
-                  <input type="url" className={inputBase} placeholder="https://yourstore.com" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-text-primary mb-1.5">Platform</label>
-                  <select className={selectBase}>
-                    <option>Select your platform</option>
-                    <option>Shopify</option>
-                    <option>WooCommerce</option>
-                    <option>Amazon</option>
-                    <option>eBay</option>
-                    <option>BigCommerce</option>
-                    <option>Custom / Other</option>
-                  </select>
-                </div>
+              <div className="mt-8 flex flex-wrap gap-x-5 gap-y-2">
+                {perks.map((p) => (
+                  <span key={p.label} className="inline-flex items-center gap-1.5 text-[12px] text-text-body">
+                    <p.icon className="w-3.5 h-3.5 text-teal" /> {p.label}
+                  </span>
+                ))}
               </div>
-            )}
+            </aside>
 
-            {currentStep === 1 && (
-              <div className="space-y-5">
-                <h2 className="text-xl font-bold text-navy">Tell us about your products</h2>
-                <div>
-                  <label className="block text-sm font-medium text-text-primary mb-1.5">Product category</label>
-                  <select className={selectBase}>
-                    <option>Select a category</option>
-                    <option>Fashion & Apparel</option>
-                    <option>Electronics</option>
-                    <option>Home & Garden</option>
-                    <option>Beauty & Personal Care</option>
-                    <option>Sports & Outdoors</option>
-                    <option>Toys & Games</option>
-                    <option>Other</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-text-primary mb-1.5">Monthly order volume</label>
-                  <select className={selectBase}>
-                    <option>Select your volume</option>
-                    <option>Less than 100</option>
-                    <option>100 - 500</option>
-                    <option>500 - 2,000</option>
-                    <option>2,000 - 10,000</option>
-                    <option>10,000+</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-text-primary mb-1.5">Primary destinations</label>
-                  <input type="text" className={inputBase} placeholder="e.g., US, UK, Germany, Australia" />
-                </div>
-              </div>
-            )}
-
-            {currentStep === 2 && (
-              <div className="space-y-5">
-                <h2 className="text-xl font-bold text-navy">What do you need help with?</h2>
-                <div>
-                  <label className="block text-sm font-medium text-text-primary mb-3">Select solutions you&apos;re interested in</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {["Supplier Matching", "Quality Control", "Packaging", "Shipping", "Warehousing", "Returns", "Analytics"].map((s) => (
-                      <label key={s} className="flex items-center gap-2.5 p-3 rounded-xl border border-border-soft hover:border-teal cursor-pointer transition-colors">
-                        <input type="checkbox" className="h-4 w-4 rounded border-border-soft text-teal focus:ring-teal focus:ring-offset-0 accent-teal" />
-                        <span className="text-sm text-text-body">{s}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-text-primary mb-1.5">When do you need to start?</label>
-                  <select className={selectBase}>
-                    <option>Select a timeline</option>
-                    <option>Immediately</option>
-                    <option>Within 2 weeks</option>
-                    <option>Within a month</option>
-                    <option>Just exploring</option>
-                  </select>
-                </div>
-              </div>
-            )}
-
-            {/* Navigation */}
-            <div className="mt-8 flex items-center justify-between">
-              <button
-                onClick={() => setCurrentStep(Math.max(0, currentStep - 1))}
-                className={`px-5 py-2.5 text-sm font-medium rounded-xl border border-border-soft text-text-body hover:shadow-soft transition-all ${currentStep === 0 ? "invisible" : ""}`}
-              >
-                Previous
-              </button>
-              {currentStep < steps.length - 1 ? (
-                <button
-                  onClick={() => setCurrentStep(currentStep + 1)}
-                  className="inline-flex items-center gap-2 px-7 py-3 text-base font-semibold text-white rounded-xl gradient-cta hover:shadow-button transition-all"
-                >
-                  Next <ArrowRight className="w-4 h-4" />
-                </button>
-              ) : (
-                <button
-                  onClick={() => alert("Form submitted! We'll be in touch within 24 hours.")}
-                  className="inline-flex items-center gap-2 px-7 py-3 text-base font-semibold text-white rounded-xl gradient-cta hover:shadow-button transition-all"
-                >
-                  Submit <ArrowRight className="w-4 h-4" />
-                </button>
-              )}
+            {/* Form */}
+            <div>
+              <GetStartedForm />
             </div>
           </div>
-
-          <p className="mt-6 text-center text-sm text-text-muted">
-            Prefer to talk?{" "}
-            <Link href="/book-a-demo" className="font-medium text-teal hover:text-teal/80 transition-colors">Book a demo instead</Link>
-          </p>
         </div>
       </section>
     </main>

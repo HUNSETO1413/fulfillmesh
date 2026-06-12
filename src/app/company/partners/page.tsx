@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight, Handshake, ShieldCheck, BarChart3, Globe, Users, Zap, CheckCircle2 } from "lucide-react";
+import {
+  ArrowRight, Handshake, ShieldCheck, BarChart3, Globe, Users, Zap, CheckCircle2,
+  TrendingUp, FileText, Sparkles, Rocket,
+} from "lucide-react";
 import { pageMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = pageMetadata({
@@ -51,6 +54,20 @@ const stats = [
   { value: "$50M+", label: "Partner Revenue Generated" },
 ];
 
+const whyPartner = [
+  { icon: TrendingUp, title: "Grow your revenue", desc: "Tap into a steady pipeline of qualified brands and earn recurring referral and revenue-share income." },
+  { icon: Handshake, title: "Co-sell & co-market", desc: "Joint campaigns, webinars and case studies that put your business in front of new customers." },
+  { icon: BarChart3, title: "Real-time visibility", desc: "A partner dashboard for leads, performance and payouts — fully transparent, no guesswork." },
+  { icon: ShieldCheck, title: "Dedicated support", desc: "A partner manager, certification and onboarding resources to help you succeed from day one." },
+];
+
+const partnerSteps = [
+  { icon: FileText, n: "1", title: "Apply", desc: "Tell us about your business and the program that fits you best." },
+  { icon: Sparkles, n: "2", title: "Get onboarded", desc: "We review, approve and set you up with tools, training and your partner manager." },
+  { icon: Zap, n: "3", title: "Start collaborating", desc: "Co-sell, integrate or take on matched brands and orders through the platform." },
+  { icon: Rocket, n: "4", title: "Grow together", desc: "Track performance, earn payouts and scale your partnership as you deliver results." },
+];
+
 export default function PartnersPage() {
   return (
     <>
@@ -79,8 +96,29 @@ export default function PartnersPage() {
         </div>
       </section>
 
-      {/* Partner Programs */}
+      {/* Why partner */}
       <section className="bg-soft-bg">
+        <div className="max-w-[1200px] mx-auto px-6 py-20 lg:py-24">
+          <div className="text-center max-w-[640px] mx-auto mb-12">
+            <h2 className="text-3xl font-bold text-navy">Why partner with FulfillMesh</h2>
+            <p className="mt-3 text-text-body">Real value for your business, your clients and the brands we serve together.</p>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {whyPartner.map((w) => (
+              <div key={w.title} className="bg-white rounded-xl p-6 border border-border-soft hover:shadow-card transition-all text-center">
+                <div className="mx-auto w-11 h-11 rounded-lg bg-teal/10 flex items-center justify-center mb-4">
+                  <w.icon className="w-5 h-5 text-teal" />
+                </div>
+                <h3 className="font-semibold text-text-primary">{w.title}</h3>
+                <p className="mt-2 text-sm text-text-body leading-relaxed">{w.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Partner Programs */}
+      <section className="bg-white">
         <div className="max-w-[1200px] mx-auto px-6 py-20 lg:py-24">
           <h2 className="text-3xl font-bold text-navy">Our Partner Programs</h2>
           <p className="mt-4 text-text-body">Choose the program that fits your business.</p>
@@ -104,6 +142,30 @@ export default function PartnersPage() {
                     </ul>
                   </div>
                 </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* How partnership works */}
+      <section className="bg-soft-bg">
+        <div className="max-w-[1200px] mx-auto px-6 py-20 lg:py-24">
+          <div className="text-center max-w-[640px] mx-auto mb-12">
+            <h2 className="text-3xl font-bold text-navy">How partnership works</h2>
+            <p className="mt-3 text-text-body">From application to growth in four simple steps.</p>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            {partnerSteps.map((s) => (
+              <div key={s.n} className="text-center px-2">
+                <div className="mx-auto w-12 h-12 rounded-full bg-action-blue/10 flex items-center justify-center">
+                  <s.icon className="w-5 h-5 text-action-blue" />
+                </div>
+                <div className="mt-3 inline-flex items-center gap-1.5">
+                  <span className="text-[12px] font-bold text-teal">{s.n}</span>
+                  <h3 className="text-[15px] font-semibold text-deep-navy">{s.title}</h3>
+                </div>
+                <p className="mt-1.5 text-[12px] text-text-body leading-relaxed">{s.desc}</p>
               </div>
             ))}
           </div>
