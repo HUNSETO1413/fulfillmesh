@@ -1,0 +1,175 @@
+@import "tailwindcss";
+
+/* ========== FulfillMesh Design Tokens ========== */
+:root {
+  /* Brand Colors */
+  --color-navy: #003B7A;
+  --color-deep-navy: #061A3D;
+  --color-midnight: #020D26;
+  --color-teal: #00B894;
+  --color-teal-bright: #10D6B0;
+  --color-blue-teal: #007F8C;
+  --color-action-blue: #0057D8;
+
+  /* Neutral */
+  --color-white: #FFFFFF;
+  --color-bg: #F7FAFC;
+  --color-border: #E6EDF5;
+  --color-border-blue: #D9E5F2;
+
+  /* Text */
+  --text-primary: #061A3D;
+  --text-heading: #003B7A;
+  --text-body: #4A5A73;
+  --text-muted: #66758C;
+  --text-light: #9AA8B8;
+  --text-inverse: #FFFFFF;
+  --text-on-dark-muted: #B8C7DA;
+  --text-on-dark-soft: #D9E5F2;
+  --text-accent: #00B894;
+
+  /* Chart Colors */
+  --chart-blue: #0057D8;
+  --chart-teal: #00B894;
+  --chart-light-blue: #7CB7FF;
+  --chart-purple: #7C6FF6;
+  --chart-gray: #D9E5F2;
+
+  /* Background */
+  --background: #FFFFFF;
+  --foreground: #061A3D;
+}
+
+@theme inline {
+  /* Brand Colors */
+  --color-navy: #003B7A;
+  --color-deep-navy: #061A3D;
+  --color-midnight: #020D26;
+  --color-teal: #00B894;
+  --color-bright-teal: #10D6B0;
+  --color-blue-teal: #007F8C;
+  --color-action-blue: #0057D8;
+
+  /* Neutral */
+  --color-soft-bg: #F7FAFC;
+  --color-border-soft: #E6EDF5;
+  --color-border-blue: #D9E5F2;
+
+  /* Text */
+  --color-text-primary: #061A3D;
+  --color-text-heading: #003B7A;
+  --color-text-body: #4A5A73;
+  --color-text-muted: #66758C;
+  --color-text-light: #9AA8B8;
+  --color-text-accent: #00B894;
+  --color-text-on-dark-muted: #B8C7DA;
+  --color-text-on-dark-soft: #D9E5F2;
+
+  /* Shadows */
+  --shadow-card: 0 12px 32px rgba(3, 18, 46, 0.08);
+  --shadow-soft: 0 8px 24px rgba(3, 18, 46, 0.06);
+  --shadow-button: 0 8px 18px rgba(0, 184, 148, 0.28);
+
+  /* Radius */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-pill: 999px;
+
+  /* Fonts */
+  --font-sans: var(--font-inter), "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* ========== Base Styles ========== */
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ========== Gradient Utilities ========== */
+.gradient-logo {
+  background: linear-gradient(90deg, #003B7A 0%, #007F8C 48%, #00B894 100%);
+}
+
+.gradient-cta {
+  background: linear-gradient(135deg, #00B894 0%, #10D6B0 100%);
+}
+
+.gradient-cta-hover {
+  background: linear-gradient(135deg, #009E83 0%, #00CFA7 100%);
+}
+
+.gradient-dark-hero {
+  background: #061A3D;
+}
+
+.gradient-soft-card {
+  background: linear-gradient(135deg, rgba(0, 184, 148, 0.08) 0%, rgba(0, 59, 122, 0.04) 100%);
+}
+
+.gradient-text-teal {
+  background: linear-gradient(135deg, #00B894, #10D6B0);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ========== Animation Utilities ========== */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes float-card {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.6s ease-out forwards;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.4s ease-out forwards;
+}
+
+/* Stagger delays */
+.delay-100 { animation-delay: 100ms; }
+.delay-200 { animation-delay: 200ms; }
+.delay-300 { animation-delay: 300ms; }
+.delay-400 { animation-delay: 400ms; }
+.delay-500 { animation-delay: 500ms; }
+
+/* ========== Scrollbar ========== */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #F7FAFC;
+}
+::-webkit-scrollbar-thumb {
+  background: #D9E5F2;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #B8C7DA;
+}
