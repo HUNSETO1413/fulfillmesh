@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeftRight, CheckCircle2, Truck, Clock, XCircle,
   Search, Columns3, Plus, ChevronDown, MoreHorizontal, ArrowRight,
@@ -12,7 +12,7 @@ import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { Drawer, DrawerRow, DrawerSection } from "@/components/dashboard/Drawer";
 import { Field, TextInput, NumberInput, Select } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
-import { exportToCsv } from "@/lib/client";
+import { api, exportToCsv } from "@/lib/client";
 
 type StatItem = { title: string; value: string; sub?: string; change: string; note: string; positive: boolean; icon: typeof ArrowLeftRight; iconBg: string; iconColor: string };
 
@@ -23,14 +23,6 @@ type Row = {
   tr: string; ref: string; from: string; fromCity: string; to: string; toCity: string;
   items: string; units: string; status: Status; req: string; eta: string;
 };
-
-const initialRows: Row[] = [
-  { tr: "TR-00987", ref: "REF-78230", from: "ATL-1", fromCity: "Atlanta, GA", to: "LAX-1", toCity: "Los Angeles, CA", items: "24 SKUs", units: "1,200 units", status: "In Transit", req: "May 20, 2025", eta: "May 23, 2025" },
-  { tr: "TR-00986", ref: "REF-78229", from: "DFW-1", fromCity: "Dallas, TX", to: "MIA-1", toCity: "Miami, FL", items: "15 SKUs", units: "980 units", status: "Completed", req: "May 19, 2025", eta: "May 22, 2025" },
-  { tr: "TR-00985", ref: "REF-78228", from: "ORD-1", fromCity: "Chicago, IL", to: "ATL-1", toCity: "Atlanta, GA", items: "30 SKUs", units: "1,540 units", status: "In Transit", req: "May 19, 2025", eta: "May 23, 2025" },
-  { tr: "TR-00984", ref: "REF-78227", from: "LAX-1", fromCity: "Los Angeles, CA", to: "SEA-1", toCity: "Seattle, WA", items: "8 SKUs", units: "420 units", status: "Pending", req: "May 18, 2025", eta: "May 24, 2025" },
-  { tr: "TR-00983", ref: "REF-78226", from: "MIA-1", fromCity: "Miami, FL", to: "DFW-1", toCity: "Dallas, TX", items: "12 SKUs", units: "640 units", status: "Completed", req: "May 18, 2025", eta: "May 21, 2025" },
-];
 
 const WAREHOUSES = ["ATL-1", "LAX-1", "DFW-1", "MIA-1", "ORD-1", "SEA-1"];
 const WH_CITY: Record<string, string> = {
@@ -99,9 +91,55 @@ function Dropdown({ label, value, options, onSelect }: { label: string; value: s
 type Draft = { from: string; to: string; skus: string; units: string; eta: string };
 const emptyDraft: Draft = { from: "ATL-1", to: "LAX-1", skus: "", units: "", eta: new Date().toISOString().slice(0, 10) };
 
+type ApiTransfer = {
+  id: string; reference?: string; fromWarehouse: string; toWarehouse: string;
+  itemCount: number; unitCount: number; status: Status; requestedDate: string; eta: string;
+};
+
+function toRow(t: ApiTransfer): Row {
+  return {
+    tr: t.id,
+    ref: t.reference ?? "—",
+    from: t.fromWarehouse,
+    fromCity: WH_CITY[t.fromWarehouse] ?? "",
+    to: t.toWarehouse,
+    toCity: WH_CITY[t.toWarehouse] ?? "",
+    items: `${t.itemCount} SKUs`,
+    units: `${t.unitCount.toLocaleString()} units`,
+    status: t.status,
+    req: new Date(t.requestedDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+    eta: new Date(t.eta).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+  };
+}
+
 export default function StockTransfersPage() {
   const { toast } = useToast();
-  const [rows, setRows] = useState<Row[]>(initialRows);
+  const [rows, setRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(true);
+  const seq = useRef(987);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await api.get<{ data: ApiTransfer[]; total: number }>("/api/transfers");
+        if (!alive) return;
+        setRows(res.data.map(toRow));
+        // Keep the local sequence ahead of any seeded ids so new transfers don't collide.
+        const maxNum = res.data.reduce((m, t) => {
+          const match = /(\d+)$/.exec(t.id);
+          return match ? Math.max(m, parseInt(match[1], 10)) : m;
+        }, 987);
+        seq.current = maxNum;
+      } catch (err) {
+        if (alive) toast("Failed to load transfers", "error");
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [activeTab, setActiveTabState] = useState("All Transfers");
   const [query, setQueryState] = useState("");
   const [whFilter, setWhFilterState] = useState("");
@@ -122,7 +160,6 @@ export default function StockTransfersPage() {
   const [editing, setEditing] = useState<Row | null>(null);
   const [editDraft, setEditDraft] = useState<Draft>(emptyDraft);
   const [detailRow, setDetailRow] = useState<Row | null>(null);
-  const seq = useRef(987);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -173,30 +210,56 @@ export default function StockTransfersPage() {
     toast(`Exported ${filtered.length} transfers to CSV`);
   }
 
-  function createTransfer() {
+  async function createTransfer() {
     if (draft.from === draft.to) { toast("Source and destination must differ", "error"); return; }
     if (!draft.skus.trim() || !draft.units.trim()) { toast("SKUs and units are required", "error"); return; }
     setBusy(true);
     const n = ++seq.current;
     const tr = `TR-0${n}`;
+    const etaStr = new Date(draft.eta).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    const payload = {
+      id: tr,
+      reference: `REF-${78230 + (n - 987)}`,
+      fromWarehouse: draft.from,
+      toWarehouse: draft.to,
+      itemCount: Number(draft.skus),
+      unitCount: Number(draft.units),
+      status: "Pending" as Status,
+      requestedDate: draft.eta,
+      eta: draft.eta,
+    };
     const newRow: Row = {
-      tr, ref: `REF-${78230 + (n - 987)}`,
+      tr, ref: payload.reference,
       from: draft.from, fromCity: WH_CITY[draft.from], to: draft.to, toCity: WH_CITY[draft.to],
-      items: `${draft.skus} SKUs`, units: `${draft.units} units`, status: "Pending",
-      req: new Date(draft.eta).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
-      eta: new Date(draft.eta).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+      items: `${draft.skus} SKUs`, units: `${Number(draft.units).toLocaleString()} units`, status: "Pending",
+      req: etaStr, eta: etaStr,
     };
     setRows((prev) => [newRow, ...prev]);
-    setBusy(false);
-    setFormOpen(false);
-    setDraft(emptyDraft);
-    toast(`Transfer ${tr} created`);
+    try {
+      const created = await api.post<ApiTransfer>("/api/transfers", payload);
+      const apiTr = created?.id;
+      if (apiTr && apiTr !== tr) {
+        // Replace the optimistic local id with the server-generated id so
+        // subsequent mutations target the correct record.
+        setRows((prev) => prev.map((r) => (r.tr === tr ? { ...r, tr: apiTr } : r)));
+      }
+      toast(`Transfer ${apiTr || tr} created`);
+    } catch (err) {
+      toast(`Transfer ${tr} saved locally (server sync failed)`, "error");
+    } finally {
+      setBusy(false);
+      setFormOpen(false);
+      setDraft(emptyDraft);
+    }
   }
 
   function setStatus(tr: string, status: Status, msg: string) {
     setRows((prev) => prev.map((r) => (r.tr === tr ? { ...r, status } : r)));
     setMenuFor(null);
     toast(msg);
+    api.put(`/api/transfers/${encodeURIComponent(tr)}`, { status }).catch(() => {
+      toast(`Failed to sync ${tr} status`, "error");
+    });
   }
 
   function openEdit(r: Row) {
@@ -211,6 +274,7 @@ export default function StockTransfersPage() {
     if (!editing) return;
     if (editDraft.from === editDraft.to) { toast("Source and destination must differ", "error"); return; }
     if (!editDraft.skus.trim() || !editDraft.units.trim()) { toast("SKUs and units are required", "error"); return; }
+    const etaStr = new Date(editDraft.eta).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
     setRows((prev) => prev.map((r) => {
       if (r.tr !== editing.tr) return r;
       return {
@@ -220,10 +284,20 @@ export default function StockTransfersPage() {
         to: editDraft.to,
         toCity: WH_CITY[editDraft.to],
         items: `${editDraft.skus} SKUs`,
-        units: `${editDraft.units} units`,
-        eta: new Date(editDraft.eta).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+        units: `${Number(editDraft.units).toLocaleString()} units`,
+        eta: etaStr,
       };
     }));
+    const patch = {
+      fromWarehouse: editDraft.from,
+      toWarehouse: editDraft.to,
+      itemCount: Number(editDraft.skus),
+      unitCount: Number(editDraft.units),
+      eta: editDraft.eta,
+    };
+    api.put(`/api/transfers/${encodeURIComponent(editing.tr)}`, patch).catch(() => {
+      toast(`Failed to sync ${editing.tr} update`, "error");
+    });
     toast(`Transfer ${editing.tr} updated`);
     setEditing(null);
   }
@@ -303,7 +377,10 @@ export default function StockTransfersPage() {
                 <th className={thCls + " text-right"}>Actions</th>
               </tr></thead>
               <tbody>
-                {pageRows.map((r) => (
+                {loading && (
+                  <tr><td colSpan={8} className="px-6 py-12 text-center text-[13px] text-text-muted">Loading transfers…</td></tr>
+                )}
+                {!loading && pageRows.map((r) => (
                   <tr key={r.tr} className="border-b border-border-soft last:border-b-0 hover:bg-soft-bg/60 transition-colors">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
@@ -349,7 +426,7 @@ export default function StockTransfersPage() {
                     </td>
                   </tr>
                 ))}
-                {pageRows.length === 0 && (
+                {!loading && pageRows.length === 0 && (
                   <tr><td colSpan={8} className="px-6 py-12 text-center text-[13px] text-text-muted">No transfers match your filters.</td></tr>
                 )}
               </tbody>

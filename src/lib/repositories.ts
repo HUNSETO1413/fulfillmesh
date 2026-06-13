@@ -2,6 +2,8 @@ import { query } from "./db";
 import type {
   Order, Product, InventoryItem, Customer, Supplier, Shipment,
   ReturnRecord, Quote, Invoice, QcInspection, User, Submission,
+  Warehouse, StorageType, TransferOrder, CycleCount, AppNotification, Task,
+  WarehouseLocation,
 } from "@/types";
 
 // Async repository layer over PostgreSQL. Each entity exposes list/get/create/
@@ -492,5 +494,289 @@ export const submissions = {
       [id, s.type ?? "contact", s.name ?? "", s.email ?? "", s.company ?? null, s.message ?? null, s.payload ?? null, createdAt],
     );
     return (await one("SELECT * FROM submissions WHERE id = $1", [id], mapSubmission))!;
+  },
+};
+
+// ---------- Warehouses ----------
+function mapWarehouse(r: Row): Warehouse {
+  return {
+    id: r.id as string, name: r.name as string, code: r.code as string,
+    location: (r.location as string) ?? undefined, city: (r.city as string) ?? undefined,
+    country: (r.country as string) ?? undefined, type: (r.type as string) ?? undefined,
+    manager: (r.manager as string) ?? undefined, capacity: r.capacity as number,
+    isDefault: Boolean(r.is_default), status: r.status as Warehouse["status"],
+  };
+}
+export const warehouses = {
+  async list(): Promise<Warehouse[]> {
+    return (await query("SELECT * FROM warehouses ORDER BY is_default DESC, name")).map(mapWarehouse);
+  },
+  async get(id: string): Promise<Warehouse | null> {
+    return one("SELECT * FROM warehouses WHERE id = $1", [id], mapWarehouse);
+  },
+  async create(w: Partial<Warehouse>): Promise<Warehouse> {
+    const id = w.id || genId("WH");
+    await query(
+      `INSERT INTO warehouses (id, name, code, location, city, country, type, manager, capacity, is_default, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [id, w.name ?? "", w.code ?? "", w.location ?? null, w.city ?? null, w.country ?? null,
+        w.type ?? null, w.manager ?? null, w.capacity ?? 0, w.isDefault ?? false, w.status ?? "Active"],
+    );
+    return (await this.get(id))!;
+  },
+  async update(id: string, w: Partial<Warehouse>): Promise<Warehouse | null> {
+    const existing = await this.get(id);
+    if (!existing) return null;
+    const m = { ...existing, ...w };
+    await query(
+      `UPDATE warehouses SET name=$1, code=$2, location=$3, city=$4, country=$5, type=$6, manager=$7, capacity=$8, is_default=$9, status=$10 WHERE id=$11`,
+      [m.name, m.code, m.location ?? null, m.city ?? null, m.country ?? null, m.type ?? null,
+        m.manager ?? null, m.capacity, m.isDefault, m.status, id],
+    );
+    return this.get(id);
+  },
+  async remove(id: string): Promise<boolean> {
+    return (await query("DELETE FROM warehouses WHERE id = $1 RETURNING id", [id])).length > 0;
+  },
+};
+
+// ---------- Storage Types ----------
+function mapStorageType(r: Row): StorageType {
+  return {
+    id: r.id as string, code: r.code as string, name: r.name as string,
+    description: (r.description as string) ?? undefined, suitableFor: (r.suitable_for as string) ?? undefined,
+    utilization: r.utilization as number, status: r.status as StorageType["status"],
+  };
+}
+export const storageTypes = {
+  async list(): Promise<StorageType[]> {
+    return (await query("SELECT * FROM storage_types ORDER BY code")).map(mapStorageType);
+  },
+  async get(id: string): Promise<StorageType | null> {
+    return one("SELECT * FROM storage_types WHERE id = $1", [id], mapStorageType);
+  },
+  async create(s: Partial<StorageType>): Promise<StorageType> {
+    const id = s.id || genId("ST");
+    await query(
+      `INSERT INTO storage_types (id, code, name, description, suitable_for, utilization, status) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [id, (s.code ?? "").toUpperCase(), s.name ?? "", s.description ?? null, s.suitableFor ?? "General",
+        s.utilization ?? 0, s.status ?? "Active"],
+    );
+    return (await this.get(id))!;
+  },
+  async update(id: string, s: Partial<StorageType>): Promise<StorageType | null> {
+    const existing = await this.get(id);
+    if (!existing) return null;
+    const m = { ...existing, ...s };
+    await query(
+      `UPDATE storage_types SET code=$1, name=$2, description=$3, suitable_for=$4, utilization=$5, status=$6 WHERE id=$7`,
+      [m.code, m.name, m.description ?? null, m.suitableFor, m.utilization, m.status, id],
+    );
+    return this.get(id);
+  },
+  async remove(id: string): Promise<boolean> {
+    return (await query("DELETE FROM storage_types WHERE id = $1 RETURNING id", [id])).length > 0;
+  },
+};
+
+// ---------- Transfer Orders ----------
+function mapTransfer(r: Row): TransferOrder {
+  return {
+    id: r.id as string, reference: (r.reference as string) ?? undefined,
+    fromWarehouse: r.from_warehouse as string, toWarehouse: r.to_warehouse as string,
+    itemCount: r.item_count as number, unitCount: r.unit_count as number,
+    status: r.status as TransferOrder["status"], requestedDate: r.requested_date as string,
+    eta: r.eta as string,
+  };
+}
+export const transfers = {
+  async list(): Promise<TransferOrder[]> {
+    return (await query("SELECT * FROM transfer_orders ORDER BY requested_date DESC, id DESC")).map(mapTransfer);
+  },
+  async get(id: string): Promise<TransferOrder | null> {
+    return one("SELECT * FROM transfer_orders WHERE id = $1", [id], mapTransfer);
+  },
+  async create(t: Partial<TransferOrder>): Promise<TransferOrder> {
+    const id = t.id || genId("TR");
+    await query(
+      `INSERT INTO transfer_orders (id, reference, from_warehouse, to_warehouse, item_count, unit_count, status, requested_date, eta) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [id, t.reference ?? null, t.fromWarehouse ?? "", t.toWarehouse ?? "", t.itemCount ?? 0,
+        t.unitCount ?? 0, t.status ?? "Pending", t.requestedDate ?? new Date().toISOString().slice(0, 10),
+        t.eta ?? new Date().toISOString().slice(0, 10)],
+    );
+    return (await this.get(id))!;
+  },
+  async update(id: string, t: Partial<TransferOrder>): Promise<TransferOrder | null> {
+    const existing = await this.get(id);
+    if (!existing) return null;
+    const m = { ...existing, ...t };
+    await query(
+      `UPDATE transfer_orders SET reference=$1, from_warehouse=$2, to_warehouse=$3, item_count=$4, unit_count=$5, status=$6, eta=$7 WHERE id=$8`,
+      [m.reference ?? null, m.fromWarehouse, m.toWarehouse, m.itemCount, m.unitCount, m.status, m.eta, id],
+    );
+    return this.get(id);
+  },
+  async remove(id: string): Promise<boolean> {
+    return (await query("DELETE FROM transfer_orders WHERE id = $1 RETURNING id", [id])).length > 0;
+  },
+};
+
+// ---------- Cycle Counts ----------
+function mapCycleCount(r: Row): CycleCount {
+  return {
+    id: r.id as string, name: r.name as string, countType: (r.count_type as string) ?? undefined,
+    warehouse: r.warehouse as string, status: r.status as CycleCount["status"],
+    progress: r.progress as number, startDate: r.start_date as string, dueDate: r.due_date as string,
+  };
+}
+export const cycleCounts = {
+  async list(): Promise<CycleCount[]> {
+    return (await query("SELECT * FROM cycle_counts ORDER BY start_date DESC, id DESC")).map(mapCycleCount);
+  },
+  async get(id: string): Promise<CycleCount | null> {
+    return one("SELECT * FROM cycle_counts WHERE id = $1", [id], mapCycleCount);
+  },
+  async create(c: Partial<CycleCount>): Promise<CycleCount> {
+    const id = c.id || genId("CC");
+    await query(
+      `INSERT INTO cycle_counts (id, name, count_type, warehouse, status, progress, start_date, due_date) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [id, c.name ?? "", c.countType ?? "Routine Cycle Count", c.warehouse ?? "", c.status ?? "Scheduled",
+        c.progress ?? 0, c.startDate ?? new Date().toISOString().slice(0, 10),
+        c.dueDate ?? new Date().toISOString().slice(0, 10)],
+    );
+    return (await this.get(id))!;
+  },
+  async update(id: string, c: Partial<CycleCount>): Promise<CycleCount | null> {
+    const existing = await this.get(id);
+    if (!existing) return null;
+    const m = { ...existing, ...c };
+    await query(
+      `UPDATE cycle_counts SET name=$1, count_type=$2, warehouse=$3, status=$4, progress=$5, due_date=$6 WHERE id=$7`,
+      [m.name, m.countType, m.warehouse, m.status, m.progress, m.dueDate, id],
+    );
+    return this.get(id);
+  },
+  async remove(id: string): Promise<boolean> {
+    return (await query("DELETE FROM cycle_counts WHERE id = $1 RETURNING id", [id])).length > 0;
+  },
+};
+
+// ---------- Notifications ----------
+function mapNotification(r: Row): AppNotification {
+  return {
+    id: r.id as string, type: r.type as AppNotification["type"], title: r.title as string,
+    description: (r.description as string) ?? undefined, read: Boolean(r.read),
+    createdAt: r.created_at as string, link: (r.link as string) ?? undefined,
+  };
+}
+export const notifications = {
+  async list(): Promise<AppNotification[]> {
+    return (await query("SELECT * FROM notifications ORDER BY created_at DESC, id DESC")).map(mapNotification);
+  },
+  async get(id: string): Promise<AppNotification | null> {
+    return one("SELECT * FROM notifications WHERE id = $1", [id], mapNotification);
+  },
+  async create(n: Partial<AppNotification>): Promise<AppNotification> {
+    const id = n.id || genId("NTF");
+    await query(
+      `INSERT INTO notifications (id, type, title, description, read, created_at, link) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [id, n.type ?? "system", n.title ?? "", n.description ?? null, n.read ?? false,
+        n.createdAt ?? new Date().toISOString(), n.link ?? null],
+    );
+    return (await this.get(id))!;
+  },
+  async update(id: string, n: Partial<AppNotification>): Promise<AppNotification | null> {
+    const existing = await this.get(id);
+    if (!existing) return null;
+    const m = { ...existing, ...n };
+    await query(
+      `UPDATE notifications SET type=$1, title=$2, description=$3, read=$4, link=$5 WHERE id=$6`,
+      [m.type, m.title, m.description ?? null, m.read, m.link ?? null, id],
+    );
+    return this.get(id);
+  },
+  async remove(id: string): Promise<boolean> {
+    return (await query("DELETE FROM notifications WHERE id = $1 RETURNING id", [id])).length > 0;
+  },
+};
+
+// ---------- Tasks ----------
+function mapTask(r: Row): Task {
+  return {
+    id: r.id as string, title: r.title as string, taskType: (r.task_type as string) ?? undefined,
+    warehouse: (r.warehouse as string) ?? undefined, assignee: (r.assignee as string) ?? undefined,
+    priority: r.priority as Task["priority"], status: r.status as Task["status"],
+    createdAt: r.created_at as string, dueDate: (r.due_date as string) ?? undefined,
+    reference: (r.reference as string) ?? undefined,
+  };
+}
+export const tasks = {
+  async list(): Promise<Task[]> {
+    return (await query("SELECT * FROM tasks ORDER BY created_at DESC, id DESC")).map(mapTask);
+  },
+  async get(id: string): Promise<Task | null> {
+    return one("SELECT * FROM tasks WHERE id = $1", [id], mapTask);
+  },
+  async create(t: Partial<Task>): Promise<Task> {
+    const id = t.id || genId("TSK");
+    await query(
+      `INSERT INTO tasks (id, title, task_type, warehouse, assignee, priority, status, created_at, due_date, reference) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [id, t.title ?? "", t.taskType ?? "General", t.warehouse ?? null, t.assignee ?? null,
+        t.priority ?? "Medium", t.status ?? "Pending", t.createdAt ?? new Date().toISOString().slice(0, 10),
+        t.dueDate ?? null, t.reference ?? null],
+    );
+    return (await this.get(id))!;
+  },
+  async update(id: string, t: Partial<Task>): Promise<Task | null> {
+    const existing = await this.get(id);
+    if (!existing) return null;
+    const m = { ...existing, ...t };
+    await query(
+      `UPDATE tasks SET title=$1, task_type=$2, warehouse=$3, assignee=$4, priority=$5, status=$6, due_date=$7 WHERE id=$8`,
+      [m.title, m.taskType, m.warehouse ?? null, m.assignee ?? null, m.priority, m.status, m.dueDate ?? null, id],
+    );
+    return this.get(id);
+  },
+  async remove(id: string): Promise<boolean> {
+    return (await query("DELETE FROM tasks WHERE id = $1 RETURNING id", [id])).length > 0;
+  },
+};
+
+// ---------- Warehouse Locations ----------
+function mapLocation(r: Row): WarehouseLocation {
+  return {
+    id: r.id as string, code: r.code as string, name: r.name as string,
+    warehouse: r.warehouse as string, type: (r.type as string) ?? undefined,
+    capacity: r.capacity as number, status: r.status as WarehouseLocation["status"],
+  };
+}
+export const locations = {
+  async list(): Promise<WarehouseLocation[]> {
+    return (await query("SELECT * FROM warehouse_locations ORDER BY code")).map(mapLocation);
+  },
+  async get(id: string): Promise<WarehouseLocation | null> {
+    return one("SELECT * FROM warehouse_locations WHERE id = $1", [id], mapLocation);
+  },
+  async create(l: Partial<WarehouseLocation>): Promise<WarehouseLocation> {
+    const id = l.id || genId("LOC");
+    await query(
+      `INSERT INTO warehouse_locations (id, code, name, warehouse, type, capacity, status) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [id, (l.code ?? "").toUpperCase(), l.name ?? "", l.warehouse ?? "", l.type ?? "Bin",
+        l.capacity ?? 0, l.status ?? "Active"],
+    );
+    return (await this.get(id))!;
+  },
+  async update(id: string, l: Partial<WarehouseLocation>): Promise<WarehouseLocation | null> {
+    const existing = await this.get(id);
+    if (!existing) return null;
+    const m = { ...existing, ...l };
+    await query(
+      `UPDATE warehouse_locations SET code=$1, name=$2, warehouse=$3, type=$4, capacity=$5, status=$6 WHERE id=$7`,
+      [m.code, m.name, m.warehouse, m.type, m.capacity, m.status, id],
+    );
+    return this.get(id);
+  },
+  async remove(id: string): Promise<boolean> {
+    return (await query("DELETE FROM warehouse_locations WHERE id = $1 RETURNING id", [id])).length > 0;
   },
 };

@@ -159,6 +159,86 @@ CREATE TABLE IF NOT EXISTS api_keys (
   last_used TEXT,
   status TEXT NOT NULL DEFAULT 'Active'
 );
+
+CREATE TABLE IF NOT EXISTS warehouses (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  code TEXT NOT NULL UNIQUE,
+  location TEXT,
+  city TEXT,
+  country TEXT,
+  type TEXT,
+  manager TEXT,
+  capacity INTEGER NOT NULL DEFAULT 0,
+  is_default BOOLEAN NOT NULL DEFAULT FALSE,
+  status TEXT NOT NULL DEFAULT 'Active'
+);
+
+CREATE TABLE IF NOT EXISTS storage_types (
+  id TEXT PRIMARY KEY,
+  code TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  description TEXT,
+  suitable_for TEXT,
+  utilization INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'Active'
+);
+
+CREATE TABLE IF NOT EXISTS transfer_orders (
+  id TEXT PRIMARY KEY,
+  reference TEXT,
+  from_warehouse TEXT NOT NULL,
+  to_warehouse TEXT NOT NULL,
+  item_count INTEGER NOT NULL DEFAULT 0,
+  unit_count INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'Pending',
+  requested_date TEXT NOT NULL,
+  eta TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS cycle_counts (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  count_type TEXT,
+  warehouse TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'Scheduled',
+  progress INTEGER NOT NULL DEFAULT 0,
+  start_date TEXT NOT NULL,
+  due_date TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS notifications (
+  id TEXT PRIMARY KEY,
+  type TEXT NOT NULL DEFAULT 'system',
+  title TEXT NOT NULL,
+  description TEXT,
+  read BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TEXT NOT NULL,
+  link TEXT
+);
+
+CREATE TABLE IF NOT EXISTS tasks (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  task_type TEXT,
+  warehouse TEXT,
+  assignee TEXT,
+  priority TEXT NOT NULL DEFAULT 'Medium',
+  status TEXT NOT NULL DEFAULT 'Pending',
+  created_at TEXT NOT NULL,
+  due_date TEXT,
+  reference TEXT
+);
+
+CREATE TABLE IF NOT EXISTS warehouse_locations (
+  id TEXT PRIMARY KEY,
+  code TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  warehouse TEXT NOT NULL,
+  type TEXT,
+  capacity INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'Active'
+);
 `;
 
 type GlobalWithDb = typeof globalThis & {

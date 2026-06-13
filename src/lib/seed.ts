@@ -29,6 +29,13 @@ export async function ensureSeed(db: Pool): Promise<void> {
   await seedInvoices(db);
   await seedQc(db);
   await seedApiKeys(db);
+  await seedWarehouses(db);
+  await seedStorageTypes(db);
+  await seedTransfers(db);
+  await seedCycleCounts(db);
+  await seedNotifications(db);
+  await seedTasks(db);
+  await seedLocations(db);
 }
 
 async function seedUsers(db: Pool) {
@@ -214,4 +221,112 @@ async function seedApiKeys(db: Pool) {
     "2025-04-01", "2025-05-16", "Active"]);
   await db.query(sql, ["KEY-002", "Staging API Key", "fm_test_4c9d", "orders:read,inventory:read",
     "2025-04-10", "2025-05-12", "Active"]);
+}
+
+async function seedWarehouses(db: Pool) {
+  if (await count(db, "warehouses") > 0) return;
+  const sql = `INSERT INTO warehouses (id, name, code, location, city, country, type, manager, capacity, is_default, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`;
+  const whs: [string, string, string, string, string, string, string, string, number, boolean, string][] = [
+    ["WH-001", "Shenzhen Main Hub", "SZX-1", "Bao'an District", "Shenzhen", "China", "Standard", "Li Wei", 88, true, "Active"],
+    ["WH-002", "Los Angeles DC", "LAX-1", "Compton", "Los Angeles", "USA", "Standard", "John Carter", 74, false, "Active"],
+    ["WH-003", "Dallas Fulfillment", "DFW-1", "Coppell", "Dallas", "USA", "Standard", "Maria Lopez", 68, false, "Active"],
+    ["WH-004", "Rotterdam EU Hub", "RTM-1", "Port Area", "Rotterdam", "Netherlands", "Bonded", "Hans Müller", 61, false, "Active"],
+    ["WH-005", "Miami Cold Chain", "MIA-1", "Doral", "Miami", "USA", "Cold Storage", "Carlos Vega", 90, false, "Active"],
+    ["WH-006", "Tokyo Express", "NRT-1", "Narita", "Tokyo", "Japan", "Express", "Yuki Tanaka", 55, false, "Paused"],
+  ];
+  for (const w of whs) await db.query(sql, w);
+}
+
+async function seedStorageTypes(db: Pool) {
+  if (await count(db, "storage_types") > 0) return;
+  const sql = `INSERT INTO storage_types (id, code, name, description, suitable_for, utilization, status) VALUES ($1,$2,$3,$4,$5,$6,$7)`;
+  const sts: [string, string, string, string, string, number, string][] = [
+    ["ST-001", "BIN", "Bin Location", "Small item storage for fast picks", "Small Items", 82, "Active"],
+    ["ST-002", "SHELF", "Shelf Storage", "General items on shelves", "General", 74, "Active"],
+    ["ST-003", "RACK", "Pallet Rack", "Pallets on rack systems", "Pallets", 68, "Active"],
+    ["ST-004", "BULK", "Bulk Storage", "Bulk items on floor", "Bulk", 61, "Active"],
+    ["ST-005", "CAGE", "Cage Storage", "Items in security cages", "High Value", 55, "Active"],
+    ["ST-006", "COOL", "Cold Storage", "Temperature controlled (2-8°C)", "Perishables", 90, "Active"],
+    ["ST-007", "FRZ", "Frozen Storage", "Frozen goods (-18°C and below)", "Frozen", 76, "Active"],
+    ["ST-008", "HAZ", "Hazardous Storage", "Hazardous material storage", "Regulated", 43, "Active"],
+  ];
+  for (const s of sts) await db.query(sql, s);
+}
+
+async function seedTransfers(db: Pool) {
+  if (await count(db, "transfer_orders") > 0) return;
+  const sql = `INSERT INTO transfer_orders (id, reference, from_warehouse, to_warehouse, item_count, unit_count, status, requested_date, eta) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`;
+  const trs: [string, string, string, string, number, number, string, string, string][] = [
+    ["TR-00987", "REF-78230", "LAX-1", "DFW-1", 24, 1200, "In Transit", "2025-05-20", "2025-05-23"],
+    ["TR-00986", "REF-78229", "DFW-1", "MIA-1", 15, 980, "Completed", "2025-05-19", "2025-05-22"],
+    ["TR-00985", "REF-78228", "RTM-1", "LAX-1", 30, 1540, "In Transit", "2025-05-19", "2025-05-26"],
+    ["TR-00984", "REF-78227", "LAX-1", "NRT-1", 8, 420, "Pending", "2025-05-18", "2025-05-24"],
+    ["TR-00983", "REF-78226", "MIA-1", "DFW-1", 12, 640, "Completed", "2025-05-18", "2025-05-21"],
+    ["TR-00982", "REF-78225", "SZX-1", "RTM-1", 18, 890, "Pending", "2025-05-17", "2025-06-02"],
+  ];
+  for (const t of trs) await db.query(sql, t);
+}
+
+async function seedCycleCounts(db: Pool) {
+  if (await count(db, "cycle_counts") > 0) return;
+  const sql = `INSERT INTO cycle_counts (id, name, count_type, warehouse, status, progress, start_date, due_date) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`;
+  const ccs: [string, string, string, string, string, number, string, string][] = [
+    ["CC-000124", "Aisle A01 – A10", "Routine Cycle Count", "LAX-1", "Completed", 100, "2025-05-30", "2025-05-30"],
+    ["CC-000123", "High Value Items", "Priority Count", "DFW-1", "In Progress", 65, "2025-05-31", "2025-06-02"],
+    ["CC-000122", "Zone B – Shelves 1-20", "Routine Cycle Count", "LAX-1", "In Progress", 40, "2025-05-31", "2025-06-01"],
+    ["CC-000121", "FRZ-01 Freezer Zone", "Temperature Sensitive", "MIA-1", "Scheduled", 0, "2025-06-02", "2025-06-03"],
+    ["CC-000120", "Bulk Storage Area", "Full Warehouse Count", "DFW-1", "Scheduled", 0, "2025-06-02", "2025-06-05"],
+    ["CC-000119", "Electronics Category", "Category Count", "LAX-1", "Completed", 100, "2025-05-29", "2025-05-29"],
+  ];
+  for (const c of ccs) await db.query(sql, c);
+}
+
+async function seedNotifications(db: Pool) {
+  if (await count(db, "notifications") > 0) return;
+  const sql = `INSERT INTO notifications (id, type, title, description, read, created_at, link) VALUES ($1,$2,$3,$4,$5,$6,$7)`;
+  const ntfs: [string, string, string, string, boolean, string, string | null][] = [
+    ["NTF-001", "order", "New order received", "Order ORD-5821 from Acme Retail ($1,245.80)", false, "2025-05-18T09:30:00Z", "/dashboard/orders"],
+    ["NTF-002", "inventory", "Low stock alert", "SKU-0612 Fitness Tracker below reorder point", false, "2025-05-18T08:15:00Z", "/dashboard/inventory"],
+    ["NTF-003", "shipment", "Shipment delivered", "Shipment SHP-3214 delivered to customer", true, "2025-05-17T16:42:00Z", "/dashboard/shipments"],
+    ["NTF-004", "return", "Return request submitted", "Customer requested return for order ORD-5801", false, "2025-05-17T14:20:00Z", "/dashboard/returns"],
+    ["NTF-005", "billing", "Invoice overdue", "Invoice INV-712 payment is 3 days overdue", true, "2025-05-17T10:00:00Z", "/dashboard/invoices"],
+    ["NTF-006", "system", "Scheduled maintenance", "System maintenance window May 20, 2-4 AM UTC", true, "2025-05-16T18:00:00Z", null],
+    ["NTF-007", "security", "New login detected", "Login from new device in Miami, FL", false, "2025-05-16T11:33:00Z", "/dashboard/settings/security"],
+    ["NTF-008", "inventory", "Stockout risk", "SKU-0310 Laptop Stand will stockout in 2 days", false, "2025-05-16T09:12:00Z", "/dashboard/inventory"],
+  ];
+  for (const n of ntfs) await db.query(sql, n);
+}
+
+async function seedTasks(db: Pool) {
+  if (await count(db, "tasks") > 0) return;
+  const sql = `INSERT INTO tasks (id, title, task_type, warehouse, assignee, priority, status, created_at, due_date, reference) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`;
+  const tsks: [string, string, string, string, string, string, string, string, string, string | null][] = [
+    ["TSK-0401", "Restock SKU-0612 Fitness Tracker", "Replenishment", "DFW-1", "Maria Lopez", "High", "In Progress", "2025-05-17", "2025-05-20", "INV-0612"],
+    ["TSK-0402", "Pick order ORD-5821", "Picking", "LAX-1", "James Carter", "Urgent", "Pending", "2025-05-18", "2025-05-18", "ORD-5821"],
+    ["TSK-0403", "Pack shipment SHP-3220", "Packing", "LAX-1", "Sophie Lee", "Medium", "Pending", "2025-05-18", "2025-05-19", "SHP-3220"],
+    ["TSK-0404", "Cycle count Aisle C", "Cycle Count", "LAX-1", "Olivia Martinez", "Low", "Completed", "2025-05-16", "2025-05-17", "CC-000124"],
+    ["TSK-0405", "QC inspection QC-0812", "Quality Check", "SZX-1", "Emily Chen", "High", "In Progress", "2025-05-17", "2025-05-19", "QC-0812"],
+    ["TSK-0406", "Process return RTN-0234", "Return Processing", "DFW-1", "Michael Brown", "Medium", "Pending", "2025-05-17", "2025-05-21", "RTN-0234"],
+    ["TSK-0407", "Restock SKU-0738 USB-C Charger", "Replenishment", "RTM-1", "Hans Müller", "Medium", "Pending", "2025-05-16", "2025-05-22", "INV-0738"],
+    ["TSK-0408", "Transfer TR-00987 receiving", "Receiving", "DFW-1", "Maria Lopez", "Medium", "Completed", "2025-05-15", "2025-05-23", "TR-00987"],
+  ];
+  for (const t of tsks) await db.query(sql, t);
+}
+
+async function seedLocations(db: Pool) {
+  if (await count(db, "warehouse_locations") > 0) return;
+  const sql = `INSERT INTO warehouse_locations (id, code, name, warehouse, type, capacity, status) VALUES ($1,$2,$3,$4,$5,$6,$7)`;
+  const locs: [string, string, string, string, string, number, string][] = [
+    ["LOC-001", "A01-01-01", "Aisle A Bin 1", "LAX-1", "Bin", 88, "Active"],
+    ["LOC-002", "A01-01-02", "Aisle A Bin 2", "LAX-1", "Bin", 72, "Active"],
+    ["LOC-003", "B02-03-01", "Shelf B2 Row 3", "LAX-1", "Shelf", 64, "Active"],
+    ["LOC-004", "R01-PAL-01", "Rack 1 Pallet", "DFW-1", "Rack", 91, "Active"],
+    ["LOC-005", "R01-PAL-02", "Rack 2 Pallet", "DFW-1", "Rack", 45, "Active"],
+    ["LOC-006", "BLK-01-01", "Bulk Floor 1", "DFW-1", "Bulk", 58, "Active"],
+    ["LOC-007", "CG-01-01", "Security Cage 1", "DFW-1", "Cage", 33, "Active"],
+    ["LOC-008", "CL-01-01", "Cold Zone 1", "MIA-1", "Cold", 90, "Active"],
+    ["LOC-009", "FZ-01-01", "Freezer Zone 1", "MIA-1", "Frozen", 76, "Active"],
+    ["LOC-010", "HZ-01-01", "Hazmat Cabinet", "RTM-1", "Hazmat", 28, "Inactive"],
+  ];
+  for (const l of locs) await db.query(sql, l);
 }

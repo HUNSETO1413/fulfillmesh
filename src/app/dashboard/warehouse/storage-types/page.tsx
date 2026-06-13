@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Boxes, CheckCircle2, Gauge, AlertTriangle, XCircle,
   Search, Columns3, Plus, Download, ChevronDown, MoreHorizontal,
@@ -11,12 +11,12 @@ import { Drawer, DrawerRow, DrawerSection } from "@/components/dashboard/Drawer"
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { Field, TextInput, TextArea, Select } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
-import { exportToCsv } from "@/lib/client";
+import { api, exportToCsv } from "@/lib/client";
 
 /* stats and sidebar widgets are now computed from rows via useMemo */
 
 type Status = "Active" | "Inactive";
-type Row = { code: string; name: string; desc: string; suit: string; util: number; status: Status };
+type Row = { id?: string; code: string; name: string; desc: string; suit: string; util: number; status: Status };
 
 const initialRows: Row[] = [
   { code: "BIN", name: "Bin Location", desc: "Small item storage for fast picks", suit: "Small Items", util: 82, status: "Active" },
@@ -77,7 +77,33 @@ const emptyDraft: Draft = { code: "", name: "", desc: "", suit: "General" };
 
 export default function StorageTypesPage() {
   const { toast } = useToast();
-  const [rows, setRows] = useState<Row[]>(initialRows);
+  const [rows, setRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get<{ data: Array<{ id: string; code: string; name: string; description?: string; suitableFor?: string; utilization: number; status: Status }> }>("/api/storage-types");
+        if (cancelled) return;
+        const mapped: Row[] = (res.data ?? []).map((s) => ({
+          id: s.id,
+          code: s.code,
+          name: s.name,
+          desc: s.description ?? "—",
+          suit: s.suitableFor ?? "General",
+          util: s.utilization ?? 0,
+          status: s.status,
+        }));
+        setRows(mapped);
+      } catch (err) {
+        if (!cancelled) toast("Failed to load storage types", "error");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [toast]);
   const [query, setQueryState] = useState("");
   const [suitFilter, setSuitFilterState] = useState("");
   const [statusFilter, setStatusFilterState] = useState("");
@@ -177,7 +203,7 @@ export default function StorageTypesPage() {
     toast(`Exported ${filtered.length} storage types to CSV`);
   }
 
-  function createType() {
+  async function createType() {
     if (!draft.code.trim()) { toast("Code is required", "error"); return; }
     if (!draft.name.trim()) { toast("Name is required", "error"); return; }
     if (rows.some((r) => r.code.toUpperCase() === draft.code.trim().toUpperCase())) { toast("Code already exists", "error"); return; }
@@ -187,16 +213,32 @@ export default function StorageTypesPage() {
       desc: draft.desc.trim() || "—", suit: draft.suit, util: 0, status: "Active",
     };
     setRows((prev) => [newRow, ...prev]);
-    setBusy(false);
     setFormOpen(false);
     setDraft(emptyDraft);
     toast(`Storage type ${newRow.code} added`);
+    try {
+      const created = await api.post<{ id: string }>("/api/storage-types", {
+        code: newRow.code, name: newRow.name, description: newRow.desc,
+        suitableFor: newRow.suit, utilization: newRow.util, status: newRow.status,
+      });
+      if (created?.id) {
+        setRows((prev) => prev.map((r) => (r.code === newRow.code ? { ...r, id: created.id } : r)));
+      }
+    } catch (err) {
+      toast("Failed to persist storage type", "error");
+    } finally {
+      setBusy(false);
+    }
   }
 
   function setStatus(code: string, status: Status, msg: string) {
     setRows((prev) => prev.map((r) => (r.code === code ? { ...r, status } : r)));
     setMenuFor(null);
     toast(msg);
+    const target = rows.find((r) => r.code === code);
+    if (target?.id) {
+      api.put(`/api/storage-types/${target.id}`, { status }).catch(() => toast("Failed to update storage type", "error"));
+    }
   }
 
   function openDetails(r: Row) {
@@ -213,12 +255,16 @@ export default function StorageTypesPage() {
   function saveEdit() {
     if (!editRow) return;
     if (!editDraft.name.trim()) { toast("Name is required", "error"); return; }
+    const patch = { name: editDraft.name.trim(), description: editDraft.desc.trim() || "—", suitableFor: editDraft.suit };
     setRows((prev) => prev.map((r) =>
-      r.code === editRow.code ? { ...r, name: editDraft.name.trim(), desc: editDraft.desc.trim() || "—", suit: editDraft.suit } : r
+      r.code === editRow.code ? { ...r, ...patch } : r
     ));
     setEditRow(null);
     setEditDraft(emptyDraft);
     toast(`${editRow.code} updated`);
+    if (editRow.id) {
+      api.put(`/api/storage-types/${editRow.id}`, patch).catch(() => toast("Failed to persist update", "error"));
+    }
   }
 
   return (
@@ -299,7 +345,10 @@ export default function StorageTypesPage() {
                 <th className={thCls + " text-right"}>Actions</th>
               </tr></thead>
               <tbody>
-                {pageRows.map((r) => (
+                {loading && (
+                  <tr><td colSpan={7} className="px-6 py-12 text-center text-[13px] text-text-muted">Loading storage types…</td></tr>
+                )}
+                {!loading && pageRows.map((r) => (
                   <tr key={r.code} className="border-b border-border-soft last:border-b-0 hover:bg-soft-bg/60 transition-colors">
                     <td className="px-6 py-4 text-[13px] font-medium text-action-blue font-mono">{r.code}</td>
                     <td className="px-6 py-4 text-[13px] font-medium text-text-primary">{r.name}</td>
@@ -333,7 +382,7 @@ export default function StorageTypesPage() {
                     </td>
                   </tr>
                 ))}
-                {pageRows.length === 0 && (
+                {!loading && pageRows.length === 0 && (
                   <tr><td colSpan={7} className="px-6 py-12 text-center text-[13px] text-text-muted">No storage types match your filters.</td></tr>
                 )}
               </tbody>

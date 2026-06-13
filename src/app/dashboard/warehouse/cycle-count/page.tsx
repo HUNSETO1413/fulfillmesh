@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ClipboardList, CheckCircle2, Activity, CalendarClock, XCircle,
   Search, Columns3, Plus, ChevronDown, MoreHorizontal,
@@ -11,7 +11,7 @@ import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { Drawer, DrawerRow, DrawerSection } from "@/components/dashboard/Drawer";
 import { Field, TextInput, Select } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
-import { exportToCsv } from "@/lib/client";
+import { api, exportToCsv } from "@/lib/client";
 
 /* stats are now computed via useMemo from rows state */
 
@@ -113,7 +113,8 @@ const emptyDraft: Draft = { name: "", type: "Routine Cycle Count", wh: "ATL-1", 
 
 export default function CycleCountPage() {
   const { toast } = useToast();
-  const [rows, setRows] = useState<Row[]>(initialRows);
+  const [rows, setRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTabState] = useState("All Cycle Counts");
   const [query, setQueryState] = useState("");
   const [whFilter, setWhFilterState] = useState("");
@@ -136,6 +137,34 @@ export default function CycleCountPage() {
   const [editBusy, setEditBusy] = useState(false);
   const [detailRow, setDetailRow] = useState<Row | null>(null);
   const seq = useRef(124);
+
+  /* ── Load rows from API on mount ── */
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await api.get<{ data: Record<string, unknown>[]; total: number }>("/api/cycle-counts");
+        if (!alive) return;
+        const mapped: Row[] = (res.data || []).map((c) => ({
+          cc: String(c.id ?? ""),
+          name: String(c.name ?? ""),
+          sub: String(c.countType ?? ""),
+          wh: String(c.warehouse ?? ""),
+          whSub: WH_CITY[String(c.warehouse ?? "")] ?? "",
+          status: (c.status as Status) ?? "Scheduled",
+          progress: Number(c.progress ?? 0),
+          start: fmt(String(c.startDate ?? "")),
+          due: fmt(String(c.dueDate ?? "")),
+        }));
+        setRows(mapped);
+      } catch {
+        if (alive) toast("Failed to load cycle counts", "error");
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── Computed stats derived from rows ── */
   const stats = useMemo(() => {
@@ -198,16 +227,31 @@ export default function CycleCountPage() {
     toast(`Exported ${filtered.length} cycle counts to CSV`);
   }
 
-  function createCount() {
+  async function createCount() {
     if (!draft.name.trim()) { toast("Count name is required", "error"); return; }
     setBusy(true);
     const n = ++seq.current;
     const cc = `CC-000${n}`;
+    const payload = {
+      id: cc,
+      name: draft.name.trim(),
+      countType: draft.type,
+      warehouse: draft.wh,
+      status: "Scheduled" as Status,
+      progress: 0,
+      startDate: draft.start,
+      dueDate: draft.due,
+    };
     const newRow: Row = {
       cc, name: draft.name.trim(), sub: draft.type, wh: draft.wh, whSub: WH_CITY[draft.wh],
       status: "Scheduled", progress: 0, start: fmt(draft.start), due: fmt(draft.due),
     };
     setRows((prev) => [newRow, ...prev]);
+    try {
+      await api.post("/api/cycle-counts", payload);
+    } catch {
+      toast("Failed to persist cycle count", "error");
+    }
     setBusy(false);
     setFormOpen(false);
     setDraft(emptyDraft);
@@ -218,6 +262,16 @@ export default function CycleCountPage() {
     setRows((prev) => prev.map((r) => (r.cc === cc ? { ...r, ...patch } : r)));
     setMenuFor(null);
     toast(msg);
+    const payload: Record<string, unknown> = {};
+    if (patch.status !== undefined) payload.status = patch.status;
+    if (patch.progress !== undefined) payload.progress = patch.progress;
+    if (patch.name !== undefined) payload.name = patch.name;
+    if (patch.sub !== undefined) payload.countType = patch.sub;
+    if (patch.wh !== undefined) payload.warehouse = patch.wh;
+    if (patch.due !== undefined) payload.dueDate = patch.due;
+    api.put("/api/cycle-counts/" + encodeURIComponent(cc), payload).catch(() => {
+      toast("Failed to save change", "error");
+    });
   }
 
   function openEdit(r: Row) {
@@ -226,7 +280,7 @@ export default function CycleCountPage() {
     setMenuFor(null);
   }
 
-  function saveEdit() {
+  async function saveEdit() {
     if (!editRow) return;
     if (!editDraft.name.trim()) { toast("Count name is required", "error"); return; }
     setEditBusy(true);
@@ -235,9 +289,30 @@ export default function CycleCountPage() {
         ? { ...r, name: editDraft.name.trim(), sub: editDraft.type, wh: editDraft.wh, whSub: WH_CITY[editDraft.wh], start: fmt(editDraft.start), due: fmt(editDraft.due) }
         : r
     ));
+    try {
+      await api.put("/api/cycle-counts/" + encodeURIComponent(editRow.cc), {
+        name: editDraft.name.trim(),
+        countType: editDraft.type,
+        warehouse: editDraft.wh,
+        dueDate: editDraft.due,
+      });
+    } catch {
+      toast("Failed to save changes", "error");
+    }
     setEditBusy(false);
     setEditRow(null);
     toast(`Cycle count ${editRow.cc} updated`);
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <div className="flex items-center gap-2 text-[13px] text-text-muted">
+          <span className="w-4 h-4 rounded-full border-2 border-action-blue border-t-transparent animate-spin" />
+          Loading cycle counts…
+        </div>
+      </div>
+    );
   }
 
   return (

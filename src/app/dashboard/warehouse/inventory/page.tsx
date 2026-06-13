@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Package, Tag, DollarSign, AlertTriangle,
   Search, Download, ChevronDown, MoreHorizontal, ArrowUpRight, ArrowDownRight,
@@ -11,7 +11,7 @@ import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { Drawer, DrawerRow, DrawerSection } from "@/components/dashboard/Drawer";
 import { Field, TextInput, NumberInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
-import { exportToCsv } from "@/lib/client";
+import { api, exportToCsv } from "@/lib/client";
 
 const tabs = ["All Inventory", "Low Stock", "Out of Stock", "Expiring Soon"];
 
@@ -100,7 +100,36 @@ const emptyDraft: Draft = { product: "", category: "Electronics", sku: "", wh: "
 export default function WarehouseInventoryPage() {
   const { toast } = useToast();
   const tableRef = useRef<HTMLDivElement>(null);
-  const [rows, setRows] = useState<Row[]>(initialRows);
+  const [rows, setRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get<{ data: any[]; total: number }>("/api/inventory");
+        const mapped: Row[] = (res.data ?? []).map((it: any) => ({
+          product: it.name ?? "",
+          category: "",
+          sku: it.sku ?? "",
+          wh: it.warehouse ?? "",
+          onHand: Number(it.onHand ?? 0),
+          reserved: Number(it.reserved ?? 0),
+          unitCost: 0,
+          status: (it.status as Status) ?? deriveStatus(Number(it.onHand ?? 0)),
+          expiring: false,
+          updated: "",
+        }));
+        if (!cancelled) setRows(mapped);
+      } catch (e) {
+        if (!cancelled) toast("Failed to load inventory", "error");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [activeTab, setActiveTabState] = useState("All Inventory");
   const [query, setQueryState] = useState("");
   const [whFilter, setWhFilterState] = useState("");
@@ -264,6 +293,7 @@ export default function WarehouseInventoryPage() {
     setRows((prev) => prev.filter((r) => !selected.has(r.sku)));
     pushLog(`${selected.size} SKU${selected.size === 1 ? "" : "s"} removed`, "Bulk", "#EF4444");
     toast(`Deleted ${selected.size} item${selected.size === 1 ? "" : "s"}`);
+    selected.forEach((sku) => { api.del(`/api/inventory/${sku}`).catch(() => {}); });
     setSelected(new Set());
     setBulkDeleting(false);
   }
@@ -282,6 +312,7 @@ export default function WarehouseInventoryPage() {
     setRows((prev) => prev.map((r) => (r.sku === adjusting.sku ? { ...r, onHand: qty, status: deriveStatus(qty), updated: todayIso() } : r)));
     pushLog(`SKU ${adjusting.sku} stock adjusted`, adjusting.wh);
     toast(`${adjusting.sku} on-hand set to ${num(qty)}`);
+    api.put(`/api/inventory/${adjusting.sku}`, { sku: adjusting.sku, name: adjusting.product, warehouse: adjusting.wh, onHand: qty, reserved: adjusting.reserved, available: qty - adjusting.reserved, reorderPoint: 0, status: deriveStatus(qty) }).catch(() => toast("Failed to save adjustment on server", "error"));
     setAdjusting(null);
   }
 
@@ -315,6 +346,7 @@ export default function WarehouseInventoryPage() {
         : r)));
       pushLog(`SKU ${sku} updated`, draft.wh);
       toast(`${sku} updated`);
+      api.put(`/api/inventory/${sku}`, { sku, name: draft.product.trim(), warehouse: draft.wh, onHand, reserved, available: onHand - reserved, reorderPoint: 0, status: deriveStatus(onHand) }).catch(() => toast("Failed to save changes on server", "error"));
     } else {
       const newRow: Row = {
         product: draft.product.trim(), category: draft.category, sku, wh: draft.wh,
@@ -323,6 +355,7 @@ export default function WarehouseInventoryPage() {
       setRows((prev) => [newRow, ...prev]);
       pushLog(`SKU ${sku} added`, draft.wh, "#10B981");
       toast(`${sku} added to inventory`);
+      api.post("/api/inventory", { sku, name: draft.product.trim(), warehouse: draft.wh, onHand, reserved, available: onHand - reserved, reorderPoint: 0, status: deriveStatus(onHand) }).catch(() => toast("Failed to create item on server", "error"));
     }
     setFormOpen(false);
   }
@@ -333,6 +366,7 @@ export default function WarehouseInventoryPage() {
     setSelected((prev) => { const next = new Set(prev); next.delete(deleting.sku); return next; });
     pushLog(`SKU ${deleting.sku} removed`, deleting.wh, "#EF4444");
     toast(`${deleting.sku} deleted`);
+    api.del(`/api/inventory/${deleting.sku}`).catch(() => toast("Failed to delete item on server", "error"));
     setDeleting(null);
     setViewing(null);
   }
@@ -480,7 +514,7 @@ export default function WarehouseInventoryPage() {
                   </tr>
                 ))}
                 {pageRows.length === 0 && (
-                  <tr><td colSpan={9} className="px-5 py-12 text-center text-[13px] text-[#64748B]">No inventory items match your filters.</td></tr>
+                  <tr><td colSpan={9} className="px-5 py-12 text-center text-[13px] text-[#64748B]">{loading ? "Loading inventory..." : "No inventory items match your filters."}</td></tr>
                 )}
               </tbody>
             </table>

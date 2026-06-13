@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CheckSquare,
   CheckCircle2,
@@ -24,6 +24,7 @@ import { Modal } from "@/components/dashboard/Modal";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { Field, TextInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
+import { api } from "@/lib/client";
 
 const stats = [
   { title: "Total Tasks", value: "2,348", change: "15.6%", up: true, icon: CheckSquare, color: "#3B82F6" },
@@ -186,7 +187,8 @@ function isOverdue(t: Task): boolean {
 export default function TasksPage() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("All Tasks");
-  const [items, setItems] = useState<Task[]>(initialTasks);
+  const [items, setItems] = useState<Task[]>([]);
+  const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [whFilter, setWhFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
@@ -200,6 +202,36 @@ export default function TasksPage() {
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState<Task | null>(null);
   const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get<{ data: any[]; total: number }>("/api/tasks");
+        if (cancelled) return;
+        const mapped: Task[] = (res?.data ?? []).map((t: any) => ({
+          id: String(t.id),
+          type: t.taskType ?? "Pick",
+          ref: t.reference ?? "",
+          warehouse: t.warehouse ?? "",
+          assignee: t.assignee ?? "",
+          priority: t.priority ?? "Medium",
+          status: t.status ?? "Pending",
+          created: t.createdAt ?? "",
+          due: t.dueDate ?? "",
+        }));
+        setItems(mapped);
+      } catch (err) {
+        if (!cancelled) toast("Failed to load tasks", "error");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function goToPage(p: number) {
     if (p < 1 || p > 235) return;
@@ -239,12 +271,14 @@ export default function TasksPage() {
     const next = idx === -1 ? "In Progress" : STATUS_CYCLE[(idx + 1) % STATUS_CYCLE.length];
     setItems((cur) => cur.map((t) => (t.id === id ? { ...t, status: next } : t)));
     toast(`${id} marked ${next}`);
+    api.put(`/api/tasks/${id}`, { status: next }).catch(() => toast(`Failed to update ${id}`, "error"));
   }
 
   function setStatus(id: string, status: string) {
     setItems((cur) => cur.map((t) => (t.id === id ? { ...t, status } : t)));
     setOpenMenu(null);
     toast(`${id} set to ${status}`);
+    api.put(`/api/tasks/${id}`, { status }).catch(() => toast(`Failed to update ${id}`, "error"));
   }
 
   function openCreate() {
@@ -267,39 +301,73 @@ export default function TasksPage() {
     if (!draft.ref.trim()) { toast("Reference is required", "error"); return; }
     if (!draft.assignee.trim()) { toast("Assignee is required", "error"); return; }
     setBusy(true);
+    const payload = {
+      title: editing?.id ?? `TSK-${String(taskSeq++).padStart(6, "0")}`,
+      taskType: draft.type,
+      warehouse: draft.warehouse,
+      assignee: draft.assignee.trim(),
+      priority: draft.priority,
+      status: draft.status,
+      reference: draft.ref.trim(),
+      dueDate: draft.due,
+    };
     if (editing) {
       setItems((cur) => cur.map((t) => (t.id === editing.id ? {
         ...t, type: draft.type, ref: draft.ref.trim(), warehouse: draft.warehouse,
         assignee: draft.assignee.trim(), priority: draft.priority, status: draft.status,
         due: toDisplayDate(draft.due),
       } : t)));
-      setBusy(false);
-      setFormOpen(false);
-      toast(`Task ${editing.id} updated`);
+      api.put(`/api/tasks/${editing.id}`, payload)
+        .then(() => toast(`Task ${editing.id} updated`))
+        .catch(() => toast(`Failed to update ${editing.id}`, "error"))
+        .finally(() => { setBusy(false); setFormOpen(false); });
       return;
     }
-    const id = `TSK-${String(taskSeq++).padStart(6, "0")}`;
+    const localId = payload.title;
     const created: Task = {
-      id, type: draft.type, ref: draft.ref.trim(), warehouse: draft.warehouse,
-      assignee: draft.assignee.trim(), priority: draft.priority, status: "Pending",
+      id: localId, type: draft.type, ref: draft.ref.trim(), warehouse: draft.warehouse,
+      assignee: draft.assignee.trim(), priority: draft.priority, status: draft.status,
       created: new Date().toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }),
       due: toDisplayDate(draft.due),
     };
     setItems((prev) => [created, ...prev]);
-    setBusy(false);
-    setFormOpen(false);
-    toast(`Task ${id} created`);
+    api.post("/api/tasks", payload)
+      .then((res: any) => {
+        const newId = res?.id != null ? String(res.id) : null;
+        if (newId && newId !== localId) {
+          setItems((prev) => prev.map((t) => (t.id === localId ? { ...t, id: newId } : t)));
+          toast(`Task ${newId} created`);
+        } else {
+          toast(`Task ${localId} created`);
+        }
+      })
+      .catch(() => {
+        setItems((prev) => prev.filter((t) => t.id !== localId));
+        toast("Failed to create task", "error");
+      })
+      .finally(() => { setBusy(false); setFormOpen(false); });
   }
 
   function confirmDelete() {
     if (!deleting) return;
-    setItems((cur) => cur.filter((t) => t.id !== deleting.id));
-    toast(`${deleting.id} deleted`);
+    const id = deleting.id;
+    setItems((cur) => cur.filter((t) => t.id !== id));
     setDeleting(null);
+    api.del(`/api/tasks/${id}`)
+      .then(() => toast(`Task ${id} deleted`))
+      .catch(() => toast(`Failed to delete ${id}`, "error"));
   }
 
   return (
     <div className="space-y-6">
+      {loading && (
+        <div className="flex items-center justify-center py-20">
+          <Loader className="w-5 h-5 animate-spin text-[#3B82F6]" />
+          <span className="ml-2 text-[14px] text-[#64748B]">Loading tasks…</span>
+        </div>
+      )}
+      {!loading && (
+      <>
       {/* Header */}
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-4">
@@ -657,6 +725,8 @@ export default function TasksPage() {
         confirmLabel="Delete"
         destructive
       />
+      </>
+      )}
     </div>
   );
 }

@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { api } from "@/lib/client";
 import {
   Bell,
   Settings,
@@ -11,12 +12,9 @@ import {
   ChevronRight,
   Truck,
   AlertTriangle,
-  PackageCheck,
-  ClipboardCheck,
   FileText,
   Wrench,
   CreditCard,
-  UserPlus,
   Mail,
   Trash2,
   Archive,
@@ -48,21 +46,19 @@ interface Notification {
   time: string;
   unread: boolean;
   category: string;
+  link?: string | null;
 }
 
-const initialNotifications: Notification[] = [
-  { id: 1, icon: Truck, color: "#0057D8", title: "Shipment SO-102876 has been shipped", desc: "Order has been shipped via FedEx. Tracking #: 1Z999AA10123456784", time: "10:24 AM", unread: true, category: "Shipments" },
-  { id: 2, icon: AlertTriangle, color: "#F59E0B", title: "Low stock alert: SKU-10023", desc: "Product \"Wireless Headphones\" is below reorder point at ATL1.", time: "09:58 AM", unread: true, category: "Inventory" },
-  { id: 3, icon: PackageCheck, color: "#00B894", title: "Inbound receipt completed", desc: "Receipt PO-50672 has been received at DFW1.", time: "09:15 AM", unread: true, category: "Inventory" },
-  { id: 4, icon: ClipboardCheck, color: "#7C6FF6", title: "Cycle count CC-000124 completed", desc: "Cycle count for zone B at LAX1 has been completed.", time: "Yesterday 06:45 PM", unread: false, category: "Inventory" },
-  { id: 5, icon: FileText, color: "#0057D8", title: "Order SO-102865 placed", desc: "A new order has been placed by customer James Carter.", time: "Yesterday 04:32 PM", unread: false, category: "Orders" },
-  { id: 6, icon: Truck, color: "#0057D8", title: "Return RMA-7788 received", desc: "Return for order SO-100154 has been received and inspected.", time: "Yesterday 02:10 PM", unread: false, category: "Shipments" },
-  { id: 7, icon: FileText, color: "#007F8C", title: "Document uploaded", desc: "\"Warehouse Safety Guide\" was uploaded by Michael Brown.", time: "Yesterday 11:05 AM", unread: false, category: "Other" },
-  { id: 8, icon: Wrench, color: "#64748B", title: "System maintenance scheduled", desc: "Platform maintenance scheduled for Jun 5, 2025, 2:00 AM – 4:00 AM EST.", time: "May 29, 09:00 AM", unread: false, category: "System" },
-  { id: 9, icon: CreditCard, color: "#F59E0B", title: "Invoice INV-2041 generated", desc: "A new invoice has been generated for customer Acme Retail.", time: "May 29, 08:14 AM", unread: false, category: "Billing" },
-  { id: 10, icon: ClipboardCheck, color: "#00B894", title: "Putaway PA-00219 completed", desc: "Putaway task at MIA1 has been completed.", time: "May 28, 03:48 PM", unread: false, category: "Inventory" },
-  { id: 11, icon: UserPlus, color: "#7C6FF6", title: "New message from James Carter", desc: "You have a new message regarding PO-102876.", time: "May 28, 01:22 PM", unread: false, category: "Other" },
-];
+// Shape returned by /api/notifications.
+interface AppNotification {
+  id: string | number;
+  type: string;
+  title: string;
+  description: string;
+  read: boolean;
+  createdAt: string;
+  link?: string | null;
+}
 
 const summary = [
   { label: "Orders", value: "24", pct: 19, color: "#0057D8" },
@@ -81,6 +77,37 @@ const preferences = [
   { label: "Billing Reminders", on: true },
 ];
 
+// Map a notification category to its icon + color (used for derived rows).
+const CATEGORY_STYLE: Record<string, { icon: typeof Truck; color: string }> = {
+  Orders: { icon: FileText, color: "#0057D8" },
+  Inventory: { icon: AlertTriangle, color: "#F59E0B" },
+  Shipments: { icon: Truck, color: "#0057D8" },
+  System: { icon: Wrench, color: "#64748B" },
+  Billing: { icon: CreditCard, color: "#F59E0B" },
+  Other: { icon: FileText, color: "#007F8C" },
+};
+const DEFAULT_CATEGORY_STYLE = { icon: Bell, color: "#64748B" };
+
+// Format an ISO timestamp into a relative label like "2h ago".
+function formatRelativeTime(iso: string): string {
+  if (!iso) return "";
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return iso;
+  const diff = Date.now() - then;
+  const sec = Math.round(diff / 1000);
+  if (sec < 60) return "just now";
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.round(hr / 24);
+  if (day < 7) return `${day}d ago`;
+  const wk = Math.round(day / 7);
+  if (wk < 5) return `${wk}w ago`;
+  const mo = Math.round(day / 30);
+  return `${mo}mo ago`;
+}
+
 const PAGE_SIZE = 10;
 
 // Where clicking a notification of a given category takes you.
@@ -97,13 +124,48 @@ export default function NotificationsPage() {
   const { toast } = useToast();
   const [active, setActive] = useState("All");
   const [prefs, setPrefs] = useState(preferences);
-  const [items, setItems] = useState<Notification[]>(initialNotifications);
+  const [items, setItems] = useState<Notification[]>([]);
+  const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [clearOpen, setClearOpen] = useState(false);
   const [openMenu, setOpenMenu] = useState<number | null>(null);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   const C = 2 * Math.PI * 40;
+
+  // Fetch notifications from the API on mount.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get<{ data: AppNotification[]; total: number }>("/api/notifications");
+        if (cancelled) return;
+        const mapped: Notification[] = (res.data ?? []).map((n) => {
+          const style = CATEGORY_STYLE[n.type] ?? DEFAULT_CATEGORY_STYLE;
+          return {
+            id: Number(n.id),
+            icon: style.icon,
+            color: style.color,
+            title: n.title ?? "",
+            desc: n.description ?? "",
+            time: formatRelativeTime(n.createdAt),
+            unread: !n.read,
+            category: n.type ?? "Other",
+            link: n.link,
+          };
+        });
+        setItems(mapped);
+      } catch (err) {
+        if (!cancelled) toast("Failed to load notifications", "error");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const unreadCount = items.filter((n) => n.unread).length;
 
@@ -133,18 +195,24 @@ export default function NotificationsPage() {
     if (!target || !target.unread) return;
     setItems((cur) => cur.map((n) => (n.id === id ? { ...n, unread: false } : n)));
     toast("Notification marked as read");
+    api.put(`/api/notifications/${id}`, { read: true }).catch(() => {
+      /* fire-and-forget */
+    });
   }
 
   function markUnread(id: number) {
     setItems((cur) => cur.map((n) => (n.id === id ? { ...n, unread: true } : n)));
     setOpenMenu(null);
     toast("Notification marked as unread");
+    api.put(`/api/notifications/${id}`, { read: false }).catch(() => {
+      /* fire-and-forget */
+    });
   }
 
-  // Mark read, then navigate to the page the notification relates to.
+  // Mark read, then navigate to the notification's link (or its category route).
   function openNotification(n: Notification) {
     markRead(n.id);
-    const route = CATEGORY_ROUTES[n.category];
+    const route = n.link || CATEGORY_ROUTES[n.category];
     if (route) router.push(route);
   }
 
@@ -155,11 +223,20 @@ export default function NotificationsPage() {
     }
     setItems((cur) => cur.map((n) => ({ ...n, unread: false })));
     toast(`Marked ${unreadCount} notification${unreadCount === 1 ? "" : "s"} as read`);
+    items.filter((n) => n.unread).forEach((n) => {
+      api.put(`/api/notifications/${n.id}`, { read: true }).catch(() => {
+        /* fire-and-forget */
+      });
+    });
   }
 
   function removeOne(id: number) {
     setItems((cur) => cur.filter((n) => n.id !== id));
+    setOpenMenu(null);
     toast("Notification removed");
+    api.del(`/api/notifications/${id}`).catch(() => {
+      /* fire-and-forget */
+    });
   }
 
   function archiveAllRead() {
@@ -173,6 +250,11 @@ export default function NotificationsPage() {
   }
 
   function confirmClear() {
+    items.forEach((n) => {
+      api.del(`/api/notifications/${n.id}`).catch(() => {
+        /* fire-and-forget */
+      });
+    });
     setItems([]);
     setClearOpen(false);
     toast("All notifications cleared");

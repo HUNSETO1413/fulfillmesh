@@ -197,3 +197,106 @@ export interface ListResponse<T> {
   data: T[];
   total: number;
 }
+
+// ---------- Warehouse management ----------
+
+export type WarehouseStatus = "Active" | "Paused" | "Inactive";
+
+export interface Warehouse {
+  id: string;
+  name: string;
+  code: string;
+  location?: string;
+  city?: string;
+  country?: string;
+  type?: string;
+  manager?: string;
+  capacity: number; // 0-100 percent utilization
+  isDefault: boolean;
+  status: WarehouseStatus;
+}
+
+export type StorageTypeStatus = "Active" | "Inactive";
+
+export interface StorageType {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  suitableFor?: string;
+  utilization: number;
+  status: StorageTypeStatus;
+}
+
+export type TransferStatus = "Pending" | "In Transit" | "Completed" | "Cancelled";
+
+export interface TransferOrder {
+  id: string;
+  reference?: string;
+  fromWarehouse: string;
+  toWarehouse: string;
+  itemCount: number;
+  unitCount: number;
+  status: TransferStatus;
+  requestedDate: string;
+  eta: string;
+}
+
+export type CycleCountStatus = "Scheduled" | "In Progress" | "Completed" | "Cancelled";
+
+export interface CycleCount {
+  id: string;
+  name: string;
+  countType?: string;
+  warehouse: string;
+  status: CycleCountStatus;
+  progress: number;
+  startDate: string;
+  dueDate: string;
+}
+
+// ---------- Activity & collaboration ----------
+
+export type NotificationType =
+  | "order" | "shipment" | "inventory" | "return"
+  | "billing" | "security" | "system" | "report";
+
+export interface AppNotification {
+  id: string;
+  type: NotificationType;
+  title: string;
+  description?: string;
+  read: boolean;
+  createdAt: string;
+  link?: string;
+}
+
+export type TaskStatus = "Pending" | "In Progress" | "Completed" | "Cancelled";
+export type TaskPriority = "Low" | "Medium" | "High" | "Urgent";
+
+export interface Task {
+  id: string;
+  title: string;
+  taskType?: string;
+  warehouse?: string;
+  assignee?: string;
+  priority: TaskPriority;
+  status: TaskStatus;
+  createdAt: string;
+  dueDate?: string;
+  reference?: string;
+}
+
+// ---------- Warehouse locations ----------
+
+export type LocationStatus = "Active" | "Inactive";
+
+export interface WarehouseLocation {
+  id: string;
+  code: string;
+  name: string;
+  warehouse: string;
+  type?: string;
+  capacity: number; // 0-100 percent utilization
+  status: LocationStatus;
+}

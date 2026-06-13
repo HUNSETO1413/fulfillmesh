@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   MapPin, CheckCircle2, Boxes, AlertTriangle, Square,
   Search, Plus, Download, ChevronDown, MoreHorizontal,
@@ -12,7 +12,7 @@ import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { Drawer, DrawerRow, DrawerSection } from "@/components/dashboard/Drawer";
 import { Field, TextInput, NumberInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
-import { exportToCsv } from "@/lib/client";
+import { api, exportToCsv } from "@/lib/client";
 
 type Status = "Active" | "Inactive";
 type Row = {
@@ -20,18 +20,15 @@ type Row = {
   type: string; cap: number; util: number; status: Status; updated: string;
 };
 
-const initialRows: Row[] = [
-  { code: "ATL1-A01-01", name: "Receiving Area", wh: "ATL-1", whSub: "Atlanta, GA", type: "Zone", cap: 5000, util: 42, status: "Active", updated: "2025-05-12" },
-  { code: "ATL1-B02-05", name: "Pick Zone B02", wh: "ATL-1", whSub: "Atlanta, GA", type: "Pick Zone", cap: 1200, util: 78, status: "Active", updated: "2025-05-11" },
-  { code: "ATL1-B02-06", name: "Pick Zone B02-06", wh: "ATL-1", whSub: "Atlanta, GA", type: "Bin", cap: 300, util: 65, status: "Active", updated: "2025-05-12" },
-  { code: "LAX1-C03-01", name: "Reserve Storage", wh: "LAX-1", whSub: "Los Angeles, CA", type: "Reserve", cap: 8000, util: 91, status: "Active", updated: "2025-05-10" },
-  { code: "LAX1-D04-12", name: "Bulk Storage D04", wh: "LAX-1", whSub: "Los Angeles, CA", type: "Bulk", cap: 20000, util: 56, status: "Active", updated: "2025-05-09" },
-  { code: "DFW1-A01-01", name: "Receiving Area", wh: "DFW-1", whSub: "Dallas, TX", type: "Zone", cap: 5000, util: 33, status: "Active", updated: "2025-05-11" },
-  { code: "DFW1-B05-03", name: "Pick Zone B05", wh: "DFW-1", whSub: "Dallas, TX", type: "Pick Zone", cap: 900, util: 24, status: "Active", updated: "2025-05-08" },
-  { code: "ORD1-C03-01", name: "High Value Storage", wh: "ORD-1", whSub: "Chicago, IL", type: "Special", cap: 600, util: 38, status: "Active", updated: "2025-05-07" },
-  { code: "MIA1-D05-02", name: "Pick Zone D05", wh: "MIA-1", whSub: "Miami, FL", type: "Pick Zone", cap: 1100, util: 0, status: "Active", updated: "2025-05-12" },
-  { code: "ORD1-E01-04", name: "Overflow Bin E01", wh: "ORD-1", whSub: "Chicago, IL", type: "Bin", cap: 250, util: 0, status: "Inactive", updated: "2025-05-05" },
-];
+type WarehouseLocation = {
+  id?: string;
+  code: string;
+  name: string;
+  warehouse: string;
+  type: string;
+  capacity: number;
+  status: Status;
+};
 
 const WAREHOUSES = ["ATL-1", "LAX-1", "DFW-1", "MIA-1", "ORD-1"];
 const WH_CITY: Record<string, string> = { "ATL-1": "Atlanta, GA", "LAX-1": "Los Angeles, CA", "DFW-1": "Dallas, TX", "MIA-1": "Miami, FL", "ORD-1": "Chicago, IL" };
@@ -90,7 +87,36 @@ const isLowStock = (r: Row) => r.status === "Active" && r.util > 0 && r.util < 5
 export default function WarehouseLocationsPage() {
   const { toast } = useToast();
   const tableRef = useRef<HTMLDivElement>(null);
-  const [rows, setRows] = useState<Row[]>(initialRows);
+  const [rows, setRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await api.get<{ data: WarehouseLocation[]; total: number }>("/api/locations");
+        if (!alive) return;
+        const mapped: Row[] = (res.data ?? []).map((l) => ({
+          code: l.code,
+          name: l.name,
+          wh: l.warehouse,
+          whSub: WH_CITY[l.warehouse] ?? l.warehouse,
+          type: l.type,
+          cap: l.capacity,
+          util: l.capacity,
+          status: l.status,
+          updated: "",
+        }));
+        setRows(mapped);
+      } catch (err) {
+        if (alive) toast(`Failed to load locations: ${(err as Error).message}`, "error");
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [query, setQueryState] = useState("");
   const [whFilter, setWhFilterState] = useState("");
   const [typeFilter, setTypeFilterState] = useState("");
@@ -242,34 +268,62 @@ export default function WarehouseLocationsPage() {
     setFormOpen(true);
   }
 
-  function saveLocation() {
+  async function saveLocation() {
     if (!draft.name.trim()) { toast("Location name is required", "error"); return; }
     const cap = Number(draft.cap);
     if (!draft.cap.trim() || Number.isNaN(cap) || cap <= 0) { toast("Capacity must be a number greater than 0", "error"); return; }
     const util = Number(draft.util);
     if (Number.isNaN(util) || util < 0 || util > 100) { toast("Utilization must be between 0 and 100", "error"); return; }
     setBusy(true);
-    if (editing) {
-      setRows((prev) => prev.map((r) => (r.code === editing.code
-        ? { ...r, name: draft.name.trim(), wh: draft.wh, whSub: WH_CITY[draft.wh], type: draft.type, cap, util, updated: todayIso() }
-        : r)));
-      toast(`Location ${editing.code} updated`);
-    } else {
-      const n = ++seq.current;
-      const code = `${draft.wh.replace("-", "")}-N${n}`;
-      const newRow: Row = {
-        code, name: draft.name.trim(), wh: draft.wh, whSub: WH_CITY[draft.wh],
-        type: draft.type, cap, util, status: "Active", updated: todayIso(),
-      };
-      setRows((prev) => [newRow, ...prev]);
-      toast(`Location ${code} added`);
+    try {
+      if (editing) {
+        const patch = {
+          name: draft.name.trim(),
+          warehouse: draft.wh,
+          type: draft.type,
+          capacity: cap,
+          status: editing.status,
+        };
+        await api.put(`/api/locations/${editing.code}`, patch);
+        setRows((prev) => prev.map((r) => (r.code === editing.code
+          ? { ...r, name: draft.name.trim(), wh: draft.wh, whSub: WH_CITY[draft.wh] ?? draft.wh, type: draft.type, cap, util, updated: todayIso() }
+          : r)));
+        toast(`Location ${editing.code} updated`);
+      } else {
+        const created = await api.post<WarehouseLocation>("/api/locations", {
+          code: draft.name.trim().toUpperCase().replace(/\s+/g, "-").slice(0, 8) || `LOC-${++seq.current}`,
+          name: draft.name.trim(),
+          warehouse: draft.wh,
+          type: draft.type,
+          capacity: cap,
+          status: "Active" as Status,
+        });
+        const code = created?.code ?? `LOC-${seq.current}`;
+        const newRow: Row = {
+          code, name: draft.name.trim(), wh: draft.wh, whSub: WH_CITY[draft.wh] ?? draft.wh,
+          type: draft.type, cap, util, status: "Active", updated: todayIso(),
+        };
+        setRows((prev) => [newRow, ...prev]);
+        toast(`Location ${code} added`);
+      }
+    } catch (err) {
+      toast(`Failed to save location: ${(err as Error).message}`, "error");
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
     setFormOpen(false);
     setDraft(emptyDraft);
   }
 
   function patchRow(code: string, patch: Partial<Row>, msg: string) {
+    const mapped: Partial<WarehouseLocation> = {};
+    if (patch.name !== undefined) mapped.name = patch.name;
+    if (patch.wh !== undefined) mapped.warehouse = patch.wh;
+    if (patch.type !== undefined) mapped.type = patch.type;
+    if (patch.cap !== undefined) mapped.capacity = patch.cap;
+    if (patch.util !== undefined) mapped.capacity = patch.util;
+    if (patch.status !== undefined) mapped.status = patch.status;
+    api.put(`/api/locations/${code}`, mapped).catch((err) => toast(`Failed to update: ${(err as Error).message}`, "error"));
     setRows((prev) => prev.map((r) => (r.code === code ? { ...r, ...patch, updated: todayIso() } : r)));
     setViewing((prev) => (prev && prev.code === code ? { ...prev, ...patch, updated: todayIso() } : prev));
     setMenuFor(null);
@@ -283,6 +337,9 @@ export default function WarehouseLocationsPage() {
   }
 
   function bulkDelete() {
+    const codes = Array.from(selected);
+    Promise.all(codes.map((code) => api.del(`/api/locations/${code}`)))
+      .catch((err) => toast(`Some deletions failed: ${(err as Error).message}`, "error"));
     setRows((prev) => prev.filter((r) => !selected.has(r.code)));
     toast(`Deleted ${selected.size} location${selected.size === 1 ? "" : "s"}`);
     setSelected(new Set());
@@ -411,7 +468,7 @@ export default function WarehouseLocationsPage() {
                   </tr>
                 ))}
                 {pageRows.length === 0 && (
-                  <tr><td colSpan={9} className="px-6 py-12 text-center text-[13px] text-text-muted">No locations match your filters.</td></tr>
+                  <tr><td colSpan={9} className="px-6 py-12 text-center text-[13px] text-text-muted">{loading ? "Loading locations…" : "No locations match your filters."}</td></tr>
                 )}
               </tbody>
             </table>

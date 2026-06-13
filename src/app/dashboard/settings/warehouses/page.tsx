@@ -6,10 +6,12 @@ import { Modal } from "@/components/dashboard/Modal";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { Field, TextInput, NumberInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
+import { api } from "@/lib/client";
 
 type Status = "Active" | "Paused";
 
 type Warehouse = {
+  id?: string;
   name: string;
   code: string;
   location: string;
@@ -22,12 +24,33 @@ type Warehouse = {
   status: Status;
 };
 
-const initialWarehouses: Warehouse[] = [
-  { name: "Shenzhen Warehouse", code: "SZX-001", location: "Shenzhen, China", zip: "518000", type: "Regional", manager: "Liu Wei", managerEmail: "liuwei@fm.co", capacity: 78, isDefault: false, status: "Active" },
-  { name: "Los Angeles Warehouse", code: "LAX-002", location: "Los Angeles, CA", zip: "90025, USA", type: "Regional", manager: "Sarah Johnson", managerEmail: "sarah.j@fm.co", capacity: 62, isDefault: true, status: "Active" },
-  { name: "Dallas Hub", code: "DAL-003", location: "Dallas, TX", zip: "75201, USA", type: "Hub", manager: "Michael Brown", managerEmail: "michael@fm.co", capacity: 45, isDefault: false, status: "Paused" },
-  { name: "Rotterdam Warehouse", code: "RTH-004", location: "Rotterdam", zip: "3011 AA, NL", type: "Regional", manager: "Emma de Vries", managerEmail: "emma.v@fm.co", capacity: 68, isDefault: false, status: "Active" },
-];
+type ApiWarehouse = {
+  id: string;
+  name: string;
+  code: string;
+  location: string;
+  city?: string;
+  country?: string;
+  type: string;
+  manager: string;
+  capacity: number;
+  isDefault: boolean;
+  status: Status;
+};
+
+const mapApiWarehouse = (w: ApiWarehouse): Warehouse => ({
+  id: w.id,
+  name: w.name,
+  code: w.code,
+  location: w.location,
+  zip: "",
+  type: w.type,
+  manager: w.manager,
+  managerEmail: "",
+  capacity: w.capacity,
+  isDefault: w.isDefault,
+  status: w.status,
+});
 
 const statusStyles: Record<Status, string> = {
   "Active": "bg-[#10B981]/10 text-[#10B981]",
@@ -43,7 +66,8 @@ const emptyDraft = { name: "", code: "", location: "", zip: "", type: "Regional"
 
 export default function WarehousesPage() {
   const { toast } = useToast();
-  const [warehouses, setWarehouses] = useState<Warehouse[]>(initialWarehouses);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("All Types");
   const [statusFilter, setStatusFilter] = useState("All Statuses");
@@ -67,6 +91,22 @@ export default function WarehousesPage() {
     return () => document.removeEventListener("mousedown", onDoc);
   }, [menuFor]);
 
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await api.get<{ data: ApiWarehouse[]; total: number }>("/api/warehouses");
+        if (!alive) return;
+        setWarehouses(res.data.map(mapApiWarehouse));
+      } catch {
+        if (alive) toast("Failed to load warehouses", "error");
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const list = warehouses.filter((w) => {
@@ -79,8 +119,17 @@ export default function WarehousesPage() {
   }, [warehouses, query, typeFilter, statusFilter, sortAsc]);
 
   const toggleStatus = (code: string) => {
-    setWarehouses((ws) => ws.map((w) => (w.code === code ? { ...w, status: w.status === "Active" ? "Paused" : "Active" } : w)));
+    const target = warehouses.find((w) => w.code === code);
+    if (!target) return;
+    const nextStatus: Status = target.status === "Active" ? "Paused" : "Active";
+    setWarehouses((ws) => ws.map((w) => (w.code === code ? { ...w, status: nextStatus } : w)));
     toast("Warehouse status updated");
+    if (target.id) {
+      api.put(`/api/warehouses/${target.id}`, { status: nextStatus }).catch(() => {
+        setWarehouses((ws) => ws.map((w) => (w.code === code ? { ...w, status: target.status } : w)));
+        toast("Failed to update status", "error");
+      });
+    }
   };
 
   const requestToggleStatus = (w: Warehouse) => {
@@ -103,9 +152,18 @@ export default function WarehousesPage() {
   };
 
   const setDefault = (code: string) => {
+    const target = warehouses.find((w) => w.code === code);
+    const prevDefault = warehouses.find((w) => w.isDefault);
     setWarehouses((ws) => ws.map((w) => ({ ...w, isDefault: w.code === code })));
     setMenuFor(null);
     toast("Default warehouse updated");
+    if (target?.id) {
+      const updates: Promise<unknown>[] = [api.put(`/api/warehouses/${target.id}`, { isDefault: true })];
+      if (prevDefault?.id && prevDefault.id !== target.id) {
+        updates.push(api.put(`/api/warehouses/${prevDefault.id}`, { isDefault: false }));
+      }
+      Promise.all(updates).catch(() => toast("Failed to update default warehouse", "error"));
+    }
   };
 
   const handleAdd = () => {
@@ -138,6 +196,23 @@ export default function WarehousesPage() {
         status: "Active",
       },
     ]);
+    api
+      .post<ApiWarehouse>("/api/warehouses", {
+        name: draft.name.trim(),
+        code: draft.code.trim(),
+        location: draft.location.trim() || "—",
+        type: draft.type,
+        manager: draft.manager.trim() || "—",
+        capacity,
+        isDefault: false,
+        status: "Active",
+      })
+      .then((created) => {
+        if (created?.id) {
+          setWarehouses((ws) => ws.map((w) => (w.code === draft.code.trim() ? { ...w, id: created.id } : w)));
+        }
+      })
+      .catch(() => toast("Failed to create warehouse on server", "error"));
     setAddOpen(false);
     setDraft(emptyDraft);
     toast(`${draft.name.trim()} added`);
@@ -145,9 +220,13 @@ export default function WarehousesPage() {
 
   const handleRemove = () => {
     if (!removing) return;
+    const id = removing.id;
     setWarehouses((ws) => ws.filter((w) => w.code !== removing.code));
     toast(`${removing.name} removed`);
     setRemoving(null);
+    if (id) {
+      api.del(`/api/warehouses/${id}`).catch(() => toast("Failed to remove warehouse on server", "error"));
+    }
   };
 
   return (
@@ -241,7 +320,13 @@ export default function WarehousesPage() {
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 ? (
+            {loading ? (
+              <tr>
+                <td colSpan={8} className="px-4 py-10 text-center text-[13px] text-[#94A3B8]">
+                  Loading warehouses...
+                </td>
+              </tr>
+            ) : filtered.length === 0 ? (
               <tr>
                 <td colSpan={8} className="px-4 py-10 text-center text-[13px] text-[#94A3B8]">
                   No warehouses match your filters.
