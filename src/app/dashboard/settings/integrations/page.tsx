@@ -7,6 +7,7 @@ import { Modal } from "@/components/dashboard/Modal";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { Field, TextInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
+import { api } from "@/lib/client";
 import { isUrl } from "@/lib/validate";
 
 type Status = "Connected" | "Syncing" | "Available" | "Disconnected";
@@ -127,6 +128,14 @@ const SYNC_FREQUENCIES = ["Real-time", "Every 15 minutes", "Every hour", "Daily"
 
 const defaultConfig: IntegrationConfig = { apiKey: "", freq: "Every hour", webhook: "" };
 
+// Only the serialisable per-integration state is persisted (the Logo render
+// function can't be stored), keyed by integration name.
+type IntegrationStatusState = { status: Status; lastSync: string; action: Integration["action"] };
+type IntegrationsSection = {
+  statuses: Record<string, IntegrationStatusState>;
+  configs: Record<string, IntegrationConfig>;
+};
+
 export default function IntegrationsPage() {
   const { toast } = useToast();
   const [integrations, setIntegrations] = useState<Integration[]>(initialIntegrations);
@@ -149,6 +158,37 @@ export default function IntegrationsPage() {
     return () => document.removeEventListener("mousedown", onDoc);
   }, [menuFor]);
 
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const all = await api.get<Record<string, unknown>>("/api/settings");
+        if (!alive) return;
+        const section = all.integrations as Partial<IntegrationsSection> | undefined;
+        if (!section || typeof section !== "object") return;
+        if (section.statuses) {
+          const statuses = section.statuses;
+          // Re-attach the static Logo components to the stored status/sync state.
+          setIntegrations((list) =>
+            list.map((it) => (statuses[it.name] ? { ...it, ...statuses[it.name] } : it)),
+          );
+        }
+        if (section.configs) setConfigs(section.configs);
+      } catch {
+        if (alive) toast("Failed to load integrations", "error");
+      }
+    })();
+    return () => { alive = false; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Persist serialisable integration state under the `integrations` settings key.
+  const persist = (nextIntegrations: Integration[], nextConfigs: Record<string, IntegrationConfig>) => {
+    const statuses: Record<string, IntegrationStatusState> = {};
+    for (const it of nextIntegrations) statuses[it.name] = { status: it.status, lastSync: it.lastSync, action: it.action };
+    const payload: IntegrationsSection = { statuses, configs: nextConfigs };
+    api.put("/api/settings", { integrations: payload }).catch(() => toast("Failed to save integrations", "error"));
+  };
+
   const openConfig = (it: Integration) => {
     setMenuFor(null);
     setConfigFor(it);
@@ -166,17 +206,20 @@ export default function IntegrationsPage() {
 
     const name = configFor.name;
     const wasConnected = configFor.status === "Connected" || configFor.status === "Syncing";
-    setConfigs((c) => ({ ...c, [name]: { ...configDraft, apiKey: configDraft.apiKey.trim(), webhook: configDraft.webhook.trim() } }));
+    const nextConfigs = { ...configs, [name]: { ...configDraft, apiKey: configDraft.apiKey.trim(), webhook: configDraft.webhook.trim() } };
+    setConfigs(nextConfigs);
+    const nextIntegrations = wasConnected
+      ? integrations
+      : integrations.map((it) =>
+          it.name === name ? { ...it, status: "Connected" as Status, action: "Manage" as const, lastSync: nowStamp() } : it,
+        );
     if (!wasConnected) {
-      setIntegrations((list) =>
-        list.map((it) =>
-          it.name === name ? { ...it, status: "Connected", action: "Manage", lastSync: nowStamp() } : it,
-        ),
-      );
+      setIntegrations(nextIntegrations);
       toast(`${name} connected`);
     } else {
       toast(`${name} settings saved`);
     }
+    persist(nextIntegrations, nextConfigs);
     setConfigFor(null);
   };
 
@@ -185,25 +228,28 @@ export default function IntegrationsPage() {
     setIntegrations((list) =>
       list.map((it) => (it.name === name ? { ...it, status: "Syncing" } : it)),
     );
+    // The delay animates the syncing state; the resulting status is persisted.
     setTimeout(() => {
-      setIntegrations((list) =>
-        list.map((it) =>
-          it.name === name ? { ...it, status: "Connected", action: "Manage", lastSync: "Just now" } : it,
-        ),
-      );
+      setIntegrations((list) => {
+        const next = list.map((it) =>
+          it.name === name ? { ...it, status: "Connected" as Status, action: "Manage" as const, lastSync: "Just now" } : it,
+        );
+        persist(next, configs);
+        return next;
+      });
       toast(`${name} synced`);
     }, 1000);
   };
 
   const handleDisconnect = () => {
     if (!disconnecting) return;
-    setIntegrations((list) =>
-      list.map((it) =>
-        it.name === disconnecting.name
-          ? { ...it, status: "Disconnected", action: "Connect", lastSync: "—" }
-          : it,
-      ),
+    const next = integrations.map((it) =>
+      it.name === disconnecting.name
+        ? { ...it, status: "Disconnected" as Status, action: "Connect" as const, lastSync: "—" }
+        : it,
     );
+    setIntegrations(next);
+    persist(next, configs);
     toast(`${disconnecting.name} disconnected`);
     setDisconnecting(null);
   };

@@ -12,6 +12,7 @@ import { Drawer, DrawerRow, DrawerSection } from "@/components/dashboard/Drawer"
 import { Field, TextInput, NumberInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
 import { api, exportToCsv } from "@/lib/client";
+import type { InventoryItem } from "@/types";
 
 const tabs = ["All Inventory", "Low Stock", "Out of Stock", "Expiring Soon"];
 
@@ -107,8 +108,8 @@ export default function WarehouseInventoryPage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await api.get<{ data: any[]; total: number }>("/api/inventory");
-        const mapped: Row[] = (res.data ?? []).map((it: any) => ({
+        const res = await api.get<{ data: InventoryItem[]; total: number }>("/api/inventory");
+        const mapped: Row[] = (res.data ?? []).map((it: InventoryItem) => ({
           product: it.name ?? "",
           category: "",
           sku: it.sku ?? "",

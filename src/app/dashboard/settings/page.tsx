@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ChevronDown, Building2, Globe, Palette, Database, Languages,
   Upload, Image, Save, RotateCcw, CheckCircle2, AlertTriangle,
 } from "lucide-react";
 import { useToast } from "@/components/dashboard/Toast";
+import { api } from "@/lib/client";
 
 type GeneralSettings = {
   companyName: string;
@@ -68,6 +69,26 @@ export default function GeneralSettingsPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
 
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const all = await api.get<Record<string, unknown>>("/api/settings");
+        if (!alive) return;
+        const section = (all.general ?? {}) as Partial<GeneralSettings>;
+        // Merge the stored section over the defaults so any missing field
+        // falls back sensibly and extra fields round-trip.
+        const next: GeneralSettings = { ...initialSettings, ...section };
+        setForm(next);
+        setSaved(next);
+        if (next.logoUrl && next.logoUrl.startsWith("data:")) setLogoPreview(next.logoUrl);
+      } catch {
+        if (alive) toast("Failed to load settings", "error");
+      }
+    })();
+    return () => { alive = false; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const dirty = Object.keys(form).some((k) => form[k as keyof GeneralSettings] !== saved[k as keyof GeneralSettings]);
 
   const set = (patch: Partial<GeneralSettings>) => {
@@ -115,11 +136,13 @@ export default function GeneralSettingsPage() {
   function handleSave() {
     if (!validate()) return;
     setSaving(true);
-    setTimeout(() => {
-      setSaving(false);
-      setSaved({ ...form });
-      toast("General settings saved");
-    }, 500);
+    api.put("/api/settings", { general: { ...form } })
+      .then(() => {
+        setSaved({ ...form });
+        toast("General settings saved");
+      })
+      .catch(() => toast("Failed to save settings", "error"))
+      .finally(() => setSaving(false));
   }
 
   function handleReset() {

@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CreditCard, User2, Crown, Package, Truck, HardDrive, Activity, Download, ChevronDown, Check } from "lucide-react";
 import { Modal } from "@/components/dashboard/Modal";
 import { Field, TextInput, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
-import { exportToCsv } from "@/lib/client";
+import { api, exportToCsv } from "@/lib/client";
 import { isEmail, isCardNumber, isExpiry, isCvc } from "@/lib/validate";
 
 const usage = [
@@ -40,9 +40,24 @@ const plans = [
 
 type PayErrors = { cardName?: string; cardNumber?: string; cardExpiry?: string; cardCvc?: string };
 
+type CardSummary = { brand: string; last4: string; expires: string };
+type BillingContact = { name: string; email: string; phone: string };
+type BillingState = {
+  currentPlan: string;
+  cardSummary: CardSummary;
+  contact: BillingContact;
+  // KV fields seeded server-side; preserved through round-trips.
+  plan?: string;
+  seats?: number;
+  billingCycle?: string;
+  autoRenew?: boolean;
+};
+
 export default function BillingPage() {
   const { toast } = useToast();
   const [usagePeriod, setUsagePeriod] = useState("This Month");
+  // Holds server-only KV fields so a partial PUT does not drop them.
+  const extraRef = useRef<Partial<BillingState>>({});
 
   // Current plan / plan change modal
   const [currentPlan, setCurrentPlan] = useState("Professional");
@@ -71,6 +86,38 @@ export default function BillingPage() {
   const [showAllInvoices, setShowAllInvoices] = useState(false);
   const visibleInvoices = showAllInvoices ? invoices : invoices.slice(0, VISIBLE_INVOICES);
 
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const all = await api.get<Record<string, unknown>>("/api/settings");
+        if (!alive) return;
+        const section = all.billing as Partial<BillingState> | undefined;
+        if (!section || typeof section !== "object") return;
+        const { currentPlan: cp, cardSummary: cs, contact: c, ...rest } = section;
+        extraRef.current = rest;
+        if (typeof cp === "string" && plans.some((p) => p.name === cp)) setCurrentPlan(cp);
+        if (cs && typeof cs === "object") setCardSummary({ brand: cs.brand ?? "Card", last4: cs.last4 ?? "", expires: cs.expires ?? "" });
+        if (c && typeof c === "object") setContact({ name: c.name ?? "", email: c.email ?? "", phone: c.phone ?? "" });
+      } catch {
+        if (alive) toast("Failed to load billing settings", "error");
+      }
+    })();
+    return () => { alive = false; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Persist the billing section, preserving any server-only KV fields.
+  const persistBilling = (patch: Partial<BillingState>) => {
+    const payload: BillingState = {
+      currentPlan,
+      cardSummary,
+      contact,
+      ...extraRef.current,
+      ...patch,
+    };
+    api.put("/api/settings", { billing: payload }).catch(() => toast("Failed to save billing settings", "error"));
+  };
+
   const handleSavePayment = () => {
     const errors: PayErrors = {};
     if (!cardName.trim()) errors.cardName = "Name on card is required";
@@ -85,15 +132,17 @@ export default function BillingPage() {
       return;
     }
     const digits = cardNumber.replace(/[\s-]/g, "");
-    setCardSummary({
+    const nextCard: CardSummary = {
       brand: digits.startsWith("4") ? "Visa" : digits.startsWith("5") ? "Mastercard" : "Card",
       last4: digits.slice(-4),
       expires: cardExpiry.trim(),
-    });
+    };
+    setCardSummary(nextCard);
     setPayOpen(false);
     setCardNumber("");
     setCardExpiry("");
     setCardCvc("");
+    persistBilling({ cardSummary: nextCard });
     toast("Payment method updated");
   };
 
@@ -107,8 +156,10 @@ export default function BillingPage() {
       toast("Please fix the highlighted fields", "error");
       return;
     }
-    setContact({ name: contactName.trim(), email: contactEmail.trim(), phone: contactPhone.trim() });
+    const nextContact: BillingContact = { name: contactName.trim(), email: contactEmail.trim(), phone: contactPhone.trim() };
+    setContact(nextContact);
     setContactOpen(false);
+    persistBilling({ contact: nextContact });
     toast("Billing contact updated");
   };
 
@@ -119,6 +170,7 @@ export default function BillingPage() {
     }
     setCurrentPlan(planChoice);
     setPlanOpen(false);
+    persistBilling({ currentPlan: planChoice, plan: planChoice });
     toast(`Plan changed to ${planChoice}`);
   };
 

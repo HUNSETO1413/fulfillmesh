@@ -198,6 +198,86 @@ export interface ListResponse<T> {
   total: number;
 }
 
+// ---------- API keys ----------
+
+export type ApiKeyStatus = "Active" | "Inactive";
+
+export interface ApiKey {
+  id: string;
+  name: string;
+  env: string; // Production | Staging | Development
+  prefix: string; // masked display value, e.g. "fm_prod_k8x2…m9Rq"
+  scopes: string[]; // permission scopes
+  createdAt: string;
+  lastUsed?: string;
+  status: ApiKeyStatus;
+}
+
+// ---------- Settings (key/value store) ----------
+
+// Each row is a single setting. `value` is a JSON-encoded blob so a setting can
+// hold a string, number, boolean or nested object.
+export interface AppSetting {
+  key: string;
+  value: string; // JSON string
+}
+
+// ---------- Audit log (append-only) ----------
+
+export interface AuditLog {
+  id: string;
+  actor: string;
+  action: string;
+  target?: string;
+  category: string; // auth | data | billing | security | system | api
+  ip?: string;
+  status: "Success" | "Failed" | "Warning";
+  createdAt: string;
+}
+
+// ---------- Documents ----------
+
+export type DocumentStatus = "Active" | "Archived" | "Draft";
+
+export interface DocumentRecord {
+  id: string;
+  name: string;
+  type: string; // PDF | Invoice | Contract | Label | Report | Image | Other
+  category?: string;
+  size: string; // human-readable, e.g. "2.4 MB"
+  owner: string;
+  status: DocumentStatus;
+  url?: string;
+  updatedAt: string;
+}
+
+// ---------- Messages ----------
+
+export type MessageStatus = "Unread" | "Read" | "Archived";
+
+export interface Message {
+  id: string;
+  sender: string;
+  subject: string;
+  preview: string;
+  channel: string; // Email | Chat | System | Support
+  status: MessageStatus;
+  createdAt: string;
+}
+
+// ---------- Integrations ----------
+
+export type IntegrationStatus = "Connected" | "Available" | "Error";
+
+export interface IntegrationRecord {
+  id: string;
+  name: string;
+  category: string; // Ecommerce | Marketplace | Shipping | Accounting | Marketing
+  status: IntegrationStatus;
+  description?: string;
+  lastSync?: string;
+}
+
 // ---------- Warehouse management ----------
 
 export type WarehouseStatus = "Active" | "Paused" | "Inactive";

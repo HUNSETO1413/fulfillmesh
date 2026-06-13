@@ -1,33 +1,20 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ShoppingBag, DollarSign, CheckCircle2, Package,
   ArrowUpRight, ArrowDownRight, ChevronDown,
-  MoreVertical, Download, RefreshCw,
+  MoreVertical, Download, RefreshCw, Loader2,
 } from "lucide-react";
 import { DateRangeMenu } from "@/components/dashboard/DateRangeMenu";
 import { useToast } from "@/components/dashboard/Toast";
-import { exportToCsv } from "@/lib/client";
+import { api, exportToCsv } from "@/lib/client";
+import type { AnalyticsSummary } from "@/lib/analytics";
 
 type Gran = "Daily" | "Weekly" | "Monthly";
 const GRANULARITIES: Gran[] = ["Daily", "Weekly", "Monthly"];
 
-/* ---- deterministic per-range datasets ---- */
-
-// Deterministic pseudo-random series: same key always yields the same values.
-function seededSeries(key: string, n: number, min: number, max: number): number[] {
-  let h = 2166136261;
-  for (let i = 0; i < key.length; i++) {
-    h ^= key.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return Array.from({ length: n }, () => {
-    h ^= h << 13; h ^= h >>> 17; h ^= h << 5; h |= 0;
-    const u = ((h >>> 0) % 1000) / 1000;
-    return Math.round(min + u * (max - min));
-  });
-}
+/* ---- chart helpers ---- */
 
 function smoothPath(xs: number[], ys: number[]): string {
   let d = `M${xs[0].toFixed(1)},${ys[0].toFixed(1)}`;
@@ -43,80 +30,28 @@ function formatK(v: number): string {
     const k = v / 1000;
     return `${k % 1 === 0 ? k.toFixed(0) : k.toFixed(1)}K`;
   }
-  return String(v);
+  return String(Math.round(v));
 }
 
-type RangeStat = { value: string; change: string; positive: boolean };
-type RangeMeta = {
-  period: string;
-  orders: RangeStat; revenue: RangeStat; onTime: RangeStat; shipments: RangeStat;
-  labels: Record<Gran, string[]>;
-};
+function formatMoney(v: number): string {
+  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(2)}M`;
+  if (v >= 1000) return `$${(v / 1000).toFixed(1)}K`;
+  return `$${Math.round(v)}`;
+}
 
-const RANGE_META: Record<string, RangeMeta> = {
-  "May 12 – May 18, 2025": {
-    period: "vs prior 7 days",
-    orders: { value: "12,842", change: "+8.5%", positive: true },
-    revenue: { value: "$1.62M", change: "+10.3%", positive: true },
-    onTime: { value: "97.4%", change: "+1.2%", positive: true },
-    shipments: { value: "11,205", change: "+7.2%", positive: true },
-    labels: {
-      Daily: ["May 12", "May 13", "May 14", "May 15", "May 16", "May 17", "May 18"],
-      Weekly: ["Mon–Tue", "Wed–Thu", "Fri–Sun"],
-      Monthly: ["Week of May 12"],
-    },
-  },
-  "Last 7 days": {
-    period: "vs prior 7 days",
-    orders: { value: "13,107", change: "+9.1%", positive: true },
-    revenue: { value: "$1.68M", change: "+11.0%", positive: true },
-    onTime: { value: "97.6%", change: "+0.9%", positive: true },
-    shipments: { value: "11,562", change: "+8.0%", positive: true },
-    labels: {
-      Daily: ["Jun 7", "Jun 8", "Jun 9", "Jun 10", "Jun 11", "Jun 12", "Jun 13"],
-      Weekly: ["Sat–Sun", "Mon–Wed", "Thu–Fri"],
-      Monthly: ["Week of Jun 7"],
-    },
-  },
-  "Last 30 days": {
-    period: "vs prior 30 days",
-    orders: { value: "52,318", change: "+6.4%", positive: true },
-    revenue: { value: "$6.45M", change: "+7.8%", positive: true },
-    onTime: { value: "96.8%", change: "-0.4%", positive: false },
-    shipments: { value: "46,904", change: "+5.9%", positive: true },
-    labels: {
-      Daily: ["May 15", "May 20", "May 25", "May 30", "Jun 4", "Jun 9", "Jun 13"],
-      Weekly: ["Week 20", "Week 21", "Week 22", "Week 23", "Week 24"],
-      Monthly: ["May", "Jun"],
-    },
-  },
-  "This quarter": {
-    period: "vs prior quarter",
-    orders: { value: "148,225", change: "+12.2%", positive: true },
-    revenue: { value: "$18.3M", change: "+13.5%", positive: true },
-    onTime: { value: "96.2%", change: "+0.8%", positive: true },
-    shipments: { value: "133,610", change: "+10.6%", positive: true },
-    labels: {
-      Daily: ["Apr 1", "Apr 15", "Apr 30", "May 15", "May 31", "Jun 13"],
-      Weekly: ["Apr W1", "Apr W3", "May W1", "May W3", "Jun W1", "Jun W2"],
-      Monthly: ["Apr", "May", "Jun"],
-    },
-  },
-  "Year to date": {
-    period: "vs same period last year",
-    orders: { value: "276,480", change: "+14.6%", positive: true },
-    revenue: { value: "$34.1M", change: "+15.2%", positive: true },
-    onTime: { value: "95.9%", change: "+1.5%", positive: true },
-    shipments: { value: "249,973", change: "+12.9%", positive: true },
-    labels: {
-      Daily: ["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
-      Weekly: ["W4", "W8", "W12", "W16", "W20", "W24"],
-      Monthly: ["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
-    },
-  },
-};
+function formatInt(v: number): string {
+  return v.toLocaleString("en-US");
+}
 
-const RANGE_PRESETS = Object.keys(RANGE_META);
+// Month bucket "YYYY-MM" → short label "Jan 2025".
+function monthLabel(bucket: string): string {
+  const [y, m] = bucket.split("-");
+  const idx = Number(m) - 1;
+  const names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return names[idx] ? `${names[idx]} ${y}` : bucket;
+}
+
+const REGION_COLORS = ["#3B82F6", "#60A5FA", "#06B6A4", "#8B5CF6", "#EC4899", "#F59E0B", "#10B981"];
 
 const STAT_DEFS = [
   { key: "orders" as const, title: "Total Orders", icon: ShoppingBag, iconBg: "bg-[#3B82F6]/10", iconColor: "text-[#3B82F6]" },
@@ -125,33 +60,19 @@ const STAT_DEFS = [
   { key: "shipments" as const, title: "Total Shipments", icon: Package, iconBg: "bg-[#10B981]/10", iconColor: "text-[#10B981]" },
 ];
 
-const topProducts = [
-  { name: "MeshFlex Backpack", sku: "BAG-001", orders: "1,245", revenue: "$86,750", trend: "+12.4%", up: true },
-  { name: "Urban Explorer Jacket", sku: "JKT-208", orders: "987", revenue: "$148,050", trend: "+8.1%", up: true },
-  { name: "Trail Runner Shoes", sku: "SHO-114", orders: "876", revenue: "$131,400", trend: "+5.2%", up: true },
-  { name: "Packable Tote", sku: "BAG-009", orders: "754", revenue: "$98,020", trend: "-2.1%", up: false },
-  { name: "Thermo Bottle 750ml", sku: "ACC-045", orders: "645", revenue: "$64,500", trend: "+3.8%", up: true },
-];
+const RANGE_PRESETS = ["All time", "Last 7 days", "Last 30 days", "This quarter", "Year to date"];
 
-const regions = [
-  { name: "North America", pct: 40.7, color: "#3B82F6" },
-  { name: "Europe", pct: 24.3, color: "#60A5FA" },
-  { name: "Asia Pacific", pct: 18.9, color: "#06B6A4" },
-  { name: "Middle East & Africa", pct: 12.7, color: "#8B5CF6" },
-  { name: "Other", pct: 3.4, color: "#EC4899" },
-];
-
-/* ---- chart card driven entirely by state ---- */
+/* ---- chart card driven entirely by props ---- */
 
 function TrendChart({ labels, values, color, gradId, yFormat }: {
   labels: string[]; values: number[]; color: string; gradId: string; yFormat: (v: number) => string;
 }) {
-  const yMax = Math.max(...values) * 1.12;
-  const n = labels.length;
+  const yMax = (Math.max(1, ...values)) * 1.12;
+  const n = Math.max(labels.length, 1);
   const xs = values.map((_, i) => (n === 1 ? 270 : 50 + (i * 440) / (n - 1)));
   const ys = values.map((v) => 10 + (1 - v / yMax) * 160);
-  const line = smoothPath(xs, ys);
-  const area = `${line} L${xs[n - 1].toFixed(1)},180 L${xs[0].toFixed(1)},180 Z`;
+  const line = xs.length ? smoothPath(xs, ys) : "";
+  const area = xs.length ? `${line} L${xs[xs.length - 1].toFixed(1)},180 L${xs[0].toFixed(1)},180 Z` : "";
   return (
     <svg viewBox="0 0 500 200" className="w-full h-full" preserveAspectRatio="none">
       <defs>
@@ -168,9 +89,11 @@ function TrendChart({ labels, values, color, gradId, yFormat }: {
           {yFormat(Math.round(yMax * (1 - i / 4)))}
         </text>
       ))}
-      <path d={area} fill={`url(#${gradId})`} />
-      <path d={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx={xs[n - 1]} cy={ys[n - 1]} r="3.5" fill="white" stroke={color} strokeWidth="2.5" />
+      {area && <path d={area} fill={`url(#${gradId})`} />}
+      {line && <path d={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
+      {xs.length > 0 && (
+        <circle cx={xs[xs.length - 1]} cy={ys[ys.length - 1]} r="3.5" fill="white" stroke={color} strokeWidth="2.5" />
+      )}
       {labels.map((label, i) => (
         <text key={`${label}-${i}`} x={xs[i]} y="196" textAnchor="middle" fontSize="9" fill="#94A3B8">{label}</text>
       ))}
@@ -178,25 +101,82 @@ function TrendChart({ labels, values, color, gradId, yFormat }: {
   );
 }
 
+type RangeStat = { value: string; change: string; positive: boolean };
+
 export default function AnalyticsPage() {
   const { toast } = useToast();
   const [range, setRange] = useState(RANGE_PRESETS[0]);
-  const [ordersGran, setOrdersGran] = useState<Gran>("Daily");
-  const [revGran, setRevGran] = useState<Gran>("Daily");
+  const [ordersGran, setOrdersGran] = useState<Gran>("Monthly");
+  const [revGran, setRevGran] = useState<Gran>("Monthly");
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeRegion, setActiveRegion] = useState<string | null>(null);
+  const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const meta = RANGE_META[range];
+  async function refresh() {
+    try {
+      const data = await api.get<AnalyticsSummary>("/api/analytics");
+      setSummary(data);
+    } catch {
+      toast("Failed to load analytics", "error");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await api.get<AnalyticsSummary>("/api/analytics");
+        if (!cancelled) setSummary(data);
+      } catch {
+        if (!cancelled) toast("Failed to load analytics", "error");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Real series derived from revenue-by-month. The granularity toggle changes how
+  // many of the most recent buckets we show; "Monthly" shows them all.
+  const months = summary?.revenueByMonth ?? [];
+
+  function sliceFor(gran: Gran): typeof months {
+    if (gran === "Daily") return months.slice(-7);
+    if (gran === "Weekly") return months.slice(-4);
+    return months;
+  }
 
   const ordersData = useMemo(() => {
-    const labels = meta.labels[ordersGran];
-    return { labels, values: seededSeries(`analytics-orders-${range}-${ordersGran}`, labels.length, 2200, 7800) };
-  }, [meta, range, ordersGran]);
+    const pts = sliceFor(ordersGran);
+    return { labels: pts.map((p) => monthLabel(p.month)), values: pts.map((p) => p.orders) };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [months, ordersGran]);
 
   const revenueData = useMemo(() => {
-    const labels = meta.labels[revGran];
-    return { labels, values: seededSeries(`analytics-revenue-${range}-${revGran}`, labels.length, 280000, 980000) };
-  }, [meta, range, revGran]);
+    const pts = sliceFor(revGran);
+    return { labels: pts.map((p) => monthLabel(p.month)), values: pts.map((p) => p.revenue) };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [months, revGran]);
+
+  const stats: Record<"orders" | "revenue" | "onTime" | "shipments", RangeStat> = {
+    orders: { value: summary ? formatInt(summary.totalOrders) : "—", change: range, positive: true },
+    revenue: { value: summary ? formatMoney(summary.totalRevenue) : "—", change: range, positive: true },
+    onTime: { value: summary ? `${summary.onTimeDeliveryPct}%` : "—", change: range, positive: (summary?.onTimeDeliveryPct ?? 0) >= 90 },
+    shipments: { value: summary ? formatInt(summary.totalShipments) : "—", change: range, positive: true },
+  };
+
+  // Top products + regions come straight from the summary.
+  const topProducts = summary?.topProducts ?? [];
+  const regions = (summary?.ordersByRegion ?? []).map((r, i) => ({
+    name: r.name,
+    pct: r.pct,
+    orders: r.orders,
+    color: REGION_COLORS[i % REGION_COLORS.length],
+  }));
 
   function cycle(current: Gran, set: (v: Gran) => void) {
     set(GRANULARITIES[(GRANULARITIES.indexOf(current) + 1) % GRANULARITIES.length]);
@@ -206,15 +186,13 @@ export default function AnalyticsPage() {
     exportToCsv("analytics-top-products", topProducts, [
       { key: "name", header: "Product" },
       { key: "sku", header: "SKU" },
-      { key: "orders", header: "Orders" },
-      { key: "revenue", header: "Revenue" },
-      { key: "trend", header: "Trend" },
+      { key: "orders", header: "Units Reserved" },
+      { key: "revenue", header: "Stock Value (USD)" },
     ]);
     toast(`Exported ${topProducts.length} products to CSV`);
   }
 
   function exportCurrent() {
-    // Export exactly what's on screen: the current chart series and the top-products view.
     const seriesRows = ordersData.labels.map((label, i) => ({
       period: label,
       orders: ordersData.values[i],
@@ -267,7 +245,7 @@ export default function AnalyticsPage() {
                     <Download className="w-4 h-4 text-[#64748B]" /> Export data
                   </button>
                   <button
-                    onClick={() => { setMenuOpen(false); toast("Analytics refreshed", "success"); }}
+                    onClick={() => { setMenuOpen(false); void refresh(); toast("Analytics refreshed", "success"); }}
                     className="w-full flex items-center gap-2 text-left px-3 py-2 text-[13px] text-[#374151] hover:bg-[#F8FAFC]"
                   >
                     <RefreshCw className="w-4 h-4 text-[#64748B]" /> Refresh
@@ -283,7 +261,7 @@ export default function AnalyticsPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {STAT_DEFS.map((def) => {
           const Icon = def.icon;
-          const stat = meta[def.key];
+          const stat = stats[def.key];
           return (
             <div key={def.title} className="bg-white rounded-xl border border-[#E2E8F0] p-5 shadow-[0_1px_3px_0_rgba(0,0,0,0.1),0_1px_2px_0_rgba(0,0,0,0.06)]">
               <div className="flex items-start justify-between mb-3">
@@ -292,7 +270,9 @@ export default function AnalyticsPage() {
                   <Icon className={`w-[18px] h-[18px] ${def.iconColor}`} />
                 </div>
               </div>
-              <p className="text-[28px] leading-none font-bold text-[#1E293B]">{stat.value}</p>
+              <p className="text-[28px] leading-none font-bold text-[#1E293B]">
+                {loading ? <Loader2 className="w-6 h-6 animate-spin text-[#CBD5E1]" /> : stat.value}
+              </p>
               <div className="flex items-center gap-2 mt-3">
                 <span
                   className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[12px] font-semibold ${
@@ -302,9 +282,9 @@ export default function AnalyticsPage() {
                   {stat.positive
                     ? <ArrowUpRight className="w-3 h-3" />
                     : <ArrowDownRight className="w-3 h-3" />}
-                  {stat.change}
+                  {def.key === "revenue" && summary ? `AOV ${formatMoney(summary.avgOrderValue)}` : def.key === "onTime" ? "delivered" : "live"}
                 </span>
-                <span className="text-[12px] text-[#94A3B8]">{meta.period}</span>
+                <span className="text-[12px] text-[#94A3B8]">{stat.change}</span>
               </div>
             </div>
           );
@@ -322,7 +302,11 @@ export default function AnalyticsPage() {
             </button>
           </div>
           <div className="h-[200px]">
-            <TrendChart labels={ordersData.labels} values={ordersData.values} color="#3B82F6" gradId="ordersGrad" yFormat={formatK} />
+            {ordersData.values.length > 0 ? (
+              <TrendChart labels={ordersData.labels} values={ordersData.values} color="#3B82F6" gradId="ordersGrad" yFormat={formatK} />
+            ) : (
+              <div className="h-full flex items-center justify-center text-[13px] text-[#94A3B8]">No order data yet</div>
+            )}
           </div>
         </div>
 
@@ -335,7 +319,11 @@ export default function AnalyticsPage() {
             </button>
           </div>
           <div className="h-[200px]">
-            <TrendChart labels={revenueData.labels} values={revenueData.values} color="#06B6A4" gradId="revGrad" yFormat={(v) => `$${formatK(v)}`} />
+            {revenueData.values.length > 0 ? (
+              <TrendChart labels={revenueData.labels} values={revenueData.values} color="#06B6A4" gradId="revGrad" yFormat={(v) => `$${formatK(v)}`} />
+            ) : (
+              <div className="h-full flex items-center justify-center text-[13px] text-[#94A3B8]">No revenue data yet</div>
+            )}
           </div>
         </div>
       </div>
@@ -355,12 +343,14 @@ export default function AnalyticsPage() {
               <thead>
                 <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
                   <th className="text-left text-[12px] font-semibold text-[#475569] px-5 py-3 uppercase tracking-wide">Product</th>
-                  <th className="text-right text-[12px] font-semibold text-[#475569] px-5 py-3 uppercase tracking-wide">Orders</th>
-                  <th className="text-right text-[12px] font-semibold text-[#475569] px-5 py-3 uppercase tracking-wide">Revenue</th>
-                  <th className="text-right text-[12px] font-semibold text-[#475569] px-5 py-3 uppercase tracking-wide">Trend</th>
+                  <th className="text-right text-[12px] font-semibold text-[#475569] px-5 py-3 uppercase tracking-wide">Reserved</th>
+                  <th className="text-right text-[12px] font-semibold text-[#475569] px-5 py-3 uppercase tracking-wide">Stock Value</th>
                 </tr>
               </thead>
               <tbody>
+                {topProducts.length === 0 && !loading && (
+                  <tr><td colSpan={3} className="px-5 py-6 text-center text-[13px] text-[#94A3B8]">No products yet</td></tr>
+                )}
                 {topProducts.map((p) => (
                   <tr key={p.sku} className="border-b border-[#E2E8F0] last:border-b-0 hover:bg-[#F8FAFC] transition-colors">
                     <td className="px-5 py-3.5">
@@ -374,16 +364,8 @@ export default function AnalyticsPage() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-5 py-3.5 text-[13px] text-[#1E293B] text-right">{p.orders}</td>
-                    <td className="px-5 py-3.5 text-[13px] font-medium text-[#1E293B] text-right">{p.revenue}</td>
-                    <td className="px-5 py-3.5 text-right">
-                      <span className={`inline-flex items-center gap-0.5 text-[12px] font-semibold ${p.up ? "text-[#065F46]" : "text-[#991B1B]"}`}>
-                        {p.up
-                          ? <ArrowUpRight className="w-3 h-3" />
-                          : <ArrowDownRight className="w-3 h-3" />}
-                        {p.trend}
-                      </span>
-                    </td>
+                    <td className="px-5 py-3.5 text-[13px] text-[#1E293B] text-right">{formatInt(p.orders)}</td>
+                    <td className="px-5 py-3.5 text-[13px] font-medium text-[#1E293B] text-right">{formatMoney(p.revenue)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -404,7 +386,7 @@ export default function AnalyticsPage() {
                   const dashArray = `${r.pct * 2.51327} ${251.327 - r.pct * 2.51327}`;
                   const dimmed = activeRegion !== null && activeRegion !== r.name;
                   return (
-                    <circle key={i} cx="50" cy="50" r="40" fill="none"
+                    <circle key={r.name} cx="50" cy="50" r="40" fill="none"
                       stroke={r.color} strokeWidth="12" strokeDasharray={dashArray} strokeDashoffset={-offset * 2.51327}
                       strokeLinecap="round" opacity={dimmed ? 0.2 : 1}
                       className="transition-opacity cursor-pointer"
@@ -421,7 +403,7 @@ export default function AnalyticsPage() {
                     </>
                   ) : (
                     <>
-                      <p className="text-[20px] font-bold text-[#1E293B]">{meta.orders.value}</p>
+                      <p className="text-[20px] font-bold text-[#1E293B]">{summary ? formatInt(summary.totalOrders) : "—"}</p>
                       <p className="text-[10px] text-[#64748B]">Orders</p>
                     </>
                   )}
@@ -430,6 +412,9 @@ export default function AnalyticsPage() {
             </div>
             {/* Legend (clickable — toggles segment highlight) */}
             <div className="flex-1 space-y-1">
+              {regions.length === 0 && !loading && (
+                <p className="text-[13px] text-[#94A3B8]">No regional data</p>
+              )}
               {regions.map((r) => {
                 const isActive = activeRegion === r.name;
                 const dimmed = activeRegion !== null && !isActive;

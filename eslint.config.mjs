@@ -12,6 +12,16 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Throwaway root dev/screenshot tooling — not part of the app build.
+    "_inspect.mjs",
+    "_crop.mjs",
+    "_shot.mjs",
+    "_shotall.mjs",
+    "pixel-diff.mjs",
+    "pixel-diff-normalized.mjs",
+    "pixel-diff-atf.mjs",
+    "screenshot-all.mjs",
+    "screenshot-matched.mjs",
   ]),
 ]);
 

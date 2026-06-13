@@ -1,12 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Search, ChevronDown, SlidersHorizontal, UserPlus, Edit2, ChevronLeft, ChevronRight, Send, X } from "lucide-react";
 import { Modal } from "@/components/dashboard/Modal";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { Field, TextInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
+import { api } from "@/lib/client";
 import { isEmail } from "@/lib/validate";
+import type { User } from "@/types";
 
 type Member = {
   name: string;
@@ -21,15 +23,30 @@ type Member = {
 
 const face = (id: string) => `/images/${id}.jpg`;
 
-const initialMembers: Member[] = [
-  { name: "Alex Thompson", email: "alex.thompson@fulfillmesh.com", role: "Admin", department: "Executive", status: "Active", lastActive: "2 hours ago", avatar: face("photo-1500648767791-00dcc994a43e") },
-  { name: "Maria Sanchez", email: "maria.sanchez@fulfillmesh.com", role: "Operations Manager", department: "Operations", status: "Active", lastActive: "1 hour ago", avatar: face("photo-1494790108377-be9c29b29330") },
-  { name: "James Lee", email: "james.lee@fulfillmesh.com", role: "Warehouse Lead", department: "Warehouse", status: "Active", lastActive: "30 mins ago", avatar: face("photo-1506794778202-cad84cf45f1d") },
-  { name: "Priya Patel", email: "priya.patel@fulfillmesh.com", role: "Finance", department: "Finance", status: "Active", lastActive: "5 hours ago", avatar: face("photo-1438761681033-6461ffad8d80") },
-  { name: "Daniel Kim", email: "daniel.kim@fulfillmesh.com", role: "Support Specialist", department: "Customer Support", status: "Active", lastActive: "1 hour ago", avatar: face("photo-1507003211169-0a1dd7228f2d") },
-  { name: "Sarah Johnson", email: "sarah.johnson@fulfillmesh.com", role: "Operations Associate", department: "Operations", status: "Pending Invite", lastActive: "—", avatar: face("photo-1544005313-94ddf0286df2"), sentAt: "Sent 3 days ago" },
-  { name: "Michael Brown", email: "michael.brown@fulfillmesh.com", role: "Operations Associate", department: "Operations", status: "Suspended", lastActive: "2 days ago", avatar: face("photo-1472099645785-5658abf4ff4e") },
-];
+const FALLBACK_AVATAR = face("photo-1544005313-94ddf0286df2");
+
+// Map an API status onto the richer Member status used by this page.
+const mapStatus = (s: User["status"]): Member["status"] =>
+  s === "Invited" ? "Pending Invite" : s === "Suspended" ? "Suspended" : "Active";
+
+// Departments aren't modelled in the users API; derive a sensible label from role.
+const roleDepartment: Record<string, string> = {
+  Admin: "Executive",
+  Manager: "Operations",
+  Operator: "Warehouse",
+  Viewer: "Customer Support",
+};
+
+const mapUser = (u: User): Member => ({
+  name: u.name,
+  email: u.email,
+  role: u.role,
+  department: roleDepartment[u.role] ?? "Operations",
+  status: mapStatus(u.status),
+  lastActive: u.lastActive ?? "—",
+  avatar: FALLBACK_AVATAR,
+  ...(u.status === "Invited" ? { sentAt: "Invite pending" } : {}),
+});
 
 const ROLES = ["Admin", "Operations Manager", "Warehouse Lead", "Finance", "Support Specialist", "Operations Associate"];
 const DEPARTMENTS = ["Executive", "Operations", "Warehouse", "Finance", "Customer Support"];
@@ -50,7 +67,8 @@ const emptyInvite = { name: "", email: "", role: ROLES[5], department: DEPARTMEN
 
 export default function UsersPage() {
   const { toast } = useToast();
-  const [members, setMembers] = useState<Member[]>(initialMembers);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("All Roles");
   const [statusFilter, setStatusFilter] = useState("All Statuses");
@@ -69,6 +87,22 @@ export default function UsersPage() {
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await api.get<{ data: User[]; total: number }>("/api/users");
+        if (!alive) return;
+        setMembers(res.data.map(mapUser));
+      } catch {
+        if (alive) toast("Failed to load users", "error");
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -226,7 +260,13 @@ export default function UsersPage() {
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 ? (
+            {loading ? (
+              <tr>
+                <td colSpan={6} className="px-4 py-10 text-center text-[14px] text-[#9CA3AF]">
+                  Loading users...
+                </td>
+              </tr>
+            ) : filtered.length === 0 ? (
               <tr>
                 <td colSpan={6} className="px-4 py-10 text-center text-[14px] text-[#9CA3AF]">
                   No users match your filters.

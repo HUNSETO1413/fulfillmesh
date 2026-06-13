@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Lock,
   Shield,
@@ -20,7 +20,7 @@ import { Modal } from "@/components/dashboard/Modal";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { Field, TextInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
-import { exportToCsv } from "@/lib/client";
+import { api, exportToCsv } from "@/lib/client";
 import { isDomain, passwordStrength, type PasswordStrength } from "@/lib/validate";
 
 function EnabledBadge() {
@@ -68,9 +68,22 @@ const strengthMeta: Record<PasswordStrength, { label: string; color: string; wid
   strong: { label: "Strong", color: "bg-[#10B981]", width: "w-full" },
 };
 
+type SecurityState = {
+  twoFAEnabled: boolean;
+  loginAlerts: boolean;
+  sso: { configured: boolean; domain: string; provider: string };
+  // KV fields seeded server-side; preserved through round-trips.
+  twoFactorRequired?: boolean;
+  sessionTimeoutMinutes?: number;
+  passwordRotationDays?: number;
+  ipAllowlistEnabled?: boolean;
+};
+
 export default function SecurityPage() {
   const { toast } = useToast();
   const [loginAlerts, setLoginAlerts] = useState(true);
+  // Holds server-only KV fields so a partial PUT does not drop them.
+  const extraRef = useRef<Partial<SecurityState>>({});
 
   // Change password modal
   const [pwOpen, setPwOpen] = useState(false);
@@ -109,6 +122,38 @@ export default function SecurityPage() {
   ]);
 
   const strength = pwNew ? passwordStrength(pwNew) : null;
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const all = await api.get<Record<string, unknown>>("/api/settings");
+        if (!alive) return;
+        const section = all.security as Partial<SecurityState> | undefined;
+        if (!section || typeof section !== "object") return;
+        const { twoFAEnabled: tfa, loginAlerts: la, sso: s, ...rest } = section;
+        extraRef.current = rest;
+        if (typeof tfa === "boolean") setTwoFAEnabled(tfa);
+        if (typeof la === "boolean") setLoginAlerts(la);
+        if (s && typeof s === "object") setSso({ configured: !!s.configured, domain: s.domain ?? "", provider: s.provider ?? "Okta" });
+      } catch {
+        if (alive) toast("Failed to load security settings", "error");
+      }
+    })();
+    return () => { alive = false; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Persist the security section, preserving any server-only KV fields.
+  const persistSecurity = (patch: Partial<SecurityState>) => {
+    const payload: SecurityState = {
+      twoFAEnabled,
+      loginAlerts,
+      sso,
+      ...extraRef.current,
+      ...patch,
+    };
+    api.put("/api/settings", { security: payload }).catch(() => toast("Failed to save security settings", "error"));
+  };
 
   const openPasswordModal = () => {
     setPwCurrent("");
@@ -162,12 +207,14 @@ export default function SecurityPage() {
     }
     setTwoFAEnabled(true);
     setTwoFAOpen(false);
+    persistSecurity({ twoFAEnabled: true });
     toast("Two-factor authentication enabled");
   };
 
   const handleDisable2FA = () => {
     setTwoFAEnabled(false);
     setDisabling2FA(false);
+    persistSecurity({ twoFAEnabled: false });
     toast("Two-factor authentication disabled");
   };
 
@@ -187,8 +234,10 @@ export default function SecurityPage() {
       setSsoError("Enter a valid domain (e.g. fulfillmesh.com)");
       return;
     }
-    setSso({ configured: true, domain: ssoDomain.trim(), provider: ssoProvider });
+    const nextSso = { configured: true, domain: ssoDomain.trim(), provider: ssoProvider };
+    setSso(nextSso);
     setSsoOpen(false);
+    persistSecurity({ sso: nextSso });
     toast(`SSO configured for ${ssoDomain.trim()} via ${ssoProvider}`);
   };
 
@@ -368,6 +417,7 @@ export default function SecurityPage() {
             onClick={() => {
               const next = !loginAlerts;
               setLoginAlerts(next);
+              persistSecurity({ loginAlerts: next });
               toast(next ? "Login alerts enabled" : "Login alerts disabled");
             }}
             className={`shrink-0 relative inline-flex h-[24px] w-[44px] items-center rounded-full transition-colors duration-200 ${

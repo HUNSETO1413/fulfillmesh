@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import {
-  LayoutDashboard, ShoppingCart, Truck, CheckCircle2, Clock,
-  ArrowRight, Bell, Filter, BarChart3, Package, RefreshCw, Zap,
+  ShoppingCart, Truck, CheckCircle2, Clock,
+  ArrowRight, Bell, Filter, RefreshCw, Zap,
 } from "lucide-react";
 import { pageMetadata } from "@/lib/seo";
 

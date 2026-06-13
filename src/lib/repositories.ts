@@ -3,7 +3,7 @@ import type {
   Order, Product, InventoryItem, Customer, Supplier, Shipment,
   ReturnRecord, Quote, Invoice, QcInspection, User, Submission,
   Warehouse, StorageType, TransferOrder, CycleCount, AppNotification, Task,
-  WarehouseLocation,
+  WarehouseLocation, ApiKey, AuditLog, DocumentRecord, Message, IntegrationRecord,
 } from "@/types";
 
 // Async repository layer over PostgreSQL. Each entity exposes list/get/create/
@@ -778,5 +778,254 @@ export const locations = {
   },
   async remove(id: string): Promise<boolean> {
     return (await query("DELETE FROM warehouse_locations WHERE id = $1 RETURNING id", [id])).length > 0;
+  },
+};
+
+// ---------- API keys ----------
+function mapApiKey(r: Row): ApiKey {
+  return {
+    id: r.id as string,
+    name: r.name as string,
+    env: (r.env as string) ?? "Production",
+    prefix: r.prefix as string,
+    scopes: r.scopes ? JSON.parse(r.scopes as string) : [],
+    createdAt: r.created_at as string,
+    lastUsed: (r.last_used as string) ?? undefined,
+    status: r.status as ApiKey["status"],
+  };
+}
+export const apiKeys = {
+  async list(): Promise<ApiKey[]> {
+    return (await query("SELECT * FROM api_keys ORDER BY created_at DESC, id DESC")).map(mapApiKey);
+  },
+  async get(id: string): Promise<ApiKey | null> {
+    return one("SELECT * FROM api_keys WHERE id = $1", [id], mapApiKey);
+  },
+  async create(k: Partial<ApiKey>): Promise<ApiKey> {
+    const id = k.id || genId("KEY");
+    await query(
+      `INSERT INTO api_keys (id, name, env, prefix, scopes, created_at, last_used, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [id, k.name ?? "", k.env ?? "Production", k.prefix ?? "", JSON.stringify(k.scopes ?? []),
+        k.createdAt ?? new Date().toISOString(), k.lastUsed ?? null, k.status ?? "Active"],
+    );
+    return (await this.get(id))!;
+  },
+  async update(id: string, k: Partial<ApiKey>): Promise<ApiKey | null> {
+    const existing = await this.get(id);
+    if (!existing) return null;
+    const m = { ...existing, ...k };
+    await query(
+      `UPDATE api_keys SET name=$1, env=$2, prefix=$3, scopes=$4, last_used=$5, status=$6 WHERE id=$7`,
+      [m.name, m.env, m.prefix, JSON.stringify(m.scopes), m.lastUsed ?? null, m.status, id],
+    );
+    return this.get(id);
+  },
+  async remove(id: string): Promise<boolean> {
+    return (await query("DELETE FROM api_keys WHERE id = $1 RETURNING id", [id])).length > 0;
+  },
+};
+
+// ---------- Settings (key/value store) ----------
+// Not a standard entity collection: exposes getAll / setMany so the whole
+// settings object round-trips in one request.
+export const settings = {
+  async getAll(): Promise<Record<string, unknown>> {
+    const rows = await query("SELECT key, value FROM settings");
+    const out: Record<string, unknown> = {};
+    for (const r of rows) {
+      try {
+        out[r.key as string] = JSON.parse(r.value as string);
+      } catch {
+        out[r.key as string] = r.value;
+      }
+    }
+    return out;
+  },
+  async get(key: string): Promise<unknown> {
+    const rows = await query("SELECT value FROM settings WHERE key = $1", [key]);
+    if (!rows[0]) return undefined;
+    try {
+      return JSON.parse(rows[0].value as string);
+    } catch {
+      return rows[0].value;
+    }
+  },
+  async setMany(values: Record<string, unknown>): Promise<Record<string, unknown>> {
+    for (const [key, value] of Object.entries(values)) {
+      await query(
+        `INSERT INTO settings (key, value) VALUES ($1, $2)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+        [key, JSON.stringify(value)],
+      );
+    }
+    return this.getAll();
+  },
+};
+
+// ---------- Audit log (append-only) ----------
+function mapAuditLog(r: Row): AuditLog {
+  return {
+    id: r.id as string,
+    actor: r.actor as string,
+    action: r.action as string,
+    target: (r.target as string) ?? undefined,
+    category: r.category as string,
+    ip: (r.ip as string) ?? undefined,
+    status: r.status as AuditLog["status"],
+    createdAt: r.created_at as string,
+  };
+}
+export const auditLogs = {
+  async list(): Promise<AuditLog[]> {
+    return (await query("SELECT * FROM audit_logs ORDER BY created_at DESC, id DESC")).map(mapAuditLog);
+  },
+  async get(id: string): Promise<AuditLog | null> {
+    return one("SELECT * FROM audit_logs WHERE id = $1", [id], mapAuditLog);
+  },
+  async create(l: Partial<AuditLog>): Promise<AuditLog> {
+    const id = l.id || genId("LOG");
+    await query(
+      `INSERT INTO audit_logs (id, actor, action, target, category, ip, status, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [id, l.actor ?? "system", l.action ?? "", l.target ?? null, l.category ?? "system",
+        l.ip ?? null, l.status ?? "Success", l.createdAt ?? new Date().toISOString()],
+    );
+    return (await this.get(id))!;
+  },
+};
+
+// ---------- Documents ----------
+function mapDocument(r: Row): DocumentRecord {
+  return {
+    id: r.id as string,
+    name: r.name as string,
+    type: r.type as string,
+    category: (r.category as string) ?? undefined,
+    size: r.size as string,
+    owner: r.owner as string,
+    status: r.status as DocumentRecord["status"],
+    url: (r.url as string) ?? undefined,
+    updatedAt: r.updated_at as string,
+  };
+}
+export const documents = {
+  async list(): Promise<DocumentRecord[]> {
+    return (await query("SELECT * FROM documents ORDER BY updated_at DESC, id DESC")).map(mapDocument);
+  },
+  async get(id: string): Promise<DocumentRecord | null> {
+    return one("SELECT * FROM documents WHERE id = $1", [id], mapDocument);
+  },
+  async create(d: Partial<DocumentRecord>): Promise<DocumentRecord> {
+    const id = d.id || genId("DOC");
+    await query(
+      `INSERT INTO documents (id, name, type, category, size, owner, status, url, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [id, d.name ?? "", d.type ?? "Other", d.category ?? null, d.size ?? "0 KB",
+        d.owner ?? "Unknown", d.status ?? "Active", d.url ?? null,
+        d.updatedAt ?? new Date().toISOString().slice(0, 10)],
+    );
+    return (await this.get(id))!;
+  },
+  async update(id: string, d: Partial<DocumentRecord>): Promise<DocumentRecord | null> {
+    const existing = await this.get(id);
+    if (!existing) return null;
+    const m = { ...existing, ...d };
+    await query(
+      `UPDATE documents SET name=$1, type=$2, category=$3, size=$4, owner=$5, status=$6, url=$7, updated_at=$8 WHERE id=$9`,
+      [m.name, m.type, m.category ?? null, m.size, m.owner, m.status, m.url ?? null,
+        m.updatedAt ?? new Date().toISOString().slice(0, 10), id],
+    );
+    return this.get(id);
+  },
+  async remove(id: string): Promise<boolean> {
+    return (await query("DELETE FROM documents WHERE id = $1 RETURNING id", [id])).length > 0;
+  },
+};
+
+// ---------- Messages ----------
+function mapMessage(r: Row): Message {
+  return {
+    id: r.id as string,
+    sender: r.sender as string,
+    subject: r.subject as string,
+    preview: (r.preview as string) ?? "",
+    channel: r.channel as string,
+    status: r.status as Message["status"],
+    createdAt: r.created_at as string,
+  };
+}
+export const messages = {
+  async list(): Promise<Message[]> {
+    return (await query("SELECT * FROM messages ORDER BY created_at DESC, id DESC")).map(mapMessage);
+  },
+  async get(id: string): Promise<Message | null> {
+    return one("SELECT * FROM messages WHERE id = $1", [id], mapMessage);
+  },
+  async create(m: Partial<Message>): Promise<Message> {
+    const id = m.id || genId("MSG");
+    await query(
+      `INSERT INTO messages (id, sender, subject, preview, channel, status, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [id, m.sender ?? "", m.subject ?? "", m.preview ?? "", m.channel ?? "Email",
+        m.status ?? "Unread", m.createdAt ?? new Date().toISOString()],
+    );
+    return (await this.get(id))!;
+  },
+  async update(id: string, m: Partial<Message>): Promise<Message | null> {
+    const existing = await this.get(id);
+    if (!existing) return null;
+    const x = { ...existing, ...m };
+    await query(
+      `UPDATE messages SET sender=$1, subject=$2, preview=$3, channel=$4, status=$5 WHERE id=$6`,
+      [x.sender, x.subject, x.preview, x.channel, x.status, id],
+    );
+    return this.get(id);
+  },
+  async remove(id: string): Promise<boolean> {
+    return (await query("DELETE FROM messages WHERE id = $1 RETURNING id", [id])).length > 0;
+  },
+};
+
+// ---------- Integrations ----------
+function mapIntegration(r: Row): IntegrationRecord {
+  return {
+    id: r.id as string,
+    name: r.name as string,
+    category: r.category as string,
+    status: r.status as IntegrationRecord["status"],
+    description: (r.description as string) ?? undefined,
+    lastSync: (r.last_sync as string) ?? undefined,
+  };
+}
+export const integrations = {
+  async list(): Promise<IntegrationRecord[]> {
+    return (await query("SELECT * FROM integrations ORDER BY name")).map(mapIntegration);
+  },
+  async get(id: string): Promise<IntegrationRecord | null> {
+    return one("SELECT * FROM integrations WHERE id = $1", [id], mapIntegration);
+  },
+  async create(i: Partial<IntegrationRecord>): Promise<IntegrationRecord> {
+    const id = i.id || genId("INT");
+    await query(
+      `INSERT INTO integrations (id, name, category, status, description, last_sync)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [id, i.name ?? "", i.category ?? "Ecommerce", i.status ?? "Available",
+        i.description ?? null, i.lastSync ?? null],
+    );
+    return (await this.get(id))!;
+  },
+  async update(id: string, i: Partial<IntegrationRecord>): Promise<IntegrationRecord | null> {
+    const existing = await this.get(id);
+    if (!existing) return null;
+    const m = { ...existing, ...i };
+    await query(
+      `UPDATE integrations SET name=$1, category=$2, status=$3, description=$4, last_sync=$5 WHERE id=$6`,
+      [m.name, m.category, m.status, m.description ?? null, m.lastSync ?? null, id],
+    );
+    return this.get(id);
+  },
+  async remove(id: string): Promise<boolean> {
+    return (await query("DELETE FROM integrations WHERE id = $1 RETURNING id", [id])).length > 0;
   },
 };

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   FileText,
   FileSpreadsheet,
@@ -25,11 +25,14 @@ import {
   ChevronRight,
   Copy,
   X,
+  Loader,
 } from "lucide-react";
 import { Modal } from "@/components/dashboard/Modal";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { Field, TextInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
+import { api } from "@/lib/client";
+import type { DocumentRecord } from "@/types";
 
 const stats = [
   { title: "Total Documents", value: "1,248", sub: "12.6% vs last 30 days", subColor: "#10B981", icon: Folder, color: "#3B82F6" },
@@ -41,18 +44,22 @@ const stats = [
 
 type DocType = "PDF" | "XLSX" | "DOCX";
 
+type DocStatus = DocumentRecord["status"];
+
+// View model derived from the DocumentRecord API type.
 interface Doc {
-  id: number;
+  id: string;
   name: string;
   desc: string;
   category: string;
   catColor: string;
-  type: DocType;
+  type: string;
   warehouse: string;
   uploadedBy: string;
   avatarColor: string;
   date: string;
   size: string;
+  status: DocStatus;
 }
 
 const CATEGORIES = ["SOP", "Policy", "Template", "Report", "Contract", "Checklist"];
@@ -62,17 +69,38 @@ const CAT_COLORS: Record<string, string> = {
 const DOC_TYPES: DocType[] = ["PDF", "XLSX", "DOCX"];
 const WAREHOUSES = ["ATL1", "DFW1", "LAX1", "MIA1", "Global"];
 
-const initialDocuments: Doc[] = [
-  { id: 1, name: "Inbound Shipments SOP", desc: "Standard operating procedures...", category: "SOP", catColor: "#3B82F6", type: "PDF", warehouse: "ATL1", uploadedBy: "James Carter", avatarColor: "#3B82F6", date: "May 30, 2025", size: "1.2 MB" },
-  { id: 2, name: "Inventory Template", desc: "Monthly inventory tracking", category: "Template", catColor: "#06B6D4", type: "XLSX", warehouse: "Global", uploadedBy: "Sophie Lee", avatarColor: "#8B5CF6", date: "May 29, 2025", size: "85 KB" },
-  { id: 3, name: "Warehouse Safety Guide", desc: "Safety guidelines and protocols", category: "Policy", catColor: "#F59E0B", type: "PDF", warehouse: "DFW1", uploadedBy: "Michael Brown", avatarColor: "#10B981", date: "May 28, 2025", size: "3.4 MB" },
-  { id: 4, name: "Employee Handbook", desc: "Company policies and procedures", category: "Policy", catColor: "#F59E0B", type: "DOCX", warehouse: "Global", uploadedBy: "Ava Thomas", avatarColor: "#EC4899", date: "May 27, 2025", size: "2.1 MB" },
-  { id: 5, name: "Client Onboarding Checklist", desc: "Onboarding steps for new clients", category: "Checklist", catColor: "#8B5CF6", type: "PDF", warehouse: "MIA1", uploadedBy: "Ethan Taylor", avatarColor: "#3B82F6", date: "May 26, 2025", size: "640 KB" },
-  { id: 6, name: "Cycle Count Log", desc: "Quarterly cycle count records", category: "Report", catColor: "#10B981", type: "XLSX", warehouse: "LAX1", uploadedBy: "Olivia Martinez", avatarColor: "#F97316", date: "May 25, 2025", size: "1.8 MB" },
-  { id: 7, name: "Returns Process Flow", desc: "RMA handling and refunds", category: "SOP", catColor: "#3B82F6", type: "PDF", warehouse: "DFW1", uploadedBy: "Daniel Wilson", avatarColor: "#06B6D4", date: "May 24, 2025", size: "920 KB" },
-  { id: 8, name: "Carrier Rate Card 2025", desc: "Negotiated carrier pricing", category: "Contract", catColor: "#EF4444", type: "PDF", warehouse: "Global", uploadedBy: "Isabella White", avatarColor: "#8B5CF6", date: "May 23, 2025", size: "512 KB" },
-  { id: 9, name: "Packaging Specifications", desc: "Box and label specifications", category: "Template", catColor: "#06B6D4", type: "DOCX", warehouse: "ATL1", uploadedBy: "Liam Anderson", avatarColor: "#10B981", date: "May 22, 2025", size: "1.1 MB" },
-];
+const AVATAR_COLORS = ["#3B82F6", "#8B5CF6", "#10B981", "#EC4899", "#F97316", "#06B6D4", "#EF4444"];
+
+function colorForName(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return AVATAR_COLORS[h % AVATAR_COLORS.length];
+}
+
+function formatUpdatedAt(raw: string): string {
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return raw;
+  return d.toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" });
+}
+
+// Map a DocumentRecord from the API into the display view model.
+function toDoc(rec: DocumentRecord): Doc {
+  const category = rec.category ?? "Report";
+  return {
+    id: rec.id,
+    name: rec.name,
+    desc: rec.category ? `${rec.category} · ${rec.type}` : rec.type,
+    category,
+    catColor: CAT_COLORS[category] ?? "#3B82F6",
+    type: rec.type,
+    warehouse: rec.owner,
+    uploadedBy: rec.owner,
+    avatarColor: colorForName(rec.owner),
+    date: formatUpdatedAt(rec.updatedAt),
+    size: rec.size,
+    status: rec.status,
+  };
+}
 
 const byCategory = [
   { label: "SOP", value: "374", pct: 30, color: "#3B82F6" },
@@ -95,9 +123,10 @@ const storageUsage = [
   { label: "Archives", value: "0.9 GB", pct: 9, color: "#F59E0B" },
 ];
 
-function TypeIcon({ type }: { type: DocType }) {
-  if (type === "XLSX") return <div className="w-9 h-9 rounded-lg bg-[#10B981]/10 flex items-center justify-center shrink-0"><FileSpreadsheet className="w-4 h-4 text-[#10B981]" /></div>;
-  if (type === "DOCX") return <div className="w-9 h-9 rounded-lg bg-[#3B82F6]/10 flex items-center justify-center shrink-0"><FileType className="w-4 h-4 text-[#3B82F6]" /></div>;
+function TypeIcon({ type }: { type: string }) {
+  const t = type.toUpperCase();
+  if (t === "XLSX" || t === "REPORT" || t === "SPREADSHEET") return <div className="w-9 h-9 rounded-lg bg-[#10B981]/10 flex items-center justify-center shrink-0"><FileSpreadsheet className="w-4 h-4 text-[#10B981]" /></div>;
+  if (t === "DOCX" || t === "CONTRACT" || t === "LABEL") return <div className="w-9 h-9 rounded-lg bg-[#3B82F6]/10 flex items-center justify-center shrink-0"><FileType className="w-4 h-4 text-[#3B82F6]" /></div>;
   return <div className="w-9 h-9 rounded-lg bg-[#EF4444]/10 flex items-center justify-center shrink-0"><FileText className="w-4 h-4 text-[#EF4444]" /></div>;
 }
 
@@ -133,18 +162,17 @@ function shareLinkFor(doc: Doc): string {
   return `https://app.fulfillmesh.com/share/${slug}-${doc.id}`;
 }
 
-let docSeq = 1000;
-
 export default function DocumentsPage() {
   const { toast } = useToast();
   const C = 2 * Math.PI * 40;
 
-  const [docs, setDocs] = useState<Doc[]>(initialDocuments);
+  const [docs, setDocs] = useState<Doc[]>([]);
+  const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [catFilter, setCatFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [whFilter, setWhFilter] = useState("");
-  const [openMenu, setOpenMenu] = useState<number | null>(null);
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
 
   const [uploadOpen, setUploadOpen] = useState(false);
   const [upload, setUpload] = useState<UploadDraft>(emptyUpload);
@@ -154,6 +182,23 @@ export default function DocumentsPage() {
   const [sharing, setSharing] = useState<Doc | null>(null);
   const [copied, setCopied] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get<{ data: DocumentRecord[]; total: number }>("/api/documents");
+        if (cancelled) return;
+        setDocs((res?.data ?? []).map(toDoc));
+      } catch {
+        if (!cancelled) toast("Failed to load documents", "error");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -179,34 +224,54 @@ export default function DocumentsPage() {
     setUploadOpen(true);
   }
 
-  function saveUpload() {
+  async function saveUpload() {
     if (pendingFiles.length === 0) { toast("Select at least one file", "error"); return; }
     setBusy(true);
-    const created: Doc[] = pendingFiles.map((f) => ({
-      id: ++docSeq,
-      name: stripExtension(f.name),
-      desc: `Uploaded ${upload.category.toLowerCase()} document`,
-      category: upload.category,
-      catColor: CAT_COLORS[upload.category] ?? "#3B82F6",
-      type: f.type,
-      warehouse: upload.warehouse,
-      uploadedBy: "You",
-      avatarColor: "#3B82F6",
-      date: new Date().toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }),
-      size: f.size,
-    }));
-    setDocs((prev) => [...created, ...prev]);
-    setBusy(false);
-    setUploadOpen(false);
-    setPendingFiles([]);
-    toast(created.length === 1 ? `"${pendingFiles[0].name}" uploaded` : `${created.length} documents uploaded`);
+    const files = pendingFiles;
+    try {
+      const created = await Promise.all(
+        files.map((f) =>
+          api.post<DocumentRecord>("/api/documents", {
+            name: stripExtension(f.name),
+            type: f.type,
+            category: upload.category,
+            size: f.size,
+            owner: "You",
+            status: "Active",
+          }),
+        ),
+      );
+      setDocs((prev) => [...created.map(toDoc), ...prev]);
+      setUploadOpen(false);
+      setPendingFiles([]);
+      toast(files.length === 1 ? `"${files[0].name}" uploaded` : `${files.length} documents uploaded`);
+    } catch {
+      toast("Failed to upload document", "error");
+    } finally {
+      setBusy(false);
+    }
   }
 
   function confirmDelete() {
     if (!deleting) return;
-    setDocs((cur) => cur.filter((d) => d.id !== deleting.id));
-    toast(`"${deleting.name}" deleted`);
+    const target = deleting;
+    setDocs((cur) => cur.filter((d) => d.id !== target.id));
     setDeleting(null);
+    api.del(`/api/documents/${target.id}`)
+      .then(() => toast(`"${target.name}" deleted`))
+      .catch(() => toast(`Failed to delete "${target.name}"`, "error"));
+  }
+
+  function archiveDoc(d: Doc) {
+    setOpenMenu(null);
+    const next: DocStatus = d.status === "Archived" ? "Active" : "Archived";
+    setDocs((cur) => cur.map((x) => (x.id === d.id ? { ...x, status: next } : x)));
+    api.put<DocumentRecord>(`/api/documents/${d.id}`, { status: next })
+      .then(() => toast(next === "Archived" ? `"${d.name}" archived` : `"${d.name}" restored`))
+      .catch(() => {
+        setDocs((cur) => cur.map((x) => (x.id === d.id ? { ...x, status: d.status } : x)));
+        toast(`Failed to update "${d.name}"`, "error");
+      });
   }
 
   function downloadDoc(d: Doc) {
@@ -250,13 +315,23 @@ export default function DocumentsPage() {
     ...(whFilter ? [{ label: `Warehouse: ${whFilter}`, clear: () => setWhFilter("") }] : []),
   ];
 
-  const quickActions: { label: string; icon: typeof Upload; onClick: () => void }[] = [
-    { label: "Upload Document", icon: Upload, onClick: openUpload },
-    { label: "Create Folder", icon: FolderPlus, onClick: () => toast("New folder created", "success") },
-    { label: "Request Document", icon: FileInput, onClick: () => toast("Document request sent", "info") },
-    { label: "Shared Links", icon: Link2, onClick: () => toast("Opening shared links…", "info") },
-    { label: "Recycle Bin", icon: Trash2, onClick: () => toast("Opening recycle bin…", "info") },
+  const quickActions: { label: string; icon: typeof Upload; action: "upload" | "folder" | "request" | "links" | "recycle" }[] = [
+    { label: "Upload Document", icon: Upload, action: "upload" },
+    { label: "Create Folder", icon: FolderPlus, action: "folder" },
+    { label: "Request Document", icon: FileInput, action: "request" },
+    { label: "Shared Links", icon: Link2, action: "links" },
+    { label: "Recycle Bin", icon: Trash2, action: "recycle" },
   ];
+
+  function runQuickAction(action: typeof quickActions[number]["action"]) {
+    switch (action) {
+      case "upload": openUpload(); break;
+      case "folder": toast("New folder created", "success"); break;
+      case "request": toast("Document request sent", "info"); break;
+      case "links": toast("Opening shared links…", "info"); break;
+      case "recycle": toast("Opening recycle bin…", "info"); break;
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -396,6 +471,7 @@ export default function DocumentsPage() {
                             <div className="absolute right-0 mt-1 z-20 w-40 bg-white rounded-lg border border-[#E2E8F0] shadow-lg py-1 text-left">
                               <button onClick={() => { setOpenMenu(null); downloadDoc(d); }} className="w-full text-left px-3 py-1.5 text-[13px] text-[#374151] hover:bg-[#F8FAFC] flex items-center gap-2"><Download className="w-3.5 h-3.5" /> Download</button>
                               <button onClick={() => { setOpenMenu(null); setCopied(false); setSharing(d); }} className="w-full text-left px-3 py-1.5 text-[13px] text-[#374151] hover:bg-[#F8FAFC] flex items-center gap-2"><Share2 className="w-3.5 h-3.5" /> Share</button>
+                              <button onClick={() => archiveDoc(d)} className="w-full text-left px-3 py-1.5 text-[13px] text-[#374151] hover:bg-[#F8FAFC] flex items-center gap-2"><Archive className="w-3.5 h-3.5" /> {d.status === "Archived" ? "Restore" : "Archive"}</button>
                               <div className="my-1 border-t border-[#E2E8F0]" />
                               <button onClick={() => { setOpenMenu(null); setDeleting(d); }} className="w-full text-left px-3 py-1.5 text-[13px] text-[#EF4444] hover:bg-[#FEF2F2] flex items-center gap-2"><Trash2 className="w-3.5 h-3.5" /> Delete</button>
                             </div>
@@ -405,7 +481,14 @@ export default function DocumentsPage() {
                     </td>
                   </tr>
                 ))}
-                {filtered.length === 0 && (
+                {loading && (
+                  <tr>
+                    <td colSpan={8} className="px-5 py-12 text-center">
+                      <span className="inline-flex items-center gap-2 text-[13px] text-[#64748B]"><Loader className="w-4 h-4 animate-spin text-[#3B82F6]" /> Loading documents…</span>
+                    </td>
+                  </tr>
+                )}
+                {!loading && filtered.length === 0 && (
                   <tr>
                     <td colSpan={8} className="px-5 py-12 text-center">
                       <p className="text-[13px] text-[#64748B]">No documents match your filters.</p>
@@ -523,7 +606,7 @@ export default function DocumentsPage() {
               {quickActions.map((a) => {
                 const Icon = a.icon;
                 return (
-                  <button key={a.label} onClick={a.onClick} className="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-[#F8FAFC] text-left transition-colors">
+                  <button key={a.label} onClick={() => runQuickAction(a.action)} className="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-[#F8FAFC] text-left transition-colors">
                     <Icon className="w-4 h-4 text-[#3B82F6] shrink-0" />
                     <span className="text-[13px] font-medium text-[#1E293B]">{a.label}</span>
                   </button>

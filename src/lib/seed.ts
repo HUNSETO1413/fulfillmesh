@@ -36,6 +36,11 @@ export async function ensureSeed(db: Pool): Promise<void> {
   await seedNotifications(db);
   await seedTasks(db);
   await seedLocations(db);
+  await seedSettings(db);
+  await seedAuditLogs(db);
+  await seedDocuments(db);
+  await seedMessages(db);
+  await seedIntegrations(db);
 }
 
 async function seedUsers(db: Pool) {
@@ -216,11 +221,17 @@ async function seedQc(db: Pool) {
 
 async function seedApiKeys(db: Pool) {
   if (await count(db, "api_keys") > 0) return;
-  const sql = `INSERT INTO api_keys (id, name, prefix, scopes, created_at, last_used, status) VALUES ($1,$2,$3,$4,$5,$6,$7)`;
-  await db.query(sql, ["KEY-001", "Production API Key", "fm_live_8a2f", "orders:read,orders:write,inventory:read",
-    "2025-04-01", "2025-05-16", "Active"]);
-  await db.query(sql, ["KEY-002", "Staging API Key", "fm_test_4c9d", "orders:read,inventory:read",
-    "2025-04-10", "2025-05-12", "Active"]);
+  // scopes stored as a JSON array so the repository can JSON.parse() them.
+  const sql = `INSERT INTO api_keys (id, name, env, prefix, scopes, created_at, last_used, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`;
+  const rows: [string, string, string, string, string[], string, string | null, string][] = [
+    ["KEY-001", "Production API Key", "Production", "fm_prod_8a2f…m9Rq", ["Orders", "Inventory", "Shipments"], "2025-04-01", "2025-05-16", "Active"],
+    ["KEY-002", "Staging Environment", "Staging", "fm_stg_4c9d…n3Wx", ["Orders", "Products"], "2025-04-10", "2025-05-12", "Active"],
+    ["KEY-003", "Analytics Service", "Production", "fm_anl_h6d1…k8Tz", ["Reports", "Analytics"], "2025-03-22", "2025-05-15", "Active"],
+    ["KEY-004", "Legacy Integration", "Production", "fm_leg_q9w5…p2Ym", ["Orders"], "2024-11-10", "2025-04-15", "Inactive"],
+  ];
+  for (const [id, name, env, prefix, scopes, created, last, status] of rows) {
+    await db.query(sql, [id, name, env, prefix, JSON.stringify(scopes), created, last, status]);
+  }
 }
 
 async function seedWarehouses(db: Pool) {
@@ -329,4 +340,104 @@ async function seedLocations(db: Pool) {
     ["LOC-010", "HZ-01-01", "Hazmat Cabinet", "RTM-1", "Hazmat", 28, "Inactive"],
   ];
   for (const l of locs) await db.query(sql, l);
+}
+
+async function seedSettings(db: Pool) {
+  if (await count(db, "settings") > 0) return;
+  const sql = `INSERT INTO settings (key, value) VALUES ($1, $2)`;
+  const entries: [string, unknown][] = [
+    ["general", {
+      companyName: "FulfillMesh",
+      supportEmail: "support@fulfillmesh.com",
+      timezone: "America/New_York",
+      currency: "USD",
+      dateFormat: "MMM DD, YYYY",
+      language: "English",
+    }],
+    ["notifications", {
+      orderUpdates: true,
+      shipmentAlerts: true,
+      inventoryWarnings: true,
+      billingReminders: true,
+      weeklyDigest: false,
+      productNews: true,
+    }],
+    ["security", {
+      twoFactorRequired: true,
+      sessionTimeoutMinutes: 30,
+      passwordRotationDays: 90,
+      ipAllowlistEnabled: false,
+    }],
+    ["billing", {
+      plan: "Growth",
+      seats: 12,
+      billingCycle: "Monthly",
+      autoRenew: true,
+    }],
+  ];
+  for (const [key, value] of entries) await db.query(sql, [key, JSON.stringify(value)]);
+}
+
+async function seedAuditLogs(db: Pool) {
+  if (await count(db, "audit_logs") > 0) return;
+  const sql = `INSERT INTO audit_logs (id, actor, action, target, category, ip, status, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`;
+  const rows: [string, string, string, string, string, string, string, string][] = [
+    ["LOG-0001", "admin@fulfillmesh.com", "Logged in", "Session", "auth", "203.0.113.24", "Success", "2025-05-16T09:14:00Z"],
+    ["LOG-0002", "sarah@fulfillmesh.com", "Updated order ORD-5821", "ORD-5821", "data", "203.0.113.51", "Success", "2025-05-16T08:42:00Z"],
+    ["LOG-0003", "admin@fulfillmesh.com", "Created API key", "KEY-003", "api", "203.0.113.24", "Success", "2025-05-15T17:30:00Z"],
+    ["LOG-0004", "miguel@fulfillmesh.com", "Failed login attempt", "Session", "auth", "198.51.100.7", "Failed", "2025-05-15T14:05:00Z"],
+    ["LOG-0005", "sarah@fulfillmesh.com", "Exported customer report", "Report", "data", "203.0.113.51", "Success", "2025-05-15T11:20:00Z"],
+    ["LOG-0006", "admin@fulfillmesh.com", "Changed billing plan to Growth", "Billing", "billing", "203.0.113.24", "Success", "2025-05-14T16:48:00Z"],
+    ["LOG-0007", "system", "Inventory sync completed", "Inventory", "system", "—", "Success", "2025-05-14T03:00:00Z"],
+    ["LOG-0008", "priya@fulfillmesh.com", "Updated security settings", "Settings", "security", "203.0.113.88", "Warning", "2025-05-13T10:12:00Z"],
+    ["LOG-0009", "miguel@fulfillmesh.com", "Deleted product PRD-0231", "PRD-0231", "data", "203.0.113.51", "Success", "2025-05-13T09:30:00Z"],
+    ["LOG-0010", "admin@fulfillmesh.com", "Revoked API key KEY-004", "KEY-004", "api", "203.0.113.24", "Success", "2025-05-12T15:00:00Z"],
+  ];
+  for (const r of rows) await db.query(sql, r);
+}
+
+async function seedDocuments(db: Pool) {
+  if (await count(db, "documents") > 0) return;
+  const sql = `INSERT INTO documents (id, name, type, category, size, owner, status, url, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`;
+  const rows: [string, string, string, string, string, string, string, string | null, string][] = [
+    ["DOC-001", "Q1 2025 Fulfillment Report.pdf", "Report", "Reports", "2.4 MB", "Sarah Chen", "Active", null, "2025-05-12"],
+    ["DOC-002", "Supplier Agreement — Shenzhen Tech.pdf", "Contract", "Legal", "1.1 MB", "Admin User", "Active", null, "2025-05-10"],
+    ["DOC-003", "Invoice INV-2025-0481.pdf", "Invoice", "Billing", "320 KB", "Admin User", "Active", null, "2025-05-09"],
+    ["DOC-004", "Shipping Label Batch — May.zip", "Label", "Shipping", "8.7 MB", "Miguel Santos", "Active", null, "2025-05-08"],
+    ["DOC-005", "Brand Packaging Guidelines.pdf", "PDF", "Branding", "5.2 MB", "Sarah Chen", "Active", null, "2025-05-05"],
+    ["DOC-006", "2024 Annual Customs Summary.xlsx", "Report", "Compliance", "640 KB", "Admin User", "Archived", null, "2025-01-31"],
+    ["DOC-007", "Warehouse Floor Plan — LAX-1.png", "Image", "Operations", "1.8 MB", "Miguel Santos", "Active", null, "2025-04-22"],
+    ["DOC-008", "Returns Policy Draft.docx", "PDF", "Legal", "210 KB", "Priya Nair", "Draft", null, "2025-05-14"],
+  ];
+  for (const r of rows) await db.query(sql, r);
+}
+
+async function seedMessages(db: Pool) {
+  if (await count(db, "messages") > 0) return;
+  const sql = `INSERT INTO messages (id, sender, subject, preview, channel, status, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)`;
+  const rows: [string, string, string, string, string, string, string][] = [
+    ["MSG-001", "Shenzhen Tech Co.", "Re: PO-50872 production update", "Production is on schedule, units ready for QC on May 20…", "Email", "Unread", "2025-05-16T08:30:00Z"],
+    ["MSG-002", "Acme Retail", "Question about order ORD-5821", "Hi, can you confirm the tracking number for our latest shipment?", "Support", "Unread", "2025-05-16T07:55:00Z"],
+    ["MSG-003", "FulfillMesh System", "Low stock alert: SKU-0612", "Fitness Tracker has dropped below its reorder point at DFW-1.", "System", "Read", "2025-05-15T22:10:00Z"],
+    ["MSG-004", "Maria Lopez", "Cycle count CC-000124 complete", "Aisle C cycle count finished with no discrepancies.", "Chat", "Read", "2025-05-15T16:40:00Z"],
+    ["MSG-005", "Summit Goods", "Invoice INV-2025-0481 received", "Thanks — payment has been scheduled for net-30.", "Email", "Read", "2025-05-14T13:05:00Z"],
+    ["MSG-006", "Carrier — DHL Express", "Customs hold on SHP-3220", "Shipment requires additional documentation to clear customs.", "System", "Unread", "2025-05-14T09:18:00Z"],
+  ];
+  for (const r of rows) await db.query(sql, r);
+}
+
+async function seedIntegrations(db: Pool) {
+  if (await count(db, "integrations") > 0) return;
+  const sql = `INSERT INTO integrations (id, name, category, status, description, last_sync) VALUES ($1,$2,$3,$4,$5,$6)`;
+  const rows: [string, string, string, string, string, string | null][] = [
+    ["INT-001", "Shopify", "Ecommerce", "Connected", "Sync orders, products and inventory with your Shopify store.", "2025-05-16T08:00:00Z"],
+    ["INT-002", "Amazon Seller Central", "Marketplace", "Connected", "Import FBA and FBM orders and push tracking back to Amazon.", "2025-05-16T07:30:00Z"],
+    ["INT-003", "WooCommerce", "Ecommerce", "Available", "Connect your WordPress store for two-way order sync.", null],
+    ["INT-004", "DHL Express", "Shipping", "Connected", "Generate labels and pull live tracking for DHL shipments.", "2025-05-16T06:45:00Z"],
+    ["INT-005", "QuickBooks", "Accounting", "Available", "Sync invoices and payments to your QuickBooks ledger.", null],
+    ["INT-006", "Klaviyo", "Marketing", "Error", "Push fulfillment events to Klaviyo flows. Re-authentication required.", "2025-05-10T12:00:00Z"],
+    ["INT-007", "TikTok Shop", "Marketplace", "Available", "Fulfill TikTok Shop orders through FulfillMesh.", null],
+    ["INT-008", "Stripe", "Accounting", "Connected", "Reconcile payouts and invoice payments via Stripe.", "2025-05-15T20:15:00Z"],
+  ];
+  for (const r of rows) await db.query(sql, r);
 }

@@ -18,17 +18,6 @@ import { api, exportToCsv } from "@/lib/client";
 type Status = "Active" | "Inactive";
 type Row = { id?: string; code: string; name: string; desc: string; suit: string; util: number; status: Status };
 
-const initialRows: Row[] = [
-  { code: "BIN", name: "Bin Location", desc: "Small item storage for fast picks", suit: "Small Items", util: 82, status: "Active" },
-  { code: "SHELF", name: "Shelf Storage", desc: "General items on shelves", suit: "General", util: 74, status: "Active" },
-  { code: "RACK", name: "Pallet Rack", desc: "Pallets on rack systems", suit: "Pallets", util: 68, status: "Active" },
-  { code: "BULK", name: "Bulk Storage", desc: "Bulk items on floor", suit: "Bulk", util: 61, status: "Active" },
-  { code: "CAGE", name: "Cage Storage", desc: "Items in security cages", suit: "High Value", util: 55, status: "Active" },
-  { code: "COOL", name: "Cold Storage", desc: "Temperature controlled (2-8°C)", suit: "Perishables", util: 90, status: "Active" },
-  { code: "FRZ", name: "Frozen Storage", desc: "Frozen goods (-18°C and below)", suit: "Frozen", util: 76, status: "Active" },
-  { code: "HAZ", name: "Hazardous Storage", desc: "Hazardous material storage", suit: "Regulated", util: 43, status: "Active" },
-];
-
 const SUITABLE = ["Small Items", "General", "Pallets", "Bulk", "High Value", "Perishables", "Frozen", "Regulated"];
 const STATUSES: Status[] = ["Active", "Inactive"];
 
@@ -96,7 +85,7 @@ export default function StorageTypesPage() {
           status: s.status,
         }));
         setRows(mapped);
-      } catch (err) {
+      } catch {
         if (!cancelled) toast("Failed to load storage types", "error");
       } finally {
         if (!cancelled) setLoading(false);
@@ -224,7 +213,7 @@ export default function StorageTypesPage() {
       if (created?.id) {
         setRows((prev) => prev.map((r) => (r.code === newRow.code ? { ...r, id: created.id } : r)));
       }
-    } catch (err) {
+    } catch {
       toast("Failed to persist storage type", "error");
     } finally {
       setBusy(false);

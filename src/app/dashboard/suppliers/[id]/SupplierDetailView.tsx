@@ -155,7 +155,6 @@ export default function SupplierDetailView({ supplier }: { supplier: Supplier })
 
   // Sample history — live list
   const [samples, setSamples] = useState(sampleHistorySeed);
-  let sampleCounter = samples.length;
 
   // Quality history — seeded from supplier ID
   const qualityHistory = useMemo(() => generateQualityHistory(supplier.id), [supplier.id]);
@@ -275,8 +274,7 @@ export default function SupplierDetailView({ supplier }: { supplier: Supplier })
 
   function submitSample() {
     if (!sampleDraft.quantity || Number(sampleDraft.quantity) < 1) { toast("Quantity must be at least 1", "error"); return; }
-    sampleCounter += 1;
-    const ref = `SMP-${String(sampleCounter).padStart(3, "0")}`;
+    const ref = `SMP-${String(samples.length + 1).padStart(3, "0")}`;
     const now = new Date().toISOString().slice(0, 10);
     setSamples((prev) => [
       { date: now, id: ref, product: sampleDraft.type, status: "Pending", result: "—" },

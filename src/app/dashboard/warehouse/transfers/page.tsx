@@ -131,7 +131,7 @@ export default function StockTransfersPage() {
           return match ? Math.max(m, parseInt(match[1], 10)) : m;
         }, 987);
         seq.current = maxNum;
-      } catch (err) {
+      } catch {
         if (alive) toast("Failed to load transfers", "error");
       } finally {
         if (alive) setLoading(false);
@@ -244,7 +244,7 @@ export default function StockTransfersPage() {
         setRows((prev) => prev.map((r) => (r.tr === tr ? { ...r, tr: apiTr } : r)));
       }
       toast(`Transfer ${apiTr || tr} created`);
-    } catch (err) {
+    } catch {
       toast(`Transfer ${tr} saved locally (server sync failed)`, "error");
     } finally {
       setBusy(false);

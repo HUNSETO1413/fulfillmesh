@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import type { Product } from "@/types";
 import { Modal } from "@/components/dashboard/Modal";
-import { Field as FormField, TextInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
+import { Field as FormField, TextInput, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
 import { api } from "@/lib/client";
 import { formatCurrency, formatNumber } from "@/lib/format";
@@ -66,7 +66,7 @@ function deriveOrders(productId: string) {
   const rng = seededRandom(hashId(productId + "_orders"));
   const customers = ["Acme Retail", "Summit Goods", "Peak Supplies", "Global Mart", "Urban Needs"];
   const statuses = ["Delivered", "In Transit", "Processing", "Confirmed"] as const;
-  return Array.from({ length: 5 }, (_, i) => {
+  return Array.from({ length: 5 }, () => {
     const orderNum = 10000 + Math.round(rng() * 9999);
     const id = `ORD-${orderNum}`;
     const customer = customers[Math.floor(rng() * customers.length)];

@@ -6,6 +6,7 @@ import { Modal } from "@/components/dashboard/Modal";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { Field, TextInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
+import { api } from "@/lib/client";
 
 type Conn = "Connected" | "Needs Attention" | "Disabled";
 
@@ -70,6 +71,27 @@ export default function CarriersPage() {
   const [carriers, setCarriers] = useState<Carrier[]>(initialCarriers);
   const [page, setPage] = useState(1);
 
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const all = await api.get<Record<string, unknown>>("/api/settings");
+        if (!alive) return;
+        const stored = all.carriers as Carrier[] | undefined;
+        if (Array.isArray(stored)) setCarriers(stored);
+      } catch {
+        if (alive) toast("Failed to load carrier settings", "error");
+      }
+    })();
+    return () => { alive = false; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Persist the full carrier list and update local state together.
+  const commit = (next: Carrier[]) => {
+    setCarriers(next);
+    api.put("/api/settings", { carriers: next }).catch(() => toast("Failed to save carrier settings", "error"));
+  };
+
   // add / edit modal — `editing` holds the original carrier name when editing
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
@@ -96,13 +118,13 @@ export default function CarriersPage() {
   const pageRows = useMemo(() => carriers.slice(start, start + PAGE_SIZE), [carriers, start]);
 
   const toggleTracking = (name: string) => {
-    setCarriers((cs) => cs.map((c) => (c.name === name ? { ...c, tracking: !c.tracking } : c)));
     const c = carriers.find((x) => x.name === name);
+    commit(carriers.map((x) => (x.name === name ? { ...x, tracking: !x.tracking } : x)));
     toast(`${name} tracking sync ${c && !c.tracking ? "enabled" : "disabled"}`);
   };
 
   const setStatus = (name: string, status: string) => {
-    setCarriers((cs) => cs.map((c) => (c.name === name ? { ...c, defaultStatus: status } : c)));
+    commit(carriers.map((c) => (c.name === name ? { ...c, defaultStatus: status } : c)));
     toast(`${name} set to ${status.toLowerCase()}`);
   };
 
@@ -143,8 +165,8 @@ export default function CarriersPage() {
       return;
     }
     if (editing) {
-      setCarriers((cs) =>
-        cs.map((c) =>
+      commit(
+        carriers.map((c) =>
           c.name === editing
             ? { ...c, name, service: draft.service.trim() || "Standard", regions: draft.regions.trim() || "—", conn: draft.conn, defaultStatus: draft.defaultStatus }
             : c,
@@ -152,8 +174,8 @@ export default function CarriersPage() {
       );
       toast(`${name} updated`);
     } else {
-      setCarriers((cs) => [
-        ...cs,
+      commit([
+        ...carriers,
         {
           name,
           service: draft.service.trim() || "Standard",
@@ -172,7 +194,7 @@ export default function CarriersPage() {
 
   const handleRemove = () => {
     if (!removing) return;
-    setCarriers((cs) => cs.filter((c) => c.name !== removing.name));
+    commit(carriers.filter((c) => c.name !== removing.name));
     toast(`${removing.name} removed`);
     setRemoving(null);
   };

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   BarChart3, Package, Truck, RotateCcw, Users, FileText,
   Download, ChevronDown, Bell, MoreHorizontal,
@@ -10,7 +10,8 @@ import { DateRangeMenu } from "@/components/dashboard/DateRangeMenu";
 import { Modal } from "@/components/dashboard/Modal";
 import { Field, TextInput, Select as FormSelect, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
-import { exportToCsv } from "@/lib/client";
+import { api, exportToCsv } from "@/lib/client";
+import type { AnalyticsSummary } from "@/lib/analytics";
 
 type Schedule = {
   frequency: "Daily" | "Weekly" | "Monthly";
@@ -77,10 +78,99 @@ function nowStamp() {
   return new Date().toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
+// Build the real CSV rows for a given report type from live analytics aggregates.
+function buildReportRows(
+  title: string,
+  summary: AnalyticsSummary | null,
+  range: string,
+): { rows: Record<string, string | number>[]; columns: { key: string; header: string }[] } {
+  const generated = nowStamp();
+  if (!summary) {
+    return {
+      rows: [{ report: title, range, generated, status: "Ready" }],
+      columns: [
+        { key: "report", header: "Report" },
+        { key: "range", header: "Date Range" },
+        { key: "generated", header: "Last Generated" },
+        { key: "status", header: "Status" },
+      ],
+    };
+  }
+  switch (title) {
+    case "Sales Report":
+      return {
+        rows: summary.revenueByMonth.map((m) => ({ period: m.month, orders: m.orders, revenue: m.revenue })),
+        columns: [
+          { key: "period", header: "Month" },
+          { key: "orders", header: "Orders" },
+          { key: "revenue", header: "Revenue (USD)" },
+        ],
+      };
+    case "Inventory Report":
+      return {
+        rows: summary.topProducts.map((p) => ({ sku: p.sku, name: p.name, reserved: p.orders, stockValue: p.revenue })),
+        columns: [
+          { key: "sku", header: "SKU" },
+          { key: "name", header: "Product" },
+          { key: "reserved", header: "Units Reserved" },
+          { key: "stockValue", header: "Stock Value (USD)" },
+        ],
+      };
+    case "Shipment Report":
+      return {
+        rows: summary.shipmentsByStatus.map((s) => ({ status: s.status, count: s.count })),
+        columns: [
+          { key: "status", header: "Status" },
+          { key: "count", header: "Shipments" },
+        ],
+      };
+    case "Return Report":
+      return {
+        rows: [
+          { metric: "Total Orders", value: summary.totalOrders },
+          { metric: "Return Rate (%)", value: summary.returnRate },
+          { metric: "Delivered Orders", value: summary.deliveredOrders },
+        ],
+        columns: [
+          { key: "metric", header: "Metric" },
+          { key: "value", header: "Value" },
+        ],
+      };
+    case "Customer Report":
+      return {
+        rows: summary.topCustomers.map((c) => ({ id: c.id, name: c.name, orders: c.orders, totalSpent: c.totalSpent })),
+        columns: [
+          { key: "id", header: "Customer ID" },
+          { key: "name", header: "Customer" },
+          { key: "orders", header: "Orders" },
+          { key: "totalSpent", header: "Total Spent (USD)" },
+        ],
+      };
+    default:
+      return {
+        rows: [{ report: title, range, generated, status: "Ready" }],
+        columns: [
+          { key: "report", header: "Report" },
+          { key: "range", header: "Date Range" },
+          { key: "generated", header: "Last Generated" },
+          { key: "status", header: "Status" },
+        ],
+      };
+  }
+}
+
 export default function ReportsPage() {
   const { toast } = useToast();
   const [range, setRange] = useState("May 12 – May 18, 2025");
   const [reports, setReports] = useState(initialReports);
+  const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
+
+  useEffect(() => {
+    api.get<AnalyticsSummary>("/api/analytics")
+      .then(setSummary)
+      .catch(() => toast("Could not load report data", "error"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [rowMenu, setRowMenu] = useState<string | null>(null);
   const [type, setType] = useState("Sales Report");
   const [groupBy, setGroupBy] = useState("Select an option");
@@ -94,15 +184,13 @@ export default function ReportsPage() {
   // share modal
   const [sharing, setSharing] = useState<string | null>(null);
 
-  function downloadReport(title: string, generated: string) {
-    exportToCsv(title.toLowerCase().replace(/\s+/g, "-"), [
-      { report: title, range, generated, status: "Ready" },
-    ], [
-      { key: "report", header: "Report" },
-      { key: "range", header: "Date Range" },
-      { key: "generated", header: "Last Generated" },
-      { key: "status", header: "Status" },
-    ]);
+  function downloadReport(title: string) {
+    const { rows, columns } = buildReportRows(title, summary, range);
+    exportToCsv(
+      title.toLowerCase().replace(/\s+/g, "-"),
+      rows,
+      columns as { key: keyof (typeof rows)[number]; header: string }[],
+    );
   }
 
   function generateReport(title: string) {
@@ -110,7 +198,7 @@ export default function ReportsPage() {
     window.setTimeout(() => {
       const stamp = nowStamp();
       setReports((prev) => prev.map((r) => r.title === title ? { ...r, action: "download", generated: stamp, generating: false } : r));
-      downloadReport(title, stamp);
+      downloadReport(title);
       toast(`${title} is ready — download started`);
     }, 1200);
   }
@@ -119,15 +207,12 @@ export default function ReportsPage() {
     setCustomBusy(true);
     window.setTimeout(() => {
       setCustomBusy(false);
-      exportToCsv(`custom-${type.toLowerCase().replace(/\s+/g, "-")}`, [
-        { report: type, range, groupBy: groupBy === "Select an option" ? "—" : groupBy, format, generated: nowStamp() },
-      ], [
-        { key: "report", header: "Report" },
-        { key: "range", header: "Date Range" },
-        { key: "groupBy", header: "Grouped By" },
-        { key: "format", header: "Format" },
-        { key: "generated", header: "Generated" },
-      ]);
+      const { rows, columns } = buildReportRows(type, summary, range);
+      exportToCsv(
+        `custom-${type.toLowerCase().replace(/\s+/g, "-")}`,
+        rows,
+        columns as { key: keyof (typeof rows)[number]; header: string }[],
+      );
       toast(`${type} (${format}) generated${groupBy !== "Select an option" ? `, grouped by ${groupBy}` : ""}`);
     }, 1200);
   }
@@ -193,6 +278,21 @@ export default function ReportsPage() {
         </div>
       </div>
 
+      {/* Live KPI snapshot (real aggregates from the database) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { label: "Total Revenue", value: summary ? `$${summary.totalRevenue.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "—" },
+          { label: "Total Orders", value: summary ? summary.totalOrders.toLocaleString("en-US") : "—" },
+          { label: "Avg Order Value", value: summary ? `$${summary.avgOrderValue.toLocaleString("en-US", { maximumFractionDigits: 2 })}` : "—" },
+          { label: "Return Rate", value: summary ? `${summary.returnRate}%` : "—" },
+        ].map((k) => (
+          <div key={k.label} className="bg-white rounded-xl border border-border-soft shadow-[0_1px_3px_rgba(0,0,0,0.05)] p-4">
+            <p className="text-[12px] font-medium text-text-muted">{k.label}</p>
+            <p className="text-[22px] font-bold text-text-primary mt-1">{k.value}</p>
+          </div>
+        ))}
+      </div>
+
       {/* Reports table */}
       <div className="bg-white rounded-xl border border-border-soft shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
         <div className="overflow-x-auto">
@@ -236,7 +336,7 @@ export default function ReportsPage() {
                             Generating…
                           </span>
                         ) : r.action === "download" ? (
-                          <button onClick={() => { downloadReport(r.title, r.generated); toast(`${r.title} downloaded`); }} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-action-blue hover:underline">
+                          <button onClick={() => { downloadReport(r.title); toast(`${r.title} downloaded`); }} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-action-blue hover:underline">
                             <Download className="w-3.5 h-3.5" />
                             Download
                           </button>

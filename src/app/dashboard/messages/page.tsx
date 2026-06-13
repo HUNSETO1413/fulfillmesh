@@ -19,14 +19,23 @@ import {
   ShoppingCart,
   Share2,
   Mail,
+  MailOpen,
   BellOff,
+  Archive,
+  Trash2,
   FileText,
   Plus,
   MessageSquare,
+  Loader,
 } from "lucide-react";
 import { Modal } from "@/components/dashboard/Modal";
-import { Field, TextInput, TextArea, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
+import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
+import { Field, TextInput, TextArea, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
+import { api } from "@/lib/client";
+import type { Message as MessageRecord } from "@/types";
+
+type MsgStatus = MessageRecord["status"];
 
 interface Conversation {
   id: string;
@@ -36,21 +45,10 @@ interface Conversation {
   subject: string;
   preview: string;
   time: string;
+  channel: string;
+  status: MsgStatus;
   unread: number;
 }
-
-const conversations: Conversation[] = [
-  { id: "c1", name: "James Carter", avatar: "JC", color: "#0057D8", subject: "Re: PO-102876 — Shipment Update", preview: "Can you provide an update on the status...", time: "10:42 AM", unread: 2 },
-  { id: "c2", name: "Sophie Lee", avatar: "SL", color: "#8B5CF6", subject: "Inventory Discrepancy", preview: "We found a mismatch in SKU-4421 count...", time: "9:18 AM", unread: 1 },
-  { id: "c3", name: "Michael Brown", avatar: "MB", color: "#10B981", subject: "Pickup Schedule", preview: "The courier is confirmed for 2 PM today.", time: "Yesterday", unread: 0 },
-  { id: "c4", name: "DFW1 Warehouse Team", avatar: "DF", color: "#F59E0B", subject: "Daily Ops Huddle", preview: "Good morning team, here are today's...", time: "Yesterday", unread: 0 },
-  { id: "c5", name: "Ava Thomas", avatar: "AT", color: "#EC4899", subject: "QC Check — Order #4498", preview: "All items passed inspection. Photos attached.", time: "Mon", unread: 0 },
-  { id: "c6", name: "LAX1 Warehouse Team", avatar: "LA", color: "#06B6D4", subject: "Weekend Maintenance", preview: "Dock 3 will be closed for repairs...", time: "Mon", unread: 0 },
-  { id: "c7", name: "Ethan Taylor", avatar: "ET", color: "#7C3AED", subject: "Cycle Count — Zone B", preview: "Variance resolved and adjusted.", time: "Sun", unread: 0 },
-  { id: "c8", name: "Vendor: FastShip Logistics", avatar: "FL", color: "#F97316", subject: "ASN Update", preview: "The ASN for PO-50672 is now available...", time: "Sun", unread: 0 },
-  { id: "c9", name: "Returns Team", avatar: "RT", color: "#EF4444", subject: "RMA-7788 — Customer Return", preview: "Return received and inspected.", time: "May 26", unread: 0 },
-  { id: "c10", name: "System Notifications", avatar: "SY", color: "#64748B", subject: "Scheduled Maintenance", preview: "System maintenance completed.", time: "May 25", unread: 0 },
-];
 
 interface Message {
   id: string;
@@ -60,43 +58,45 @@ interface Message {
   content: string;
 }
 
-const initialMessages: Record<string, Message[]> = {
-  c1: [
-    { id: "m1", sender: "James Carter", isMe: false, time: "May 30, 2025 10:41 AM", content: "Can you provide an update on the status of PO-102876? We need confirmation before we schedule the pickup. Thanks!" },
-    { id: "m2", sender: "You", isMe: true, time: "May 30, 2025 10:41 AM", content: "Hi James, the shipment has been received and is currently being processed. Estimated completion time is May 31, 2025 by 12:00 PM." },
-    { id: "m3", sender: "You", isMe: true, time: "May 30, 2025 10:42 AM", content: "I'll keep you updated if anything changes. Best, Operations Team" },
-    { id: "m4", sender: "James Carter", isMe: false, time: "May 30, 2025 10:45 AM", content: "Great, thank you! Please ensure priority handling." },
-    { id: "m5", sender: "You", isMe: true, time: "May 30, 2025 10:46 AM", content: "Absolutely. We'll prioritize and keep you posted. Have a great day!" },
-  ],
-  c2: [
-    { id: "m1", sender: "Sophie Lee", isMe: false, time: "May 30, 2025 09:12 AM", content: "We found a mismatch in SKU-4421 count during the cycle count. System shows 320 but we counted 298." },
-    { id: "m2", sender: "You", isMe: true, time: "May 30, 2025 09:18 AM", content: "Thanks for flagging. Let's open an adjustment ticket and recount zone B to confirm." },
-  ],
-  c3: [
-    { id: "m1", sender: "Michael Brown", isMe: false, time: "Yesterday 02:00 PM", content: "The courier is confirmed for 2 PM today. Dock 2 is reserved." },
-  ],
-  c4: [
-    { id: "m1", sender: "DFW1 Warehouse Team", isMe: false, time: "Yesterday 07:30 AM", content: "Good morning team, here are today's priorities: clear the inbound backlog and prep the LAX transfer." },
-  ],
-  c5: [
-    { id: "m1", sender: "Ava Thomas", isMe: false, time: "Mon 11:20 AM", content: "All items passed inspection for Order #4498. Photos attached for your records." },
-  ],
-  c6: [
-    { id: "m1", sender: "LAX1 Warehouse Team", isMe: false, time: "Mon 08:45 AM", content: "Dock 3 will be closed for repairs this weekend. Please route inbound to Dock 1 and 2." },
-  ],
-  c7: [
-    { id: "m1", sender: "Ethan Taylor", isMe: false, time: "Sun 04:10 PM", content: "Variance for Zone B resolved and adjusted in the system. No further action needed." },
-  ],
-  c8: [
-    { id: "m1", sender: "Vendor: FastShip Logistics", isMe: false, time: "Sun 01:30 PM", content: "The ASN for PO-50672 is now available. Expected arrival is Tuesday before noon." },
-  ],
-  c9: [
-    { id: "m1", sender: "Returns Team", isMe: false, time: "May 26 03:15 PM", content: "Return RMA-7788 received and inspected. Item is restockable; awaiting your approval to refund." },
-  ],
-  c10: [
-    { id: "m1", sender: "System Notifications", isMe: false, time: "May 25 02:00 AM", content: "System maintenance completed successfully. All services are operational." },
-  ],
-};
+const CONVO_COLORS = ["#0057D8", "#8B5CF6", "#10B981", "#F59E0B", "#EC4899", "#06B6D4", "#7C3AED", "#F97316", "#EF4444", "#64748B"];
+
+function colorForName(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return CONVO_COLORS[h % CONVO_COLORS.length];
+}
+
+function initials(name: string): string {
+  return name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+}
+
+function relTime(raw: string): string {
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return raw;
+  return d.toLocaleDateString("en-US", { month: "short", day: "2-digit" });
+}
+
+function fullTime(raw: string): string {
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return raw;
+  return d.toLocaleString("en-US", { month: "short", day: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+// Map a Message record from the API into a left-rail conversation view model.
+function toConversation(rec: MessageRecord): Conversation {
+  return {
+    id: rec.id,
+    name: rec.sender,
+    avatar: initials(rec.sender),
+    color: colorForName(rec.sender),
+    subject: rec.subject,
+    preview: rec.preview,
+    time: relTime(rec.createdAt),
+    channel: rec.channel,
+    status: rec.status,
+    unread: rec.status === "Unread" ? 1 : 0,
+  };
+}
 
 const participants = [
   { name: "James Carter", role: "Operations Manager", avatar: "JC", color: "#0057D8", online: true },
@@ -127,19 +127,22 @@ type ComposeDraft = { recipient: string; subject: string; body: string };
 
 export default function MessagesPage() {
   const { toast } = useToast();
-  const [selected, setSelected] = useState("c1");
+  const [selected, setSelected] = useState("");
   const [tab, setTab] = useState<"All" | "Unread">("All");
   const [composeTab, setComposeTab] = useState<"Message" | "Note">("Message");
   const [query, setQuery] = useState("");
-  const [convos, setConvos] = useState<Conversation[]>(conversations);
-  const [threads, setThreads] = useState<Record<string, Message[]>>(initialMessages);
+  const [convos, setConvos] = useState<Conversation[]>([]);
+  const [threads, setThreads] = useState<Record<string, Message[]>>({});
+  const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState("");
   const [page, setPage] = useState(1);
+  const [deleting, setDeleting] = useState<Conversation | null>(null);
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Compose modal
   const [composeOpen, setComposeOpen] = useState(false);
-  const [compose, setCompose] = useState<ComposeDraft>({ recipient: conversations[0].name, subject: "", body: "" });
+  const [compose, setCompose] = useState<ComposeDraft>({ recipient: "", subject: "", body: "" });
 
   // Track the active thread for simulated replies, and clean up pending timers.
   const selectedRef = useRef(selected);
@@ -148,6 +151,32 @@ export default function MessagesPage() {
   useEffect(() => {
     const timers = replyTimersRef.current;
     return () => { timers.forEach(clearTimeout); };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get<{ data: MessageRecord[]; total: number }>("/api/messages");
+        if (cancelled) return;
+        const records = res?.data ?? [];
+        const mapped = records.map(toConversation);
+        setConvos(mapped);
+        // Seed each thread with its originating message as a single inbound bubble.
+        const seeded: Record<string, Message[]> = {};
+        for (const rec of records) {
+          seeded[rec.id] = [{ id: `${rec.id}-0`, sender: rec.sender, isMe: false, time: fullTime(rec.createdAt), content: rec.preview }];
+        }
+        setThreads(seeded);
+        if (mapped.length > 0) setSelected(mapped[0].id);
+      } catch {
+        if (!cancelled) toast("Failed to load messages", "error");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function goToPage(p: number) {
@@ -167,7 +196,7 @@ export default function MessagesPage() {
     });
   }, [convos, tab, query]);
 
-  const activeConvo = convos.find((c) => c.id === selected) ?? convos[0];
+  const activeConvo = convos.find((c) => c.id === selected) ?? convos[0] ?? null;
   const activeMessages = threads[selected] ?? [];
 
   // Auto-scroll to the latest message when a thread is opened or grows.
@@ -177,7 +206,43 @@ export default function MessagesPage() {
 
   function selectConversation(id: string) {
     setSelected(id);
-    setConvos((cur) => cur.map((c) => (c.id === id ? { ...c, unread: 0 } : c)));
+    const convo = convos.find((c) => c.id === id);
+    setConvos((cur) => cur.map((c) => (c.id === id ? { ...c, unread: 0, status: c.status === "Unread" ? "Read" : c.status } : c)));
+    // Persist mark-as-read only when transitioning out of Unread.
+    if (convo?.status === "Unread") {
+      api.put<MessageRecord>(`/api/messages/${id}`, { status: "Read" }).catch(() => toast("Failed to mark as read", "error"));
+    }
+  }
+
+  function setMessageStatus(id: string, status: MsgStatus, label: string) {
+    setOpenMenu(null);
+    const prev = convos.find((c) => c.id === id)?.status;
+    setConvos((cur) => cur.map((c) => (c.id === id ? { ...c, status, unread: status === "Unread" ? 1 : 0 } : c)));
+    api.put<MessageRecord>(`/api/messages/${id}`, { status })
+      .then(() => toast(label))
+      .catch(() => {
+        if (prev) setConvos((cur) => cur.map((c) => (c.id === id ? { ...c, status: prev, unread: prev === "Unread" ? 1 : 0 } : c)));
+        toast("Failed to update message", "error");
+      });
+  }
+
+  function confirmDelete() {
+    if (!deleting) return;
+    const target = deleting;
+    setDeleting(null);
+    setConvos((cur) => {
+      const next = cur.filter((c) => c.id !== target.id);
+      if (selectedRef.current === target.id) setSelected(next[0]?.id ?? "");
+      return next;
+    });
+    setThreads((cur) => {
+      const next = { ...cur };
+      delete next[target.id];
+      return next;
+    });
+    api.del(`/api/messages/${target.id}`)
+      .then(() => toast(`Conversation with ${target.name} deleted`))
+      .catch(() => toast("Failed to delete conversation", "error"));
   }
 
   function nowStamp() {
@@ -212,7 +277,7 @@ export default function MessagesPage() {
 
   function sendMessage() {
     const text = draft.trim();
-    if (!text) return;
+    if (!text || !activeConvo) return;
     const msg: Message = { id: `m${Date.now()}`, sender: "You", isMe: true, time: nowStamp(), content: text };
     const threadId = selected;
     const messageCount = (threads[threadId] ?? []).length;
@@ -230,29 +295,31 @@ export default function MessagesPage() {
     setComposeOpen(true);
   }
 
+  // Compose persists a new Message record (a fresh inbound conversation thread).
   function createThread() {
-    if (!compose.recipient) { toast("Choose a recipient", "error"); return; }
+    if (!compose.recipient.trim()) { toast("Choose a recipient", "error"); return; }
     if (!compose.subject.trim()) { toast("Subject is required", "error"); return; }
     if (!compose.body.trim()) { toast("Message body is required", "error"); return; }
-    const existing = convos.find((c) => c.name === compose.recipient);
-    const id = `c${Date.now()}`;
-    const convo: Conversation = {
-      id,
-      name: compose.recipient,
-      avatar: existing?.avatar ?? compose.recipient.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase(),
-      color: existing?.color ?? "#0057D8",
-      subject: compose.subject.trim(),
-      preview: compose.body.trim(),
-      time: "Now",
-      unread: 0,
-    };
-    const msg: Message = { id: `m${Date.now()}`, sender: "You", isMe: true, time: nowStamp(), content: compose.body.trim() };
-    setConvos((cur) => [convo, ...cur]);
-    setThreads((cur) => ({ ...cur, [id]: [msg] }));
-    setSelected(id);
+    const recipient = compose.recipient.trim();
+    const subject = compose.subject.trim();
+    const body = compose.body.trim();
     setComposeOpen(false);
-    toast(`Message sent to ${compose.recipient}`);
-    scheduleReply(id, compose.recipient, 0);
+    api.post<MessageRecord>("/api/messages", {
+      sender: recipient,
+      subject,
+      preview: body,
+      channel: "Email",
+      status: "Read",
+    })
+      .then((rec) => {
+        const convo = toConversation(rec);
+        setConvos((cur) => [convo, ...cur]);
+        setThreads((cur) => ({ ...cur, [convo.id]: [{ id: `m${Date.now()}`, sender: "You", isMe: true, time: nowStamp(), content: body }] }));
+        setSelected(convo.id);
+        toast(`Message sent to ${recipient}`);
+        scheduleReply(convo.id, recipient, 0);
+      })
+      .catch(() => toast("Failed to send message", "error"));
   }
 
   function handleComposerKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -318,11 +385,14 @@ export default function MessagesPage() {
               </div>
             </div>
             <div className="flex-1 overflow-y-auto">
-              {visibleConvos.map((c) => (
-                <button
+              {loading && (
+                <p className="px-4 py-8 text-center text-[12px] text-text-light"><Loader className="w-4 h-4 animate-spin text-action-blue inline-block mr-1.5" />Loading messages…</p>
+              )}
+              {!loading && visibleConvos.map((c) => (
+                <div
                   key={c.id}
                   onClick={() => selectConversation(c.id)}
-                  className={`w-full flex items-start gap-3 px-4 py-3 text-left border-b border-border-soft/50 hover:bg-soft-bg/50 transition-colors ${
+                  className={`group relative w-full flex items-start gap-3 px-4 py-3 text-left border-b border-border-soft/50 hover:bg-soft-bg/50 transition-colors cursor-pointer ${
                     selected === c.id ? "bg-action-blue/5 border-l-2 border-l-action-blue" : "border-l-2 border-l-transparent"
                   }`}
                 >
@@ -334,15 +404,37 @@ export default function MessagesPage() {
                     </div>
                     <p className={`text-[12px] truncate mt-0.5 ${c.unread > 0 ? "font-medium text-text-body" : "text-text-muted"}`}>{c.subject}</p>
                     <div className="flex items-center justify-between mt-0.5">
-                      <p className="text-[12px] text-text-light truncate pr-2">{c.preview}</p>
+                      <p className="text-[12px] text-text-light truncate pr-2">{c.status === "Archived" ? "Archived · " : ""}{c.preview}</p>
                       {c.unread > 0 && (
                         <span className="shrink-0 bg-action-blue text-white text-[10px] font-semibold w-5 h-5 rounded-full flex items-center justify-center">{c.unread}</span>
                       )}
                     </div>
                   </div>
-                </button>
+                  <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
+                    <button onClick={() => setOpenMenu(openMenu === c.id ? null : c.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded text-text-light hover:bg-white transition-opacity" aria-label="Conversation actions"><SlidersHorizontal className="w-3.5 h-3.5" /></button>
+                    {openMenu === c.id && (
+                      <>
+                        <div className="fixed inset-0 z-10" onClick={() => setOpenMenu(null)} />
+                        <div className="absolute right-0 mt-1 z-20 w-44 bg-white rounded-lg border border-border-soft shadow-lg py-1 text-left">
+                          {c.status === "Unread" ? (
+                            <button onClick={() => setMessageStatus(c.id, "Read", "Marked as read")} className="w-full text-left px-3 py-1.5 text-[13px] text-text-primary hover:bg-soft-bg flex items-center gap-2"><MailOpen className="w-3.5 h-3.5" /> Mark as read</button>
+                          ) : (
+                            <button onClick={() => setMessageStatus(c.id, "Unread", "Marked as unread")} className="w-full text-left px-3 py-1.5 text-[13px] text-text-primary hover:bg-soft-bg flex items-center gap-2"><Mail className="w-3.5 h-3.5" /> Mark as unread</button>
+                          )}
+                          {c.status === "Archived" ? (
+                            <button onClick={() => setMessageStatus(c.id, "Read", "Conversation restored")} className="w-full text-left px-3 py-1.5 text-[13px] text-text-primary hover:bg-soft-bg flex items-center gap-2"><Archive className="w-3.5 h-3.5" /> Unarchive</button>
+                          ) : (
+                            <button onClick={() => setMessageStatus(c.id, "Archived", "Conversation archived")} className="w-full text-left px-3 py-1.5 text-[13px] text-text-primary hover:bg-soft-bg flex items-center gap-2"><Archive className="w-3.5 h-3.5" /> Archive</button>
+                          )}
+                          <div className="my-1 border-t border-border-soft" />
+                          <button onClick={() => { setOpenMenu(null); setDeleting(c); }} className="w-full text-left px-3 py-1.5 text-[13px] text-[#EF4444] hover:bg-[#FEF2F2] flex items-center gap-2"><Trash2 className="w-3.5 h-3.5" /> Delete</button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
               ))}
-              {visibleConvos.length === 0 && (
+              {!loading && visibleConvos.length === 0 && (
                 <p className="px-4 py-8 text-center text-[12px] text-text-light">No conversations found.</p>
               )}
             </div>
@@ -353,25 +445,25 @@ export default function MessagesPage() {
             {/* Conversation header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-border-soft">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full text-white text-[13px] font-semibold flex items-center justify-center" style={{ backgroundColor: activeConvo.color }}>{activeConvo.avatar}</div>
+                <div className="w-10 h-10 rounded-full text-white text-[13px] font-semibold flex items-center justify-center" style={{ backgroundColor: activeConvo?.color }}>{activeConvo?.avatar}</div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h2 className="text-[14px] font-semibold text-text-primary">{activeConvo.name}</h2>
+                    <h2 className="text-[14px] font-semibold text-text-primary">{activeConvo?.name ?? "No conversation"}</h2>
                     <span className="inline-flex px-2 py-0.5 text-[10px] font-medium rounded-full bg-amber-50 text-amber-600">External</span>
                   </div>
-                  <p className="text-[12px] text-text-light">{activeConvo.subject}</p>
+                  <p className="text-[12px] text-text-light">{activeConvo?.subject}</p>
                 </div>
               </div>
               <div className="flex items-center gap-1">
-                <button onClick={() => toast(`Calling ${activeConvo.name}…`, "info")} className="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:bg-soft-bg transition-colors" aria-label="Call"><Phone className="w-4 h-4" /></button>
-                <button onClick={() => toast(`Starting video call with ${activeConvo.name}…`, "info")} className="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:bg-soft-bg transition-colors" aria-label="Video call"><Video className="w-4 h-4" /></button>
+                <button onClick={() => activeConvo && toast(`Calling ${activeConvo.name}…`, "info")} className="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:bg-soft-bg transition-colors" aria-label="Call"><Phone className="w-4 h-4" /></button>
+                <button onClick={() => activeConvo && toast(`Starting video call with ${activeConvo.name}…`, "info")} className="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:bg-soft-bg transition-colors" aria-label="Video call"><Video className="w-4 h-4" /></button>
                 <button onClick={() => toast("Conversation details", "info")} className="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:bg-soft-bg transition-colors" aria-label="Conversation info"><Info className="w-4 h-4" /></button>
               </div>
             </div>
 
             {/* Subject line */}
             <div className="px-4 py-2.5 bg-soft-bg border-b border-border-soft">
-              <p className="text-[13px] font-semibold text-text-primary">{activeConvo.subject}</p>
+              <p className="text-[13px] font-semibold text-text-primary">{activeConvo?.subject}</p>
             </div>
 
             {/* Messages */}
@@ -410,7 +502,7 @@ export default function MessagesPage() {
                     <button onClick={() => setDraft((d) => d + " 🙂")} className="hover:text-text-muted transition-colors" aria-label="Add emoji"><Smile className="w-4 h-4" /></button>
                     <button onClick={() => setDraft((d) => d + " @")} className="hover:text-text-muted transition-colors" aria-label="Mention"><AtSign className="w-4 h-4" /></button>
                   </div>
-                  <button onClick={sendMessage} disabled={!draft.trim()} className="flex items-center gap-1.5 px-4 py-1.5 bg-action-blue rounded-lg text-[12px] font-medium text-white hover:bg-[#0048B5] transition-colors disabled:opacity-50">
+                  <button onClick={sendMessage} disabled={!draft.trim() || !activeConvo} className="flex items-center gap-1.5 px-4 py-1.5 bg-action-blue rounded-lg text-[12px] font-medium text-white hover:bg-[#0048B5] transition-colors disabled:opacity-50">
                     Send <Send className="w-3.5 h-3.5" />
                   </button>
                 </div>
@@ -540,10 +632,10 @@ export default function MessagesPage() {
       >
         <div className="space-y-4">
           <Field label="To" required>
-            <Select
-              options={Array.from(new Set(convos.map((c) => c.name)))}
+            <TextInput
               value={compose.recipient}
               onChange={(e) => setCompose((d) => ({ ...d, recipient: e.target.value }))}
+              placeholder="e.g. Acme Retail"
             />
           </Field>
           <Field label="Subject" required>
@@ -563,6 +655,17 @@ export default function MessagesPage() {
           </Field>
         </div>
       </Modal>
+
+      {/* Delete confirm */}
+      <ConfirmDialog
+        open={!!deleting}
+        onClose={() => setDeleting(null)}
+        onConfirm={confirmDelete}
+        title="Delete conversation"
+        message={`Delete the conversation with ${deleting?.name}? This action cannot be undone.`}
+        confirmLabel="Delete"
+        destructive
+      />
     </div>
   );
 }

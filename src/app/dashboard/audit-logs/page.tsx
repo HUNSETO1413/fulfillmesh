@@ -1,94 +1,75 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Activity, User, Settings as SettingsIcon, Shield, Search,
-  Download, ArrowUpRight, ArrowDownRight, AlertTriangle, Smartphone, Monitor, Tablet,
-  ChevronLeft, ChevronRight, SlidersHorizontal, Calendar,
+  Download, AlertTriangle, Smartphone, Monitor, Tablet,
+  ChevronLeft, ChevronRight, SlidersHorizontal, Calendar, Loader,
 } from "lucide-react";
-import { exportToCsv } from "@/lib/client";
+import type { AuditLog } from "@/types";
+import { api, exportToCsv } from "@/lib/client";
 import { useToast } from "@/components/dashboard/Toast";
 
-/* ---------------- data ---------------- */
+/* ---------------- static decorative data ---------------- */
 
-const stats = [
-  { title: "Total Events", value: "24,856", change: "18.6%", dir: "up", icon: Activity, iconBg: "bg-[#0057D8]/10", iconColor: "text-[#0057D8]" },
-  { title: "User Actions", value: "18,742", change: "15.3%", dir: "up", icon: User, iconBg: "bg-[#00B894]/10", iconColor: "text-[#00B894]" },
-  { title: "System Events", value: "5,213", change: "22.7%", dir: "up", icon: SettingsIcon, iconBg: "bg-[#7C6FF6]/10", iconColor: "text-[#7C6FF6]" },
-  { title: "Security Events", value: "601", change: "3.2%", dir: "down", icon: Shield, iconBg: "bg-[#EF4444]/10", iconColor: "text-[#EF4444]" },
-];
+type StatusKind = AuditLog["status"];
 
-type EvType = "User Action" | "System Event" | "Security Event";
-const evTypeStyle: Record<EvType, string> = {
-  "User Action": "bg-[#0057D8]/10 text-[#0057D8]",
-  "System Event": "bg-[#7C6FF6]/10 text-[#7C6FF6]",
-  "Security Event": "bg-[#EF4444]/10 text-[#EF4444]",
-};
-
-type ActStyle = "create" | "update" | "delete" | "view" | "login" | "fail" | "default";
-function actionStyle(s: ActStyle) {
+function statusStyle(s: StatusKind): string {
   return {
-    create: "bg-[#00B894]/10 text-[#00B894]",
-    update: "bg-[#0057D8]/10 text-[#0057D8]",
-    delete: "bg-[#EF4444]/10 text-[#EF4444]",
-    view: "bg-[#64748B]/10 text-[#64748B]",
-    login: "bg-[#007F8C]/10 text-[#007F8C]",
-    fail: "bg-[#EF4444]/10 text-[#EF4444]",
-    default: "bg-[#F59E0B]/10 text-[#F59E0B]",
+    Success: "bg-[#00B894]/10 text-[#00B894]",
+    Failed: "bg-[#EF4444]/10 text-[#EF4444]",
+    Warning: "bg-[#F59E0B]/10 text-[#F59E0B]",
   }[s];
 }
 
-const logs: {
-  date: string; time: string; user: string; role: string; avatar: string;
-  type: EvType; action: string; act: ActStyle; resource: string; resSub: string;
-  details: string; ip: string; status: "Success" | "Failed";
-}[] = [
-  { date: "May 31, 2026", time: "09:42:18 AM", user: "John Smith", role: "Admin", avatar: "#0057D8", type: "User Action", action: "Updated", act: "update", resource: "Order #ISO-10876", resSub: "Order", details: "Updated order status from Processing to Shipped", ip: "192.168.1.45", status: "Success" },
-  { date: "May 31, 2026", time: "09:12:46 AM", user: "Sarah Rodriguez", role: "Operations Manager", avatar: "#00B894", type: "User Action", action: "Created", act: "create", resource: "Inbound #IB-3421", resSub: "Inbound", details: "Created new inbound shipment", ip: "192.168.1.62", status: "Success" },
-  { date: "May 31, 2026", time: "08:51:02 AM", user: "Michael Davis", role: "Warehouse Manager", avatar: "#7C6FF6", type: "User Action", action: "Updated", act: "update", resource: "Inventory Item SKU-10920", resSub: "Inventory", details: "Adjusted quantity from 240 to 218", ip: "192.168.1.81", status: "Success" },
-  { date: "May 31, 2026", time: "08:33:55 AM", user: "Emily Watson", role: "Inventory Manager", avatar: "#F59E0B", type: "User Action", action: "Created", act: "create", resource: "Inventory Item SKU-11203", resSub: "Inventory", details: "Created new inventory item", ip: "192.168.1.90", status: "Success" },
-  { date: "May 31, 2026", time: "08:05:47 AM", user: "Alex Chen", role: "Supervisor", avatar: "#EC4899", type: "User Action", action: "Assigned", act: "default", resource: "Task #TSK-3040", resSub: "Task", details: "Assigned task to Tyler Brown", ip: "192.168.1.33", status: "Success" },
-  { date: "May 31, 2026", time: "07:48:12 AM", user: "System", role: "Team Lead", avatar: "#64748B", type: "System Event", action: "Login", act: "login", resource: "Auth", resSub: "System", details: "User login successful", ip: "192.168.1.20", status: "Success" },
-  { date: "May 31, 2026", time: "07:30:09 AM", user: "John Smith", role: "Admin", avatar: "#0057D8", type: "System Event", action: "Export", act: "default", resource: "Report Orders Summary", resSub: "Report", details: "Exported report to CSV", ip: "192.168.1.45", status: "Success" },
-  { date: "May 31, 2026", time: "06:00:00 AM", user: "System", role: "System", avatar: "#64748B", type: "System Event", action: "Backup", act: "default", resource: "Database Backup", resSub: "System", details: "Scheduled backup completed", ip: "10.0.0.1", status: "Success" },
-  { date: "May 31, 2026", time: "05:42:31 AM", user: "System", role: "System", avatar: "#64748B", type: "Security Event", action: "Failed Login", act: "fail", resource: "User Login", resSub: "Auth", details: "Failed login attempt", ip: "203.0.113.42", status: "Failed" },
-  { date: "May 30, 2026", time: "11:58:20 PM", user: "Lisa White", role: "Operator", avatar: "#007F8C", type: "User Action", action: "Scanned", act: "view", resource: "Outbound #OB-5502", resSub: "Outbound", details: "Scanned tracking number", ip: "192.168.1.48", status: "Success" },
-  { date: "May 30, 2026", time: "11:30:14 PM", user: "Noah Garcia", role: "Operator", avatar: "#F97316", type: "User Action", action: "Updated", act: "update", resource: "Location A11-02-B", resSub: "Location", details: "Updated bin location", ip: "192.168.1.51", status: "Success" },
-  { date: "May 30, 2026", time: "10:15:08 PM", user: "Ava Harris", role: "Billing Specialist", avatar: "#84CC16", type: "Security Event", action: "Permission Change", act: "delete", resource: "Role: Operator", resSub: "Security", details: "Permission updated", ip: "192.168.1.71", status: "Success" },
-  { date: "May 30, 2026", time: "09:48:55 PM", user: "System", role: "System", avatar: "#64748B", type: "System Event", action: "Config", act: "default", resource: "System Settings", resSub: "System", details: "Configuration updated", ip: "10.0.0.1", status: "Success" },
-  { date: "May 30, 2026", time: "09:12:40 PM", user: "Robert Black", role: "Viewer", avatar: "#64748B", type: "User Action", action: "Viewed", act: "view", resource: "Dashboard SOP", resSub: "Report", details: "Viewed document", ip: "192.168.1.95", status: "Success" },
-];
+// Color a category chip; falls back to a neutral amber for unknown categories.
+function categoryStyle(category: string): string {
+  const map: Record<string, string> = {
+    auth: "bg-[#007F8C]/10 text-[#007F8C]",
+    data: "bg-[#0057D8]/10 text-[#0057D8]",
+    billing: "bg-[#84CC16]/10 text-[#65A30D]",
+    security: "bg-[#EF4444]/10 text-[#EF4444]",
+    system: "bg-[#7C6FF6]/10 text-[#7C6FF6]",
+    api: "bg-[#EC4899]/10 text-[#EC4899]",
+  };
+  return map[category.toLowerCase()] ?? "bg-[#F59E0B]/10 text-[#F59E0B]";
+}
 
-const eventSummary = [
-  { name: "User Actions", count: 18742, color: "#0057D8" },
-  { name: "System Events", count: 5213, color: "#7C6FF6" },
-  { name: "Security Events", count: 601, color: "#EF4444" },
-  { name: "Other Events", count: 300, color: "#94A3B8" },
-];
+// Color the action chip by guessing intent from the verb.
+function actionStyle(action: string): string {
+  const a = action.toLowerCase();
+  if (/(create|add|new)/.test(a)) return "bg-[#00B894]/10 text-[#00B894]";
+  if (/(delete|remove|revoke)/.test(a)) return "bg-[#EF4444]/10 text-[#EF4444]";
+  if (/(update|edit|change|adjust)/.test(a)) return "bg-[#0057D8]/10 text-[#0057D8]";
+  if (/(view|read|scan|export)/.test(a)) return "bg-[#64748B]/10 text-[#64748B]";
+  if (/(login|auth|sign)/.test(a)) return "bg-[#007F8C]/10 text-[#007F8C]";
+  if (/(fail|denied)/.test(a)) return "bg-[#EF4444]/10 text-[#EF4444]";
+  return "bg-[#F59E0B]/10 text-[#F59E0B]";
+}
 
-const eventTypes = [
-  { name: "Created", count: "6,243", color: "#00B894" },
-  { name: "Updated", count: "9,801", color: "#0057D8" },
-  { name: "Deleted", count: "1,066", color: "#EF4444" },
-  { name: "Viewed", count: "3,890", color: "#64748B" },
-  { name: "Exported", count: "1,204", color: "#F59E0B" },
-  { name: "Login", count: "2,150", color: "#007F8C" },
-  { name: "Failed Login", count: "502", color: "#F97316" },
-];
+// Deterministic avatar color from the actor name.
+const AVATAR_COLORS = ["#0057D8", "#00B894", "#7C6FF6", "#F59E0B", "#EC4899", "#007F8C", "#F97316", "#84CC16", "#64748B"];
+function avatarColor(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return AVATAR_COLORS[h % AVATAR_COLORS.length];
+}
 
-const topUsers = [
-  { name: "John Smith", count: "3,240", color: "#0057D8" },
-  { name: "Michael Davis", count: "2,118", color: "#7C6FF6" },
-  { name: "Sarah Rodriguez", count: "1,902", color: "#00B894" },
-  { name: "Emily Watson", count: "1,455", color: "#F59E0B" },
-  { name: "Alex Chen", count: "1,201", color: "#EC4899" },
-];
+function initials(name: string): string {
+  return name.split(/\s+/).filter(Boolean).map((n) => n[0]).join("").slice(0, 2).toUpperCase() || "?";
+}
 
-const securityEvents = [
-  { title: "Failed login attempt", sub: "203.0.113.42", time: "May 31, 2026 05:42 AM" },
-  { title: "Failed login attempt", sub: "198.51.100.7", time: "May 30, 2026 11:18 PM" },
-  { title: "Permission change", sub: "Administrator role updated", time: "May 30, 2026 10:15 PM" },
-];
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" });
+}
+
+function formatTime(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
 
 const mobileAccess = [
   { name: "Desktop", pct: 62, count: "15,411", color: "#0057D8", icon: Monitor },
@@ -96,59 +77,149 @@ const mobileAccess = [
   { name: "Tablet", pct: 10, count: "2,485", color: "#7C6FF6", icon: Tablet },
 ];
 
+const DONUT_COLORS = ["#0057D8", "#7C6FF6", "#EF4444", "#00B894", "#F59E0B", "#EC4899", "#94A3B8"];
+
 /* ---------------- components ---------------- */
 
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return <div className={`bg-white rounded-xl border border-border-soft shadow-[0_1px_3px_rgba(0,0,0,0.05)] ${className}`}>{children}</div>;
 }
 
-const EV_TYPES: EvType[] = ["User Action", "System Event", "Security Event"];
-
 export default function AuditLogsPage() {
   const { toast } = useToast();
-  const total = eventSummary.reduce((a, b) => a + b.count, 0);
-  const hourBars = [4, 7, 12, 9, 15, 22, 28, 31, 26, 19, 24, 30, 35, 29, 33, 27, 21, 18, 14, 11, 8, 6, 5, 3];
-  const circumference = 2 * Math.PI * 40;
+
+  const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const [query, setQuery] = useState("");
-  const [typeFilter, setTypeFilter] = useState("");
-  const [userFilter, setUserFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [actorFilter, setActorFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
 
-  const userOptions = useMemo(() => Array.from(new Set(logs.map((l) => l.user))), []);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get<{ data: AuditLog[]; total: number }>("/api/audit-logs");
+        if (cancelled) return;
+        setLogs(res?.data ?? []);
+      } catch {
+        if (!cancelled) toast("Failed to load audit logs", "error");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  function parseLogDate(d: string): number {
-    return new Date(d).getTime();
-  }
+  const categoryOptions = useMemo(
+    () => Array.from(new Set(logs.map((l) => l.category))).sort(),
+    [logs],
+  );
+  const actorOptions = useMemo(
+    () => Array.from(new Set(logs.map((l) => l.actor))).sort(),
+    [logs],
+  );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const from = fromDate ? new Date(fromDate).getTime() : null;
-    const to = toDate ? new Date(toDate).getTime() : null;
+    const to = toDate ? new Date(`${toDate}T23:59:59`).getTime() : null;
     return logs.filter((l) => {
-      const matchesQuery = !q || l.user.toLowerCase().includes(q) || l.action.toLowerCase().includes(q) || l.resource.toLowerCase().includes(q) || l.details.toLowerCase().includes(q);
-      const matchesType = !typeFilter || l.type === typeFilter;
-      const matchesUser = !userFilter || l.user === userFilter;
+      const matchesQuery = !q
+        || l.actor.toLowerCase().includes(q)
+        || l.action.toLowerCase().includes(q)
+        || (l.target ?? "").toLowerCase().includes(q)
+        || l.category.toLowerCase().includes(q);
+      const matchesCategory = !categoryFilter || l.category === categoryFilter;
+      const matchesActor = !actorFilter || l.actor === actorFilter;
       const matchesStatus = !statusFilter || l.status === statusFilter;
-      const ts = parseLogDate(l.date);
-      const matchesFrom = from === null || ts >= from;
-      const matchesTo = to === null || ts <= to;
-      return matchesQuery && matchesType && matchesUser && matchesStatus && matchesFrom && matchesTo;
+      const ts = new Date(l.createdAt).getTime();
+      const matchesFrom = from === null || isNaN(ts) || ts >= from;
+      const matchesTo = to === null || isNaN(ts) || ts <= to;
+      return matchesQuery && matchesCategory && matchesActor && matchesStatus && matchesFrom && matchesTo;
     });
-  }, [query, typeFilter, userFilter, statusFilter, fromDate, toDate]);
+  }, [logs, query, categoryFilter, actorFilter, statusFilter, fromDate, toDate]);
+
+  // ---- stats computed from loaded rows ----
+  const totalEvents = logs.length;
+  const userActions = useMemo(
+    () => logs.filter((l) => ["data", "auth", "api"].includes(l.category.toLowerCase())).length,
+    [logs],
+  );
+  const systemEvents = useMemo(
+    () => logs.filter((l) => l.category.toLowerCase() === "system").length,
+    [logs],
+  );
+  const securityCount = useMemo(
+    () => logs.filter((l) => l.category.toLowerCase() === "security").length,
+    [logs],
+  );
+
+  const stats = [
+    { title: "Total Events", value: totalEvents.toLocaleString(), icon: Activity, iconBg: "bg-[#0057D8]/10", iconColor: "text-[#0057D8]" },
+    { title: "User Actions", value: userActions.toLocaleString(), icon: User, iconBg: "bg-[#00B894]/10", iconColor: "text-[#00B894]" },
+    { title: "System Events", value: systemEvents.toLocaleString(), icon: SettingsIcon, iconBg: "bg-[#7C6FF6]/10", iconColor: "text-[#7C6FF6]" },
+    { title: "Security Events", value: securityCount.toLocaleString(), icon: Shield, iconBg: "bg-[#EF4444]/10", iconColor: "text-[#EF4444]" },
+  ];
+
+  // ---- Event Summary donut: counts grouped by category ----
+  const eventSummary = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const l of logs) counts.set(l.category, (counts.get(l.category) ?? 0) + 1);
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, count], i) => ({ name, count, color: DONUT_COLORS[i % DONUT_COLORS.length] }));
+  }, [logs]);
+  const summaryTotal = eventSummary.reduce((a, b) => a + b.count, 0) || 1;
+  const circumference = 2 * Math.PI * 40;
+
+  // ---- Event Types: counts grouped by action ----
+  const eventTypes = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const l of logs) counts.set(l.action, (counts.get(l.action) ?? 0) + 1);
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 7)
+      .map(([name, count], i) => ({ name, count, color: DONUT_COLORS[i % DONUT_COLORS.length] }));
+  }, [logs]);
+
+  // ---- Top users by event count ----
+  const topUsers = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const l of logs) counts.set(l.actor, (counts.get(l.actor) ?? 0) + 1);
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([name, count]) => ({ name, count, color: avatarColor(name) }));
+  }, [logs]);
+
+  // ---- Recent security/failed events ----
+  const securityEvents = useMemo(() => {
+    return logs
+      .filter((l) => l.category.toLowerCase() === "security" || l.status !== "Success")
+      .slice()
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, 3)
+      .map((l) => ({
+        title: l.action,
+        sub: l.target ?? l.ip ?? l.actor,
+        time: `${formatDate(l.createdAt)} ${formatTime(l.createdAt)}`,
+      }));
+  }, [logs]);
+
+  const hourBars = [4, 7, 12, 9, 15, 22, 28, 31, 26, 19, 24, 30, 35, 29, 33, 27, 21, 18, 14, 11, 8, 6, 5, 3];
 
   function handleExport() {
     exportToCsv("audit-logs", filtered, [
-      { key: "date", header: "Date" },
-      { key: "time", header: "Time" },
-      { key: "user", header: "User" },
-      { key: "role", header: "Role" },
-      { key: "type", header: "Event Type" },
+      { key: "createdAt", header: "Timestamp" },
+      { key: "actor", header: "Actor" },
       { key: "action", header: "Action" },
-      { key: "resource", header: "Resource" },
-      { key: "details", header: "Details" },
+      { key: "target", header: "Target" },
+      { key: "category", header: "Category" },
       { key: "ip", header: "IP Address" },
       { key: "status", header: "Status" },
     ]);
@@ -159,6 +230,14 @@ export default function AuditLogsPage() {
 
   return (
     <div className="space-y-6">
+      {loading && (
+        <div className="flex items-center justify-center py-20">
+          <Loader className="w-5 h-5 animate-spin text-action-blue" />
+          <span className="ml-2 text-[14px] text-text-muted">Loading audit logs…</span>
+        </div>
+      )}
+      {!loading && (
+      <>
       {/* Breadcrumb + Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -197,9 +276,8 @@ export default function AuditLogsPage() {
               </div>
               <p className="text-[28px] font-bold text-text-primary leading-none">{s.value}</p>
               <div className="flex items-center gap-1 mt-2">
-                {s.dir === "up" ? <ArrowUpRight className="w-3.5 h-3.5 text-teal" /> : <ArrowDownRight className="w-3.5 h-3.5 text-[#EF4444]" />}
-                <span className={`text-[12px] font-medium ${s.dir === "up" ? "text-teal" : "text-[#EF4444]"}`}>{s.change}</span>
-                <span className="text-[11px] text-text-light">vs last 30 days</span>
+                <Activity className="w-3.5 h-3.5 text-text-light" />
+                <span className="text-[11px] text-text-light">events recorded</span>
               </div>
             </div>
           );
@@ -210,7 +288,7 @@ export default function AuditLogsPage() {
       <div className="bg-white rounded-xl border border-border-soft p-3 shadow-[0_1px_3px_rgba(0,0,0,0.05)] flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[240px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-light" />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by user, action, resource, or details..." className="w-full pl-9 pr-4 py-2 border border-border-soft rounded-lg text-[13px] text-text-primary placeholder:text-text-light focus:outline-none focus:ring-2 focus:ring-action-blue/20" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by actor, action, target, or category..." className="w-full pl-9 pr-4 py-2 border border-border-soft rounded-lg text-[13px] text-text-primary placeholder:text-text-light focus:outline-none focus:ring-2 focus:ring-action-blue/20" />
         </div>
         <div className="inline-flex items-center gap-1.5 px-3 py-2 border border-border-soft rounded-lg bg-white text-[13px] text-text-muted">
           <Calendar className="w-4 h-4 text-text-light" />
@@ -218,20 +296,21 @@ export default function AuditLogsPage() {
           <span className="text-text-light">–</span>
           <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="text-[13px] text-text-primary bg-transparent focus:outline-none" aria-label="To date" />
         </div>
-        <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className={selectCls}>
-          <option value="">All Event Types</option>
-          {EV_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+        <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className={selectCls}>
+          <option value="">All Categories</option>
+          {categoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
-        <select value={userFilter} onChange={(e) => setUserFilter(e.target.value)} className={selectCls}>
-          <option value="">All Users</option>
-          {userOptions.map((u) => <option key={u} value={u}>{u}</option>)}
+        <select value={actorFilter} onChange={(e) => setActorFilter(e.target.value)} className={selectCls}>
+          <option value="">All Actors</option>
+          {actorOptions.map((u) => <option key={u} value={u}>{u}</option>)}
         </select>
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={selectCls}>
           <option value="">All Statuses</option>
           <option value="Success">Success</option>
           <option value="Failed">Failed</option>
+          <option value="Warning">Warning</option>
         </select>
-        <button onClick={() => { setQuery(""); setTypeFilter(""); setUserFilter(""); setStatusFilter(""); setFromDate(""); setToDate(""); toast("Filters cleared", "info"); }} className="inline-flex items-center gap-2 px-3 py-2 text-[13px] text-text-muted border border-border-soft rounded-lg bg-white hover:bg-soft-bg whitespace-nowrap">
+        <button onClick={() => { setQuery(""); setCategoryFilter(""); setActorFilter(""); setStatusFilter(""); setFromDate(""); setToDate(""); toast("Filters cleared", "info"); }} className="inline-flex items-center gap-2 px-3 py-2 text-[13px] text-text-muted border border-border-soft rounded-lg bg-white hover:bg-soft-bg whitespace-nowrap">
           <SlidersHorizontal className="w-4 h-4 text-text-light" /> Clear
         </button>
       </div>
@@ -244,49 +323,44 @@ export default function AuditLogsPage() {
             <table className="w-full">
               <thead>
                 <tr className="bg-soft-bg border-b border-border-soft">
-                  {["Time", "User", "Event Type", "Action", "Resource", "Details", "IP Address", "Status"].map((h) => (
+                  {["Time", "Actor", "Category", "Action", "Target", "IP Address", "Status"].map((h) => (
                     <th key={h} className="text-left text-[11px] font-semibold text-text-muted uppercase tracking-wider px-5 py-3 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((l, i) => (
-                  <tr key={i} className="border-b border-border-soft last:border-b-0 hover:bg-soft-bg/60 transition-colors">
+                {filtered.map((l) => (
+                  <tr key={l.id} className="border-b border-border-soft last:border-b-0 hover:bg-soft-bg/60 transition-colors">
                     <td className="px-5 py-3.5 whitespace-nowrap">
-                      <div className="text-[13px] text-text-primary">{l.date}</div>
-                      <div className="text-[11px] text-text-light">{l.time}</div>
+                      <div className="text-[13px] text-text-primary">{formatDate(l.createdAt)}</div>
+                      <div className="text-[11px] text-text-light">{formatTime(l.createdAt)}</div>
                     </td>
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-semibold shrink-0" style={{ backgroundColor: l.avatar }}>
-                          {l.user.split(" ").map((n) => n[0]).join("").slice(0, 2)}
+                        <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-semibold shrink-0" style={{ backgroundColor: avatarColor(l.actor) }}>
+                          {initials(l.actor)}
                         </div>
-                        <div>
-                          <div className="text-[13px] font-medium text-text-primary whitespace-nowrap">{l.user}</div>
-                          <div className="text-[11px] text-text-light">{l.role}</div>
-                        </div>
+                        <div className="text-[13px] font-medium text-text-primary whitespace-nowrap">{l.actor}</div>
                       </div>
                     </td>
                     <td className="px-5 py-3.5">
-                      <span className={`inline-flex px-2.5 py-0.5 text-[12px] font-medium rounded-md ${evTypeStyle[l.type]} whitespace-nowrap`}>{l.type}</span>
+                      <span className={`inline-flex px-2.5 py-0.5 text-[12px] font-medium rounded-md ${categoryStyle(l.category)} whitespace-nowrap`}>{l.category}</span>
                     </td>
                     <td className="px-5 py-3.5">
-                      <span className={`inline-flex px-2.5 py-0.5 text-[12px] font-medium rounded-md ${actionStyle(l.act)} whitespace-nowrap`}>{l.action}</span>
+                      <span className={`inline-flex px-2.5 py-0.5 text-[12px] font-medium rounded-md ${actionStyle(l.action)} whitespace-nowrap`}>{l.action}</span>
                     </td>
                     <td className="px-5 py-3.5">
-                      <div className="text-[13px] text-action-blue font-medium whitespace-nowrap">{l.resource}</div>
-                      <div className="text-[11px] text-text-light">{l.resSub}</div>
+                      <div className="text-[13px] text-action-blue font-medium whitespace-nowrap">{l.target ?? "—"}</div>
                     </td>
-                    <td className="px-5 py-3.5 text-[13px] text-text-body max-w-[200px]">{l.details}</td>
-                    <td className="px-5 py-3.5 text-[13px] text-text-body font-mono whitespace-nowrap">{l.ip}</td>
+                    <td className="px-5 py-3.5 text-[13px] text-text-body font-mono whitespace-nowrap">{l.ip ?? "—"}</td>
                     <td className="px-5 py-3.5">
-                      <span className={`inline-flex px-2.5 py-0.5 text-[12px] font-medium rounded-md ${l.status === "Success" ? "bg-[#00B894]/10 text-[#00B894]" : "bg-[#EF4444]/10 text-[#EF4444]"}`}>{l.status}</span>
+                      <span className={`inline-flex px-2.5 py-0.5 text-[12px] font-medium rounded-md ${statusStyle(l.status)}`}>{l.status}</span>
                     </td>
                   </tr>
                 ))}
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="px-5 py-12 text-center text-[13px] text-text-muted">No events match your filters.</td>
+                    <td colSpan={7} className="px-5 py-12 text-center text-[13px] text-text-muted">No events match your filters.</td>
                   </tr>
                 )}
               </tbody>
@@ -313,29 +387,30 @@ export default function AuditLogsPage() {
                 <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
                   <circle cx="50" cy="50" r="40" fill="none" stroke="#F1F5F9" strokeWidth="12" />
                   {eventSummary.map((e, i) => {
-                    const pct = (e.count / total) * 100;
-                    const off = eventSummary.slice(0, i).reduce((s, x) => s + (x.count / total) * 100, 0);
+                    const pct = (e.count / summaryTotal) * 100;
+                    const off = eventSummary.slice(0, i).reduce((s, x) => s + (x.count / summaryTotal) * 100, 0);
                     const dash = `${(pct / 100) * circumference} ${circumference - (pct / 100) * circumference}`;
                     return (
-                      <circle key={i} cx="50" cy="50" r="40" fill="none" stroke={e.color} strokeWidth="12"
+                      <circle key={e.name} cx="50" cy="50" r="40" fill="none" stroke={e.color} strokeWidth="12"
                         strokeDasharray={dash} strokeDashoffset={-(off / 100) * circumference} />
                     );
                   })}
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <p className="text-[20px] font-bold text-text-primary">24,856</p>
+                  <p className="text-[20px] font-bold text-text-primary">{totalEvents.toLocaleString()}</p>
                   <p className="text-[11px] text-text-light">Total</p>
                 </div>
               </div>
             </div>
             <div className="space-y-3">
+              {eventSummary.length === 0 && <p className="text-[13px] text-text-light text-center">No events yet.</p>}
               {eventSummary.map((e) => (
                 <div key={e.name} className="flex items-center justify-between text-[13px]">
                   <div className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: e.color }} />
                     <span className="text-text-muted">{e.name}</span>
                   </div>
-                  <span className="font-medium text-text-primary">{e.count.toLocaleString()} ({((e.count / total) * 100).toFixed(1)}%)</span>
+                  <span className="font-medium text-text-primary">{e.count.toLocaleString()} ({((e.count / summaryTotal) * 100).toFixed(1)}%)</span>
                 </div>
               ))}
             </div>
@@ -348,13 +423,14 @@ export default function AuditLogsPage() {
               <button onClick={() => toast("Opening full list…", "info")} className="text-[12px] font-medium text-action-blue hover:underline">View all</button>
             </div>
             <div className="space-y-3">
+              {eventTypes.length === 0 && <p className="text-[13px] text-text-light">No events yet.</p>}
               {eventTypes.map((e) => (
                 <div key={e.name} className="flex items-center justify-between text-[13px]">
                   <div className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: e.color }} />
                     <span className="text-text-muted">{e.name}</span>
                   </div>
-                  <span className="font-medium text-text-primary">{e.count}</span>
+                  <span className="font-medium text-text-primary">{e.count.toLocaleString()}</span>
                 </div>
               ))}
             </div>
@@ -366,13 +442,14 @@ export default function AuditLogsPage() {
               <h3 className="text-[14px] font-semibold text-text-primary">Top Users (by Events)</h3>
             </div>
             <div className="space-y-3">
+              {topUsers.length === 0 && <p className="text-[13px] text-text-light">No events yet.</p>}
               {topUsers.map((u) => (
                 <div key={u.name} className="flex items-center gap-2.5">
                   <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-semibold shrink-0" style={{ backgroundColor: u.color }}>
-                    {u.name.split(" ").map((n) => n[0]).join("")}
+                    {initials(u.name)}
                   </div>
                   <span className="text-[13px] font-medium text-text-primary flex-1">{u.name}</span>
-                  <span className="text-[13px] text-text-muted">{u.count}</span>
+                  <span className="text-[13px] text-text-muted">{u.count.toLocaleString()}</span>
                 </div>
               ))}
             </div>
@@ -386,6 +463,7 @@ export default function AuditLogsPage() {
               <button onClick={() => toast("Opening full list…", "info")} className="text-[12px] font-medium text-action-blue hover:underline">View all</button>
             </div>
             <div className="space-y-4">
+              {securityEvents.length === 0 && <p className="text-[13px] text-text-light">No recent security events.</p>}
               {securityEvents.map((e, i) => (
                 <div key={i} className="flex items-start gap-3">
                   <span className="w-7 h-7 rounded-lg bg-[#EF4444]/10 flex items-center justify-center shrink-0">
@@ -466,6 +544,8 @@ export default function AuditLogsPage() {
           </div>
         </Card>
       </div>
+      </>
+      )}
     </div>
   );
 }

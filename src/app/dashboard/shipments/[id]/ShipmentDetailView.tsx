@@ -87,7 +87,6 @@ function deriveProgress(s: Shipment) {
     { label: "Delivered", statusSet: ["Delivered"] },
   ];
   const completed = allSteps.filter((st) => st.statusSet.includes(s.status));
-  const currentIdx = completed.length; // 0-based step that is "current" (or past end)
   // Generate dates stepping backward from shippedDate
   const baseDate = s.shippedDate ? new Date(s.shippedDate) : new Date("2025-05-12");
   return allSteps.map((step, i) => {

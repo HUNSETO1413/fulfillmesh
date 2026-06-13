@@ -13,6 +13,8 @@ import { Modal } from "@/components/dashboard/Modal";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { Field, TextInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
+import { api } from "@/lib/client";
+import type { IntegrationRecord } from "@/types";
 
 /* ---------------- data ---------------- */
 
@@ -26,9 +28,11 @@ const stats = [
 
 const catStyle: Record<string, string> = {
   "Sales Channel": "bg-[#0057D8]/10 text-[#0057D8]",
+  "Ecommerce": "bg-[#00B894]/10 text-[#00B894]",
   "Marketplace": "bg-[#7C6FF6]/10 text-[#7C6FF6]",
   "Shipping": "bg-[#F59E0B]/10 text-[#F59E0B]",
   "Accounting": "bg-[#0891B2]/10 text-[#0891B2]",
+  "Marketing": "bg-[#EC4899]/10 text-[#EC4899]",
   "ERP": "bg-[#EC4899]/10 text-[#EC4899]",
   "Communication": "bg-[#EF4444]/10 text-[#EF4444]",
   "Productivity": "bg-[#00B894]/10 text-[#00B894]",
@@ -36,22 +40,58 @@ const catStyle: Record<string, string> = {
   "Custom": "bg-[#4B5563]/10 text-[#4B5563]",
 };
 
-interface IntegrationRow { name: string; type: string; cat: string; status: "Connected" | "Disconnected"; sync: string; iconBg: string; iconColor: string; icon: typeof Plug }
+const catIcon: Record<string, { icon: typeof Plug; iconBg: string; iconColor: string }> = {
+  "Ecommerce": { icon: ShoppingBag, iconBg: "bg-[#00B894]/10", iconColor: "text-[#00B894]" },
+  "Sales Channel": { icon: ShoppingBag, iconBg: "bg-[#0057D8]/10", iconColor: "text-[#0057D8]" },
+  "Marketplace": { icon: Store, iconBg: "bg-[#7C6FF6]/10", iconColor: "text-[#7C6FF6]" },
+  "Shipping": { icon: Truck, iconBg: "bg-[#F59E0B]/10", iconColor: "text-[#F59E0B]" },
+  "Accounting": { icon: Calculator, iconBg: "bg-[#0891B2]/10", iconColor: "text-[#0891B2]" },
+  "Marketing": { icon: Bell, iconBg: "bg-[#EC4899]/10", iconColor: "text-[#EC4899]" },
+  "ERP": { icon: Boxes, iconBg: "bg-[#0057D8]/10", iconColor: "text-[#0057D8]" },
+  "Communication": { icon: Bell, iconBg: "bg-[#EF4444]/10", iconColor: "text-[#EF4444]" },
+  "Productivity": { icon: FileSpreadsheet, iconBg: "bg-[#00B894]/10", iconColor: "text-[#00B894]" },
+  "Automation": { icon: GitMerge, iconBg: "bg-[#F97316]/10", iconColor: "text-[#F97316]" },
+  "Custom": { icon: Webhook, iconBg: "bg-[#4B5563]/10", iconColor: "text-[#4B5563]" },
+};
 
-const initialRows: IntegrationRow[] = [
-  { name: "Shopify", type: "E-commerce", cat: "Sales Channel", status: "Connected", sync: "2 min ago", iconBg: "bg-[#00B894]/10", iconColor: "text-[#00B894]", icon: ShoppingBag },
-  { name: "Amazon Seller Central", type: "Marketplace", cat: "Marketplace", status: "Connected", sync: "5 min ago", iconBg: "bg-[#F59E0B]/10", iconColor: "text-[#F59E0B]", icon: Store },
-  { name: "Walmart", type: "Marketplace", cat: "Marketplace", status: "Connected", sync: "10 min ago", iconBg: "bg-[#0057D8]/10", iconColor: "text-[#0057D8]", icon: Store },
-  { name: "ShipStation", type: "Shipping", cat: "Shipping", status: "Connected", sync: "1 min ago", iconBg: "bg-[#7C6FF6]/10", iconColor: "text-[#7C6FF6]", icon: Truck },
-  { name: "Shippo", type: "Shipping", cat: "Shipping", status: "Connected", sync: "3 min ago", iconBg: "bg-[#0891B2]/10", iconColor: "text-[#0891B2]", icon: Truck },
-  { name: "EasyPost", type: "Shipping", cat: "Shipping", status: "Connected", sync: "5 min ago", iconBg: "bg-[#EC4899]/10", iconColor: "text-[#EC4899]", icon: Truck },
-  { name: "QuickBooks Online", type: "Accounting", cat: "Accounting", status: "Connected", sync: "12 min ago", iconBg: "bg-[#00B894]/10", iconColor: "text-[#00B894]", icon: Calculator },
-  { name: "NetSuite", type: "ERP", cat: "ERP", status: "Connected", sync: "20 min ago", iconBg: "bg-[#0057D8]/10", iconColor: "text-[#0057D8]", icon: Boxes },
-  { name: "Slack", type: "Communication", cat: "Communication", status: "Connected", sync: "4 min ago", iconBg: "bg-[#EF4444]/10", iconColor: "text-[#EF4444]", icon: Bell },
-  { name: "Google Sheets", type: "Spreadsheet", cat: "Productivity", status: "Connected", sync: "8 min ago", iconBg: "bg-[#00B894]/10", iconColor: "text-[#00B894]", icon: FileSpreadsheet },
-  { name: "Zapier", type: "Automation", cat: "Automation", status: "Connected", sync: "16 min ago", iconBg: "bg-[#F97316]/10", iconColor: "text-[#F97316]", icon: GitMerge },
-  { name: "Custom API", type: "Custom", cat: "Custom", status: "Connected", sync: "4 min ago", iconBg: "bg-[#4B5563]/10", iconColor: "text-[#4B5563]", icon: Webhook },
-];
+type IntegrationStatus = IntegrationRecord["status"];
+
+interface IntegrationRow {
+  id: string;
+  name: string;
+  type: string;
+  cat: string;
+  status: IntegrationStatus;
+  sync: string;
+  description: string;
+  iconBg: string;
+  iconColor: string;
+  icon: typeof Plug;
+}
+
+function relSync(raw?: string): string {
+  if (!raw) return "—";
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return raw;
+  return d.toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" });
+}
+
+// Map an IntegrationRecord from the API into the table row view model.
+function toRow(rec: IntegrationRecord): IntegrationRow {
+  const style = catIcon[rec.category] ?? { icon: Plug, iconBg: "bg-[#4B5563]/10", iconColor: "text-[#4B5563]" };
+  return {
+    id: rec.id,
+    name: rec.name,
+    type: rec.category,
+    cat: rec.category,
+    status: rec.status,
+    sync: rec.status === "Connected" ? relSync(rec.lastSync) : "—",
+    description: rec.description ?? "",
+    iconBg: style.iconBg,
+    iconColor: style.iconColor,
+    icon: style.icon,
+  };
+}
 
 const health = [
   { name: "Connected", count: 11, pct: "91.7%", color: "#00B894" },
@@ -94,25 +134,43 @@ function isValidUrl(value: string): boolean {
 
 export default function IntegrationsPage() {
   const { toast } = useToast();
-  const [rows, setRows] = useState<IntegrationRow[]>(initialRows);
+  const [rows, setRows] = useState<IntegrationRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [catFilter, setCatFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState<IntegrationRow | null>(null);
 
-  // Configure modal + per-integration saved configs
+  // Configure modal + per-integration saved configs (keyed by integration id)
   const [configs, setConfigs] = useState<Record<string, IntegrationConfig>>({});
-  const [configuring, setConfiguring] = useState<string | null>(null);
+  const [configuring, setConfiguring] = useState<IntegrationRow | null>(null);
   const [configDraft, setConfigDraft] = useState<IntegrationConfig>(emptyConfig);
 
-  // Sync-in-progress indicator
+  // Sync-in-progress indicator (keyed by integration id)
   const [syncing, setSyncing] = useState<Set<string>>(new Set());
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
     const timers = timersRef.current;
     return () => { timers.forEach(clearTimeout); };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get<{ data: IntegrationRecord[]; total: number }>("/api/integrations");
+        if (cancelled) return;
+        setRows((res?.data ?? []).map(toRow));
+      } catch {
+        if (!cancelled) toast("Failed to load integrations", "error");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const filtered = useMemo(() => {
@@ -125,14 +183,26 @@ export default function IntegrationsPage() {
     });
   }, [rows, query, catFilter, statusFilter]);
 
-  function setStatus(name: string, status: "Connected" | "Disconnected") {
-    setRows((cur) => cur.map((r) => (r.name === name ? { ...r, status, sync: status === "Connected" ? "Just now" : "—" } : r)));
+  function rowByName(name: string): IntegrationRow | undefined {
+    return rows.find((r) => r.name === name);
   }
 
-  function openConfigure(name: string) {
+  // Persist a status change (Connect/Disconnect) to the API.
+  function persistStatus(row: IntegrationRow, status: IntegrationStatus, successMsg: string) {
+    const prev = row.status;
+    setRows((cur) => cur.map((r) => (r.id === row.id ? { ...r, status, sync: status === "Connected" ? "Just now" : "—" } : r)));
+    api.put<IntegrationRecord>(`/api/integrations/${row.id}`, { status })
+      .then(() => toast(successMsg))
+      .catch(() => {
+        setRows((cur) => cur.map((r) => (r.id === row.id ? { ...r, status: prev } : r)));
+        toast(`Failed to update ${row.name}`, "error");
+      });
+  }
+
+  function openConfigure(row: IntegrationRow) {
     setOpenMenu(null);
-    setConfigDraft(configs[name] ?? emptyConfig);
-    setConfiguring(name);
+    setConfigDraft(configs[row.id] ?? emptyConfig);
+    setConfiguring(row);
   }
 
   function saveConfiguration() {
@@ -142,40 +212,42 @@ export default function IntegrationsPage() {
       toast("Webhook URL must be a valid http(s) URL", "error");
       return;
     }
-    const name = configuring;
-    const wasDisconnected = rows.find((r) => r.name === name)?.status === "Disconnected";
-    setConfigs((cur) => ({ ...cur, [name]: { ...configDraft, apiKey: configDraft.apiKey.trim(), webhookUrl: configDraft.webhookUrl.trim() } }));
-    if (wasDisconnected) setStatus(name, "Connected");
+    const row = configuring;
+    const wasDisconnected = row.status !== "Connected";
+    setConfigs((cur) => ({ ...cur, [row.id]: { ...configDraft, apiKey: configDraft.apiKey.trim(), webhookUrl: configDraft.webhookUrl.trim() } }));
     setConfiguring(null);
-    toast(wasDisconnected ? `${name} connected` : `${name} configuration saved`);
+    if (wasDisconnected) {
+      persistStatus(row, "Connected", `${row.name} connected`);
+    } else {
+      toast(`${row.name} configuration saved`);
+    }
   }
 
   // Connect opens the configure modal; the integration is marked connected on save.
-  function connect(name: string) {
+  function connect(row: IntegrationRow) {
     setOpenMenu(null);
-    openConfigure(name);
+    openConfigure(row);
   }
 
-  function syncNow(name: string) {
+  function syncNow(row: IntegrationRow) {
     setOpenMenu(null);
-    if (syncing.has(name)) return;
-    setSyncing((cur) => new Set(cur).add(name));
+    if (syncing.has(row.id)) return;
+    setSyncing((cur) => new Set(cur).add(row.id));
     const timer = setTimeout(() => {
       setSyncing((cur) => {
         const next = new Set(cur);
-        next.delete(name);
+        next.delete(row.id);
         return next;
       });
-      setRows((cur) => cur.map((r) => (r.name === name ? { ...r, sync: "Just now" } : r)));
-      toast(`${name} synced`);
+      setRows((cur) => cur.map((r) => (r.id === row.id ? { ...r, sync: "Just now" } : r)));
+      toast(`${row.name} synced`);
     }, 1000);
     timersRef.current.push(timer);
   }
 
   function confirmDisconnect() {
     if (!disconnecting) return;
-    setStatus(disconnecting.name, "Disconnected");
-    toast(`${disconnecting.name} disconnected`);
+    persistStatus(disconnecting, "Available", `${disconnecting.name} disconnected`);
     setDisconnecting(null);
   }
 
@@ -246,7 +318,8 @@ export default function IntegrationsPage() {
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={selectCls}>
           <option value="">All Statuses</option>
           <option value="Connected">Connected</option>
-          <option value="Disconnected">Disconnected</option>
+          <option value="Available">Available</option>
+          <option value="Error">Error</option>
         </select>
         <button onClick={() => { setQuery(""); setCatFilter(""); setStatusFilter(""); toast("Filters cleared", "info"); }} className="inline-flex items-center gap-2 px-3 py-2 border border-border-soft rounded-lg text-[13px] text-text-muted hover:bg-soft-bg">
           Clear
@@ -284,35 +357,35 @@ export default function IntegrationsPage() {
                     </td>
                     <td className="px-5 py-3.5"><span className={`inline-flex px-2 py-0.5 text-[11px] font-medium rounded ${catStyle[r.cat]} whitespace-nowrap`}>{r.cat}</span></td>
                     <td className="px-5 py-3.5">
-                      {syncing.has(r.name) ? (
+                      {syncing.has(r.id) ? (
                         <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-action-blue"><RefreshCw className="w-3 h-3 animate-spin" />Syncing…</span>
                       ) : (
-                        <span className={`inline-flex items-center gap-1.5 text-[12px] font-medium ${connected ? "text-teal" : "text-text-light"}`}><span className={`w-1.5 h-1.5 rounded-full ${connected ? "bg-teal" : "bg-[#9AA8B8]"}`} />{r.status}</span>
+                        <span className={`inline-flex items-center gap-1.5 text-[12px] font-medium ${connected ? "text-teal" : r.status === "Error" ? "text-[#EF4444]" : "text-text-light"}`}><span className={`w-1.5 h-1.5 rounded-full ${connected ? "bg-teal" : r.status === "Error" ? "bg-[#EF4444]" : "bg-[#9AA8B8]"}`} />{r.status}</span>
                       )}
                     </td>
-                    <td className="px-5 py-3.5 text-[12px] text-text-muted whitespace-nowrap">{syncing.has(r.name) ? "Syncing…" : r.sync}</td>
+                    <td className="px-5 py-3.5 text-[12px] text-text-muted whitespace-nowrap">{syncing.has(r.id) ? "Syncing…" : r.sync}</td>
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-1 text-text-light"><ArrowLeft className="w-3.5 h-3.5" /><ArrowRight className="w-3.5 h-3.5" /></div>
                     </td>
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-1">
                         {connected ? (
-                          <button onClick={() => openConfigure(r.name)} className="text-[12px] font-medium text-action-blue hover:underline">Configure</button>
+                          <button onClick={() => openConfigure(r)} className="text-[12px] font-medium text-action-blue hover:underline">Configure</button>
                         ) : (
-                          <button onClick={() => connect(r.name)} className="text-[12px] font-medium text-action-blue hover:underline">Connect</button>
+                          <button onClick={() => connect(r)} className="text-[12px] font-medium text-action-blue hover:underline">Connect</button>
                         )}
                         <div className="relative inline-block">
-                          <button onClick={() => setOpenMenu(openMenu === r.name ? null : r.name)} className="p-1 rounded hover:bg-soft-bg text-text-light" aria-label="Integration actions"><MoreHorizontal className="w-4 h-4" /></button>
-                          {openMenu === r.name && (
+                          <button onClick={() => setOpenMenu(openMenu === r.id ? null : r.id)} className="p-1 rounded hover:bg-soft-bg text-text-light" aria-label="Integration actions"><MoreHorizontal className="w-4 h-4" /></button>
+                          {openMenu === r.id && (
                             <>
                               <div className="fixed inset-0 z-10" onClick={() => setOpenMenu(null)} />
                               <div className="absolute right-0 mt-1 z-20 w-44 bg-white rounded-lg border border-border-soft shadow-lg py-1 text-left">
-                                <button onClick={() => syncNow(r.name)} disabled={!connected || syncing.has(r.name)} className="w-full text-left px-3 py-1.5 text-[13px] text-text-primary hover:bg-soft-bg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"><RefreshCw className={`w-3.5 h-3.5 ${syncing.has(r.name) ? "animate-spin" : ""}`} /> {syncing.has(r.name) ? "Syncing…" : "Sync now"}</button>
-                                <button onClick={() => openConfigure(r.name)} className="w-full text-left px-3 py-1.5 text-[13px] text-text-primary hover:bg-soft-bg flex items-center gap-2"><Plug className="w-3.5 h-3.5" /> Configure</button>
+                                <button onClick={() => syncNow(r)} disabled={!connected || syncing.has(r.id)} className="w-full text-left px-3 py-1.5 text-[13px] text-text-primary hover:bg-soft-bg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"><RefreshCw className={`w-3.5 h-3.5 ${syncing.has(r.id) ? "animate-spin" : ""}`} /> {syncing.has(r.id) ? "Syncing…" : "Sync now"}</button>
+                                <button onClick={() => openConfigure(r)} className="w-full text-left px-3 py-1.5 text-[13px] text-text-primary hover:bg-soft-bg flex items-center gap-2"><Plug className="w-3.5 h-3.5" /> Configure</button>
                                 {connected ? (
                                   <button onClick={() => { setOpenMenu(null); setDisconnecting(r); }} className="w-full text-left px-3 py-1.5 text-[13px] text-[#EF4444] hover:bg-[#FEF2F2] flex items-center gap-2"><AlertTriangle className="w-3.5 h-3.5" /> Disconnect</button>
                                 ) : (
-                                  <button onClick={() => connect(r.name)} className="w-full text-left px-3 py-1.5 text-[13px] text-teal hover:bg-soft-bg flex items-center gap-2"><CheckCircle2 className="w-3.5 h-3.5" /> Connect</button>
+                                  <button onClick={() => connect(r)} className="w-full text-left px-3 py-1.5 text-[13px] text-teal hover:bg-soft-bg flex items-center gap-2"><CheckCircle2 className="w-3.5 h-3.5" /> Connect</button>
                                 )}
                               </div>
                             </>
@@ -323,7 +396,12 @@ export default function IntegrationsPage() {
                   </tr>
                   );
                 })}
-                {filtered.length === 0 && (
+                {loading && (
+                  <tr>
+                    <td colSpan={6} className="px-5 py-12 text-center text-[13px] text-text-muted"><span className="inline-flex items-center gap-2"><RefreshCw className="w-4 h-4 animate-spin text-action-blue" /> Loading integrations…</span></td>
+                  </tr>
+                )}
+                {!loading && filtered.length === 0 && (
                   <tr>
                     <td colSpan={6} className="px-5 py-12 text-center text-[13px] text-text-muted">No integrations match your filters.</td>
                   </tr>
@@ -375,7 +453,7 @@ export default function IntegrationsPage() {
                     <p className="text-[12px] font-medium text-text-primary truncate">{p.name}</p>
                     <p className="text-[10px] text-text-light truncate">{p.desc}</p>
                   </div>
-                  <button onClick={() => { if (p.action === "Connect") connect(p.name); else openConfigure(p.name); }} className="text-[12px] font-medium text-action-blue hover:underline shrink-0">{p.action}</button>
+                  <button onClick={() => { const row = rowByName(p.name); if (!row) { toast(`${p.name} is not available yet`, "info"); return; } if (row.status === "Connected") openConfigure(row); else connect(row); }} className="text-[12px] font-medium text-action-blue hover:underline shrink-0">{p.action}</button>
                 </div>
                 );
               })}
@@ -426,8 +504,8 @@ export default function IntegrationsPage() {
               <div><span className="text-text-light">Connection since</span><div>May 15, 2026 10:00 AM</div></div>
               <div><span className="text-text-light">Connected by</span><div>admin@fulfillmesh.com</div></div>
             </div>
-            <button onClick={() => openConfigure("Shopify")} className="w-full px-3 py-2 text-[13px] font-medium text-text-body border border-border-soft rounded-lg hover:bg-soft-bg transition-colors">Configure</button>
-            <button onClick={() => setDisconnecting(rows.find((r) => r.name === "Shopify") ?? null)} className="w-full mt-2 px-3 py-2 text-[13px] font-medium text-[#EF4444] border border-border-soft rounded-lg hover:bg-[#FEF2F2] transition-colors">Disconnect</button>
+            <button onClick={() => { const row = rowByName("Shopify"); if (row) openConfigure(row); else toast("Shopify is not available", "info"); }} className="w-full px-3 py-2 text-[13px] font-medium text-text-body border border-border-soft rounded-lg hover:bg-soft-bg transition-colors">Configure</button>
+            <button onClick={() => setDisconnecting(rowByName("Shopify") ?? null)} className="w-full mt-2 px-3 py-2 text-[13px] font-medium text-[#EF4444] border border-border-soft rounded-lg hover:bg-[#FEF2F2] transition-colors">Disconnect</button>
           </div>
 
           {/* Middle: overview */}
@@ -525,9 +603,9 @@ export default function IntegrationsPage() {
       <Modal
         open={!!configuring}
         onClose={() => setConfiguring(null)}
-        title={`Configure ${configuring ?? ""}`}
+        title={`Configure ${configuring?.name ?? ""}`}
         description={
-          rows.find((r) => r.name === configuring)?.status === "Disconnected"
+          configuring && configuring.status !== "Connected"
             ? "Enter your credentials to connect this integration."
             : "Update credentials and sync settings for this integration."
         }
@@ -535,7 +613,7 @@ export default function IntegrationsPage() {
           <>
             <SecondaryButton onClick={() => setConfiguring(null)}>Cancel</SecondaryButton>
             <PrimaryButton onClick={saveConfiguration}>
-              {rows.find((r) => r.name === configuring)?.status === "Disconnected" ? "Save & connect" : "Save configuration"}
+              {configuring && configuring.status !== "Connected" ? "Save & connect" : "Save configuration"}
             </PrimaryButton>
           </>
         }

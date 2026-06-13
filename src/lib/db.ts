@@ -239,6 +239,56 @@ CREATE TABLE IF NOT EXISTS warehouse_locations (
   capacity INTEGER NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'Active'
 );
+
+-- api_keys predates the env column; add it idempotently for existing databases.
+ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS env TEXT NOT NULL DEFAULT 'Production';
+
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id TEXT PRIMARY KEY,
+  actor TEXT NOT NULL,
+  action TEXT NOT NULL,
+  target TEXT,
+  category TEXT NOT NULL DEFAULT 'system',
+  ip TEXT,
+  status TEXT NOT NULL DEFAULT 'Success',
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS documents (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL DEFAULT 'Other',
+  category TEXT,
+  size TEXT NOT NULL DEFAULT '0 KB',
+  owner TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'Active',
+  url TEXT,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS messages (
+  id TEXT PRIMARY KEY,
+  sender TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  preview TEXT,
+  channel TEXT NOT NULL DEFAULT 'Email',
+  status TEXT NOT NULL DEFAULT 'Unread',
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS integrations (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'Ecommerce',
+  status TEXT NOT NULL DEFAULT 'Available',
+  description TEXT,
+  last_sync TEXT
+);
 `;
 
 type GlobalWithDb = typeof globalThis & {

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useToast } from "@/components/dashboard/Toast";
+import { api } from "@/lib/client";
 import {
   Mail, Bell, Settings, AlertTriangle, RotateCcw, CreditCard,
   Shield, FileText, ChevronDown, MessageSquare, Clock, Smartphone,
@@ -96,6 +97,18 @@ const INITIAL_DIGEST: EmailDigest = {
   includeSections: { summary: true, orders: true, shipments: true, inventory: true, alerts: true },
 };
 
+/* full persisted shape for the notifications settings section */
+interface NotificationState {
+  cats: Record<CategoryKey, CategoryPref>;
+  channelMaster: Record<Channel, boolean>;
+  quietPreset: string;
+  quietStart: string;
+  quietEnd: string;
+  digest: EmailDigest;
+  slackWebhook: string;
+  smsPhone: string;
+}
+
 function Toggle({ on, onClick, size = "md" }: { on: boolean; onClick: () => void; size?: "sm" | "md" }) {
   const h = size === "sm" ? 20 : 24;
   const w = size === "sm" ? 36 : 44;
@@ -146,6 +159,40 @@ export default function NotificationsPage() {
   const [savedSnap, setSavedSnap] = useState(snapshot);
   const dirty = snapshot !== savedSnap;
 
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const all = await api.get<Record<string, unknown>>("/api/settings");
+        if (!alive) return;
+        const section = all.notifications as Partial<NotificationState> | undefined;
+        if (!section || typeof section !== "object") return;
+        if (section.cats) setCats(section.cats);
+        if (section.channelMaster) setChannelMaster(section.channelMaster);
+        if (typeof section.quietPreset === "string") setQuietPreset(section.quietPreset);
+        if (typeof section.quietStart === "string") setQuietStart(section.quietStart);
+        if (typeof section.quietEnd === "string") setQuietEnd(section.quietEnd);
+        if (section.digest) setDigest(section.digest);
+        if (typeof section.slackWebhook === "string") setSlackWebhook(section.slackWebhook);
+        if (typeof section.smsPhone === "string") setSmsPhone(section.smsPhone);
+        // Mark the freshly-loaded state as the saved baseline.
+        setSavedSnap(JSON.stringify({
+          cats: section.cats ?? cats,
+          channelMaster: section.channelMaster ?? channelMaster,
+          quietPreset: section.quietPreset ?? quietPreset,
+          quietStart: section.quietStart ?? quietStart,
+          quietEnd: section.quietEnd ?? quietEnd,
+          digest: section.digest ?? digest,
+          slackWebhook: section.slackWebhook ?? slackWebhook,
+          smsPhone: section.smsPhone ?? smsPhone,
+        }));
+      } catch {
+        if (alive) toast("Failed to load notification settings", "error");
+      }
+    })();
+    return () => { alive = false; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   function toggleChannel(ch: Channel) {
     setChannelMaster((m) => ({ ...m, [ch]: !m[ch] }));
   }
@@ -167,11 +214,14 @@ export default function NotificationsPage() {
 
   function handleSave() {
     setSaving(true);
-    setTimeout(() => {
-      setSaving(false);
-      setSavedSnap(snapshot);
-      toast("Notification preferences saved");
-    }, 600);
+    const payload: NotificationState = { cats, channelMaster, quietPreset, quietStart, quietEnd, digest, slackWebhook, smsPhone };
+    api.put("/api/settings", { notifications: payload })
+      .then(() => {
+        setSavedSnap(snapshot);
+        toast("Notification preferences saved");
+      })
+      .catch(() => toast("Failed to save notification preferences", "error"))
+      .finally(() => setSaving(false));
   }
 
   function resetToDefaults() {

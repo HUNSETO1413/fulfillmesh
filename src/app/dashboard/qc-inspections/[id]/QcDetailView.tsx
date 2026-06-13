@@ -32,11 +32,6 @@ const initialChecklist: CheckItem[] = [
   { item: "Quantity Verification", result: "Passed" },
 ];
 
-const defects = [
-  { name: "Major (Critical)", count: "10", pct: "45.8%", color: "#EF4444" },
-  { name: "Minor (Major)", count: "8", pct: "36.4%", color: "#F59E0B" },
-  { name: "Minor (Minor)", count: "4", pct: "18.1%", color: "#10B981" },
-];
 
 const topDefects = [
   { rank: 1, name: "Printing misalignment", count: "7", pct: "31.8%" },

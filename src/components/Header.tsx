@@ -10,11 +10,12 @@ import {
 } from "lucide-react";
 
 const platform = [
-  { name: "Order Management", href: "/solutions/order-management", desc: "Track and manage all orders", icon: LayoutDashboard },
-  { name: "Quality Control", href: "/solutions/quality-control", desc: "On-site inspections & quality checks", icon: ShieldCheck },
-  { name: "Shipping & Logistics", href: "/solutions/shipping-logistics", desc: "Optimized routes & reliable carriers", icon: Truck },
-  { name: "Inventory Visibility", href: "/solutions/inventory-visibility", desc: "Real-time stock tracking", icon: Eye },
-  { name: "Analytics & Reporting", href: "/solutions/analytics-reporting", desc: "Data-driven fulfillment insights", icon: BarChart3 },
+  { name: "Platform Overview", href: "/platform", desc: "See the FulfillMesh control center", icon: LayoutDashboard },
+  { name: "Order Management", href: "/platform/order-management", desc: "Track and manage all orders", icon: LayoutDashboard },
+  { name: "Quality Control", href: "/platform/quality-control", desc: "On-site inspections & quality checks", icon: ShieldCheck },
+  { name: "Shipping & Logistics", href: "/platform/shipping-logistics", desc: "Optimized routes & reliable carriers", icon: Truck },
+  { name: "Inventory Visibility", href: "/platform/inventory-visibility", desc: "Real-time stock tracking", icon: Eye },
+  { name: "Analytics & Reporting", href: "/platform/analytics-reporting", desc: "Data-driven fulfillment insights", icon: BarChart3 },
 ];
 
 const solutions = [

@@ -122,7 +122,6 @@ export default function QuotesView({ items }: { items: Quote[] }) {
   const stats = useMemo(() => {
     const open = items.filter((q) => q.status === "Draft" || q.status === "Sent").length;
     const accepted = items.filter((q) => q.status === "Accepted").length;
-    const declined = items.filter((q) => q.status === "Declined").length;
     const total = items.length || 1;
     return [
       { title: "Open RFQs", value: String(open), change: open > 0 ? `${Math.round(open / total * 100)}%` : "0%", positive: true, icon: FileText, iconBg: "bg-[#0057D8]/10", iconColor: "text-[#0057D8]" },

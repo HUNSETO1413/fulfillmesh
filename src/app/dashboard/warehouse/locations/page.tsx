@@ -493,13 +493,13 @@ export default function WarehouseLocationsPage() {
                 <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
                   <circle cx="50" cy="50" r="40" fill="none" stroke="var(--color-border-blue)" strokeWidth="12" />
                   {(() => {
-                    let off = 0;
-                    return computed.bands.filter((b) => b.count > 0).map((b) => {
-                      const p = computed.total ? (b.count / computed.total) * 100 : 0;
+                    const segs = computed.bands
+                      .filter((b) => b.count > 0)
+                      .map((b) => ({ band: b, p: computed.total ? (b.count / computed.total) * 100 : 0 }));
+                    return segs.map(({ band, p }, idx) => {
+                      const off = segs.slice(0, idx).reduce((sum, s) => sum + s.p, 0);
                       const da = `${p * 2.51327} ${251.327 - p * 2.51327}`;
-                      const el = <circle key={b.label} cx="50" cy="50" r="40" fill="none" stroke={b.color} strokeWidth="12" strokeDasharray={da} strokeDashoffset={-off * 2.51327} />;
-                      off += p;
-                      return el;
+                      return <circle key={band.label} cx="50" cy="50" r="40" fill="none" stroke={band.color} strokeWidth="12" strokeDasharray={da} strokeDashoffset={-off * 2.51327} />;
                     });
                   })()}
                 </svg>

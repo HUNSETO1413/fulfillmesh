@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ClipboardList, CheckCircle2, Activity, CalendarClock, XCircle,
   Search, Columns3, Plus, ChevronDown, MoreHorizontal,
-  ArrowUpRight, ArrowDownRight, Calendar, Eye, Play, Ban, Pencil, Users,
+  ArrowUpRight, ArrowDownRight, Calendar, Eye, Play, Ban, Pencil,
 } from "lucide-react";
 import { Modal } from "@/components/dashboard/Modal";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
@@ -22,17 +22,6 @@ type Row = {
   cc: string; name: string; sub: string; wh: string; whSub: string;
   status: Status; progress: number; start: string; due: string;
 };
-
-const initialRows: Row[] = [
-  { cc: "CC-000124", name: "Aisle A01 – A10", sub: "Routine Cycle Count", wh: "ATL-1", whSub: "Atlanta, GA", status: "Completed", progress: 100, start: "May 30, 2025", due: "May 30, 2025" },
-  { cc: "CC-000123", name: "High Value Items", sub: "Priority Count", wh: "DFW-1", whSub: "Dallas, TX", status: "In Progress", progress: 65, start: "May 31, 2025", due: "Jun 2, 2025" },
-  { cc: "CC-000122", name: "Zone B – Shelves 1-20", sub: "Routine Cycle Count", wh: "LAX-1", whSub: "Los Angeles, CA", status: "In Progress", progress: 40, start: "May 31, 2025", due: "Jun 1, 2025" },
-  { cc: "CC-000121", name: "FRZ-01 Freezer Zone", sub: "Temperature Sensitive", wh: "MIA-1", whSub: "Miami, FL", status: "Scheduled", progress: 0, start: "Jun 2, 2025", due: "Jun 3, 2025" },
-  { cc: "CC-000120", name: "Bulk Storage Area", sub: "Full Warehouse Count", wh: "ORD-1", whSub: "Chicago, IL", status: "Scheduled", progress: 0, start: "Jun 2, 2025", due: "Jun 5, 2025" },
-  { cc: "CC-000119", name: "Electronics Category", sub: "Category Count", wh: "ATL-1", whSub: "Atlanta, GA", status: "Completed", progress: 100, start: "May 29, 2025", due: "May 29, 2025" },
-  { cc: "CC-000118", name: "Damaged Inventory", sub: "Ad-Hoc Count", wh: "DFW-1", whSub: "Dallas, TX", status: "Completed", progress: 100, start: "May 28, 2025", due: "May 28, 2025" },
-  { cc: "CC-000117", name: "Seasonal Items", sub: "Category Count", wh: "LAX-1", whSub: "Los Angeles, CA", status: "Cancelled", progress: 0, start: "May 27, 2025", due: "May 27, 2025" },
-];
 
 const WAREHOUSES = ["ATL-1", "DFW-1", "LAX-1", "MIA-1", "ORD-1"];
 const WH_CITY: Record<string, string> = { "ATL-1": "Atlanta, GA", "DFW-1": "Dallas, TX", "LAX-1": "Los Angeles, CA", "MIA-1": "Miami, FL", "ORD-1": "Chicago, IL" };

@@ -25,6 +25,7 @@ import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { Field, TextInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
 import { api } from "@/lib/client";
+import type { Task as ApiTask } from "@/types";
 
 const stats = [
   { title: "Total Tasks", value: "2,348", change: "15.6%", up: true, icon: CheckSquare, color: "#3B82F6" },
@@ -207,9 +208,9 @@ export default function TasksPage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await api.get<{ data: any[]; total: number }>("/api/tasks");
+        const res = await api.get<{ data: ApiTask[]; total: number }>("/api/tasks");
         if (cancelled) return;
-        const mapped: Task[] = (res?.data ?? []).map((t: any) => ({
+        const mapped: Task[] = (res?.data ?? []).map((t: ApiTask) => ({
           id: String(t.id),
           type: t.taskType ?? "Pick",
           ref: t.reference ?? "",
@@ -331,8 +332,8 @@ export default function TasksPage() {
       due: toDisplayDate(draft.due),
     };
     setItems((prev) => [created, ...prev]);
-    api.post("/api/tasks", payload)
-      .then((res: any) => {
+    api.post<ApiTask>("/api/tasks", payload)
+      .then((res) => {
         const newId = res?.id != null ? String(res.id) : null;
         if (newId && newId !== localId) {
           setItems((prev) => prev.map((t) => (t.id === localId ? { ...t, id: newId } : t)));

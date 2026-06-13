@@ -1,36 +1,25 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Key, Activity, AlertTriangle, Gauge, Plus, Copy, Eye, EyeOff,
   Trash2, ExternalLink, BookOpen, Shield, CheckCircle2, Clock,
   ArrowUpRight, Search, ChevronDown, Webhook, Lock,
-  ChevronRight,
+  ChevronRight, Loader,
 } from "lucide-react";
 import { Modal } from "@/components/dashboard/Modal";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { Field, TextInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
+import { api } from "@/lib/client";
+import type { ApiKey } from "@/types";
 
 /* ---------------- data ---------------- */
 
-const stats = [
-  { title: "Active Keys", value: "4", change: "1 expiring soon", dir: "flat" as const, icon: Key, iconBg: "bg-[#0057D8]/10", iconColor: "text-[#0057D8]" },
+const otherStats = [
   { title: "Total Requests (30d)", value: "1.2M", change: "+18%", dir: "up" as const, icon: Activity, iconBg: "bg-[#00B894]/10", iconColor: "text-[#00B894]" },
   { title: "Error Rate", value: "0.12%", change: "Below threshold", dir: "flat" as const, icon: AlertTriangle, iconBg: "bg-[#F59E0B]/10", iconColor: "text-[#F59E0B]" },
   { title: "Rate Limit Status", value: "Healthy", change: "No limits hit", dir: "flat" as const, icon: Gauge, iconBg: "bg-[#7C6FF6]/10", iconColor: "text-[#7C6FF6]" },
-];
-
-interface ApiKey {
-  id: number; name: string; env: string; key: string; full: string;
-  created: string; lastUsed: string; permissions: string[]; status: "Active" | "Inactive";
-}
-
-const initialKeys: ApiKey[] = [
-  { id: 1, name: "Production API Key", env: "Production", key: "fm_prod_k8x2…m9Rq", full: "fm_prod_k8x2aBcDeFgHiJkLm9Rq", created: "Apr 15, 2026", lastUsed: "May 31, 2026 09:14 AM", permissions: ["Orders", "Inventory", "Shipments"], status: "Active" },
-  { id: 2, name: "Staging Environment", env: "Staging", key: "fm_stg_j4p7…n3Wx", full: "fm_stg_j4p7qRsTuVwXyZn3Wx", created: "May 01, 2026", lastUsed: "May 31, 2026 08:45 AM", permissions: ["Orders", "Products"], status: "Active" },
-  { id: 3, name: "Analytics Service", env: "Production", key: "fm_anl_h6d1…k8Tz", full: "fm_anl_h6d1cDeFgHiJkLmK8Tz", created: "Mar 22, 2026", lastUsed: "May 30, 2026 05:30 PM", permissions: ["Reports", "Analytics"], status: "Active" },
-  { id: 4, name: "Legacy Integration", env: "Production", key: "fm_leg_q9w5…p2Ym", full: "fm_leg_q9w5aBcDeFgHiJkLp2Ym", created: "Nov 10, 2025", lastUsed: "May 15, 2026 12:00 PM", permissions: ["Orders"], status: "Inactive" },
 ];
 
 const ENV_OPTIONS = ["Production", "Staging", "Development"];
@@ -61,23 +50,21 @@ function maskKey(full: string): string {
   return `${full.slice(0, 11)}…${full.slice(-4)}`;
 }
 
-function todayLabel(): string {
-  return new Date().toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" });
-}
-
 /* ---------------- components ---------------- */
 
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return <div className={`bg-white rounded-xl border border-[#E2E8F0] shadow-[0_1px_3px_rgba(0,0,0,0.1)] ${className}`}>{children}</div>;
 }
 
-let nextId = 1000;
-
 export default function ApiKeysPage() {
   const { toast } = useToast();
-  const [keys, setKeys] = useState<ApiKey[]>(initialKeys);
-  const [showKeys, setShowKeys] = useState<Record<number, boolean>>({});
-  const [copied, setCopied] = useState<number | null>(null);
+  const [keys, setKeys] = useState<ApiKey[]>([]);
+  const [loading, setLoading] = useState(true);
+  // Full secret values are only known for keys generated this session (the server
+  // stores only the masked prefix). Keyed by ApiKey id.
+  const [fullSecrets, setFullSecrets] = useState<Record<string, string>>({});
+  const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
+  const [copied, setCopied] = useState<string | null>(null);
 
   const [query, setQuery] = useState("");
   const [envFilter, setEnvFilter] = useState<string>("");
@@ -95,6 +82,24 @@ export default function ApiKeysPage() {
 
   // delete
   const [deleting, setDeleting] = useState<ApiKey | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.get<{ data: ApiKey[]; total: number }>("/api/api-keys");
+        if (!cancelled) setKeys(data ?? []);
+      } catch {
+        if (!cancelled) toast("Failed to load API keys", "error");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const activeKeyCount = useMemo(() => keys.filter((k) => k.status === "Active").length, [keys]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -114,32 +119,35 @@ export default function ApiKeysPage() {
     setCreateOpen(true);
   }
 
-  function generateKey() {
+  async function generateKey() {
     if (!draftName.trim()) {
       toast("Key name is required", "error");
       return;
     }
     setBusy(true);
+    // Build the full secret client-side; only the masked prefix is persisted.
     const full = randomKey(draftEnv);
-    const created: ApiKey = {
-      id: ++nextId,
-      name: draftName.trim(),
-      env: draftEnv,
-      key: maskKey(full),
-      full,
-      created: todayLabel(),
-      lastUsed: "Never",
-      permissions: [draftPerm],
-      status: "Active",
-    };
-    setKeys((prev) => [created, ...prev]);
-    setGenerated(full);
-    setShowKeys((p) => ({ ...p, [created.id]: false }));
-    setBusy(false);
-    toast(`API key "${created.name}" generated`);
+    try {
+      const created = await api.post<ApiKey>("/api/api-keys", {
+        name: draftName.trim(),
+        env: draftEnv,
+        prefix: maskKey(full),
+        scopes: [draftPerm],
+        status: "Active",
+      });
+      setKeys((prev) => [created, ...prev]);
+      setFullSecrets((p) => ({ ...p, [created.id]: full }));
+      setGenerated(full);
+      setShowKeys((p) => ({ ...p, [created.id]: false }));
+      toast(`API key "${created.name}" generated`);
+    } catch {
+      toast("Failed to create API key", "error");
+    } finally {
+      setBusy(false);
+    }
   }
 
-  async function copyValue(id: number, value: string) {
+  async function copyValue(id: string, value: string) {
     try {
       await navigator.clipboard.writeText(value);
     } catch {
@@ -160,15 +168,27 @@ export default function ApiKeysPage() {
     toast("API key copied to clipboard");
   }
 
-  function confirmDelete() {
+  async function confirmDelete() {
     if (!deleting) return;
-    setKeys((prev) => prev.filter((k) => k.id !== deleting.id));
-    toast(`API key "${deleting.name}" revoked`);
+    const { id, name } = deleting;
+    setKeys((prev) => prev.filter((k) => k.id !== id));
     setDeleting(null);
+    try {
+      await api.del("/api/api-keys/" + id);
+      toast(`API key "${name}" revoked`);
+    } catch {
+      toast(`Failed to revoke "${name}"`, "error");
+    }
   }
 
   return (
     <div className="space-y-6">
+      {loading && (
+        <div className="flex items-center justify-center py-4">
+          <Loader className="w-4 h-4 animate-spin text-[#0057D8]" />
+          <span className="ml-2 text-[13px] text-[#64748B]">Loading API keys…</span>
+        </div>
+      )}
       {/* Breadcrumb + Header */}
       <div className="flex items-start justify-between">
         <div>
@@ -201,7 +221,10 @@ export default function ApiKeysPage() {
 
       {/* Stats Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map((s) => {
+        {[
+          { title: "Active Keys", value: String(activeKeyCount), change: `${keys.length} total`, dir: "flat" as const, icon: Key, iconBg: "bg-[#0057D8]/10", iconColor: "text-[#0057D8]" },
+          ...otherStats,
+        ].map((s) => {
           const Icon = s.icon;
           return (
             <Card key={s.title} className="p-5">
@@ -300,28 +323,36 @@ export default function ApiKeysPage() {
                     </div>
                   </td>
                   <td className="px-5 py-3.5">
-                    <div className="flex items-center gap-1.5">
-                      <code className="text-[12px] bg-[#F1F5F9] px-2 py-1 rounded font-mono text-[#64748B]">{showKeys[k.id] ? k.full : k.key}</code>
-                      <button onClick={() => setShowKeys((p) => ({ ...p, [k.id]: !p[k.id] }))} className="p-1 rounded hover:bg-[#F8FAFC] text-[#94A3B8]" aria-label={showKeys[k.id] ? "Hide key" : "Reveal key"}>
-                        {showKeys[k.id] ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                      </button>
-                      <button onClick={() => copyValue(k.id, k.full)} className="p-1 rounded hover:bg-[#F8FAFC] text-[#94A3B8]" aria-label="Copy key">
-                        {copied === k.id ? <CheckCircle2 className="w-3.5 h-3.5 text-[#10B981]" /> : <Copy className="w-3.5 h-3.5" />}
-                      </button>
-                    </div>
+                    {(() => {
+                      const full = fullSecrets[k.id];
+                      const revealed = full != null && showKeys[k.id];
+                      return (
+                        <div className="flex items-center gap-1.5">
+                          <code className="text-[12px] bg-[#F1F5F9] px-2 py-1 rounded font-mono text-[#64748B]">{revealed ? full : k.prefix}</code>
+                          {full != null && (
+                            <button onClick={() => setShowKeys((p) => ({ ...p, [k.id]: !p[k.id] }))} className="p-1 rounded hover:bg-[#F8FAFC] text-[#94A3B8]" aria-label={revealed ? "Hide key" : "Reveal key"}>
+                              {revealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                            </button>
+                          )}
+                          <button onClick={() => copyValue(k.id, full ?? k.prefix)} className="p-1 rounded hover:bg-[#F8FAFC] text-[#94A3B8]" aria-label="Copy key">
+                            {copied === k.id ? <CheckCircle2 className="w-3.5 h-3.5 text-[#10B981]" /> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td className="px-5 py-3.5">
                     <div className="flex flex-wrap gap-1">
-                      {k.permissions.map((p) => (
+                      {k.scopes.map((p) => (
                         <span key={p} className="inline-flex px-2 py-0.5 rounded text-[11px] font-medium bg-[#0057D8]/10 text-[#0057D8]">{p}</span>
                       ))}
                     </div>
                   </td>
-                  <td className="px-5 py-3.5 text-[13px] text-[#64748B] whitespace-nowrap">{k.created}</td>
+                  <td className="px-5 py-3.5 text-[13px] text-[#64748B] whitespace-nowrap">{k.createdAt}</td>
                   <td className="px-5 py-3.5">
                     <div className="flex items-center gap-1.5 text-[12px] text-[#64748B] whitespace-nowrap">
                       <Clock className="w-3.5 h-3.5 text-[#94A3B8]" />
-                      {k.lastUsed}
+                      {k.lastUsed ?? "Never"}
                     </div>
                   </td>
                   <td className="px-5 py-3.5">
