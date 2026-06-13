@@ -123,7 +123,14 @@ export default function MessagesPage() {
   const [convos, setConvos] = useState<Conversation[]>(conversations);
   const [threads, setThreads] = useState<Record<string, Message[]>>(initialMessages);
   const [draft, setDraft] = useState("");
+  const [page, setPage] = useState(1);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  function goToPage(p: number) {
+    if (p < 1 || p > 7) return;
+    setPage(p);
+    toast(`Page ${p} of 7`, "info");
+  }
 
   const totalUnread = convos.reduce((sum, c) => sum + c.unread, 0);
 
@@ -400,13 +407,13 @@ export default function MessagesPage() {
         <div className="flex items-center justify-between px-5 py-3 border-t border-border-soft bg-soft-bg">
           <p className="text-[12px] text-text-muted">Showing 1 to 10 of 68 conversations</p>
           <div className="flex items-center gap-1.5">
-            <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-muted hover:bg-white transition-colors"><ChevronLeft className="w-4 h-4" /></button>
-            <button className="w-8 h-8 flex items-center justify-center rounded-lg bg-action-blue text-white text-[12px] font-medium">1</button>
-            <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-muted text-[12px] font-medium hover:bg-white transition-colors">2</button>
-            <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-muted text-[12px] font-medium hover:bg-white transition-colors">3</button>
+            <button onClick={() => goToPage(page - 1)} disabled={page === 1} className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-muted hover:bg-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed" aria-label="Previous page"><ChevronLeft className="w-4 h-4" /></button>
+            {[1, 2, 3].map((p) => (
+              <button key={p} onClick={() => goToPage(p)} className={`w-8 h-8 flex items-center justify-center rounded-lg text-[12px] font-medium transition-colors ${page === p ? "bg-action-blue text-white" : "border border-border-soft text-text-muted hover:bg-white"}`}>{p}</button>
+            ))}
             <span className="w-8 h-8 flex items-center justify-center text-[12px] text-text-light">…</span>
-            <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-muted text-[12px] font-medium hover:bg-white transition-colors">7</button>
-            <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-muted hover:bg-white transition-colors"><ChevronRight className="w-4 h-4" /></button>
+            <button onClick={() => goToPage(7)} className={`w-8 h-8 flex items-center justify-center rounded-lg text-[12px] font-medium transition-colors ${page === 7 ? "bg-action-blue text-white" : "border border-border-soft text-text-muted hover:bg-white"}`}>7</button>
+            <button onClick={() => goToPage(page + 1)} disabled={page === 7} className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-muted hover:bg-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed" aria-label="Next page"><ChevronRight className="w-4 h-4" /></button>
           </div>
         </div>
       </div>

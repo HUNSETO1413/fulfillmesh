@@ -71,7 +71,7 @@ export default function CustomerDetailActions({ customer }: { customer: Customer
 
   return (
     <div className="flex items-center gap-3">
-      <button className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E6EDF5] rounded-lg text-[13px] font-medium text-[#4A5A73] hover:bg-[#F7FAFC]">
+      <button onClick={() => toast("Showing activity for May 12 – May 18, 2025")} className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E6EDF5] rounded-lg text-[13px] font-medium text-[#4A5A73] hover:bg-[#F7FAFC] transition-colors">
         <Calendar className="w-4 h-4" />
         May 12 – May 18, 2025
         <ChevronDown className="w-3.5 h-3.5" />

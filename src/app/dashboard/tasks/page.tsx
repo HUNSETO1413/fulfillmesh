@@ -166,6 +166,13 @@ export default function TasksPage() {
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState<Task | null>(null);
+  const [page, setPage] = useState(1);
+
+  function goToPage(p: number) {
+    if (p < 1 || p > 235) return;
+    setPage(p);
+    toast(`Page ${p} of 235`, "info");
+  }
 
   // donut math
   const C = 2 * Math.PI * 40;
@@ -394,13 +401,13 @@ export default function TasksPage() {
           <div className="flex items-center justify-between px-5 py-4 border-t border-[#E2E8F0]">
             <p className="text-[13px] text-[#64748B]">Showing {filtered.length} of {items.length} tasks</p>
             <div className="flex items-center gap-1.5">
-              <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-[#E2E8F0] text-[#94A3B8] hover:bg-[#F8FAFC]"><ChevronLeft className="w-4 h-4" /></button>
-              <button className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#3B82F6] text-white text-[13px] font-medium">1</button>
-              <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-[#E2E8F0] text-[#64748B] text-[13px] hover:bg-[#F8FAFC]">2</button>
-              <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-[#E2E8F0] text-[#64748B] text-[13px] hover:bg-[#F8FAFC]">3</button>
+              <button onClick={() => goToPage(page - 1)} disabled={page === 1} className="w-8 h-8 flex items-center justify-center rounded-lg border border-[#E2E8F0] text-[#94A3B8] hover:bg-[#F8FAFC] disabled:opacity-40 disabled:cursor-not-allowed" aria-label="Previous page"><ChevronLeft className="w-4 h-4" /></button>
+              {[1, 2, 3].map((p) => (
+                <button key={p} onClick={() => goToPage(p)} className={`w-8 h-8 flex items-center justify-center rounded-lg text-[13px] font-medium transition-colors ${page === p ? "bg-[#3B82F6] text-white" : "border border-[#E2E8F0] text-[#64748B] hover:bg-[#F8FAFC]"}`}>{p}</button>
+              ))}
               <span className="px-1 text-[13px] text-[#94A3B8]">...</span>
-              <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-[#E2E8F0] text-[#64748B] text-[13px] hover:bg-[#F8FAFC]">235</button>
-              <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-[#E2E8F0] text-[#64748B] hover:bg-[#F8FAFC]"><ChevronRight className="w-4 h-4" /></button>
+              <button onClick={() => goToPage(235)} className={`w-8 h-8 flex items-center justify-center rounded-lg text-[13px] font-medium transition-colors ${page === 235 ? "bg-[#3B82F6] text-white" : "border border-[#E2E8F0] text-[#64748B] hover:bg-[#F8FAFC]"}`}>235</button>
+              <button onClick={() => goToPage(page + 1)} disabled={page === 235} className="w-8 h-8 flex items-center justify-center rounded-lg border border-[#E2E8F0] text-[#94A3B8] hover:bg-[#F8FAFC] disabled:opacity-40 disabled:cursor-not-allowed" aria-label="Next page"><ChevronRight className="w-4 h-4" /></button>
             </div>
           </div>
         </div>

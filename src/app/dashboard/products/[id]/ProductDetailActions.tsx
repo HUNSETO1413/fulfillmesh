@@ -80,7 +80,7 @@ export default function ProductDetailActions({ product }: { product: Product }) 
       >
         <Trash2 className="w-3.5 h-3.5" /> Delete
       </button>
-      <button className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#3B82F6] text-white rounded-lg text-[13px] font-medium shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-[#2563EB] transition-colors">
+      <button onClick={() => router.push("/dashboard/suppliers")} className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#3B82F6] text-white rounded-lg text-[13px] font-medium shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-[#2563EB] transition-colors">
         View Supplier <ExternalLink className="w-3.5 h-3.5" />
       </button>
 

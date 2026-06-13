@@ -21,6 +21,8 @@ import {
   ChevronRight,
   ChevronLeft,
   Plus as PlusSmall,
+  ChevronUp,
+  ArrowUpDown,
 } from "lucide-react";
 import type { Product, StockStatus } from "@/types";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
@@ -125,11 +127,31 @@ export default function ProductsView({ items }: { items: Product[] }) {
   const [activePill, setActivePill] = useState("All");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
-  const pageSize = 8;
+  const [pageSize, setPageSize] = useState(8);
+  const [pageSizeOpen, setPageSizeOpen] = useState(false);
+  const [dateOpen, setDateOpen] = useState(false);
 
   // status filter dropdown
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [filterOpen, setFilterOpen] = useState(false);
+
+  // sorting
+  type SortKey = "name" | "sku" | "category" | "cost" | "price" | "stock" | "status";
+  const [sortKey, setSortKey] = useState<SortKey>("name");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  }
+
+  // bulk selection
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   // create / edit
   const [formOpen, setFormOpen] = useState(false);
@@ -166,10 +188,91 @@ export default function ProductsView({ items }: { items: Product[] }) {
     });
   }, [items, activePill, statusFilter, query]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const sorted = useMemo(() => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    const numericKeys: SortKey[] = ["cost", "price", "stock"];
+    return [...filtered].sort((a, b) => {
+      let av: string | number;
+      let bv: string | number;
+      if (numericKeys.includes(sortKey)) {
+        av = Number(a[sortKey] ?? 0);
+        bv = Number(b[sortKey] ?? 0);
+      } else {
+        av = String(a[sortKey] ?? "").toLowerCase();
+        bv = String(b[sortKey] ?? "").toLowerCase();
+      }
+      if (av < bv) return -1 * dir;
+      if (av > bv) return 1 * dir;
+      return 0;
+    });
+  }, [filtered, sortKey, sortDir]);
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const start = (currentPage - 1) * pageSize;
-  const pageRows = filtered.slice(start, start + pageSize);
+  const pageRows = sorted.slice(start, start + pageSize);
+
+  const pageIds = pageRows.map((r) => r.id);
+  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+  const selectedRows = sorted.filter((r) => selected.has(r.id));
+
+  function toggleSelectAll() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allPageSelected) {
+        for (const id of pageIds) next.delete(id);
+      } else {
+        for (const id of pageIds) next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function toggleRow(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function bulkDelete() {
+    setBusy(true);
+    try {
+      for (const id of selected) {
+        await api.del(`/api/products/${id}`);
+      }
+      toast(`Deleted ${selected.size} product${selected.size === 1 ? "" : "s"}`);
+      setSelected(new Set());
+      setBulkDeleting(false);
+      router.refresh();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not delete products", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function exportSelected() {
+    exportToCsv("products-selected", selectedRows, [
+      { key: "id", header: "Product ID" },
+      { key: "sku", header: "SKU" },
+      { key: "name", header: "Name" },
+      { key: "category", header: "Category" },
+      { key: "supplier", header: "Supplier" },
+      { key: "cost", header: "Unit Cost" },
+      { key: "price", header: "Selling Price" },
+      { key: "stock", header: "Stock" },
+      { key: "status", header: "Status" },
+    ]);
+    toast(`Exported ${selectedRows.length} selected products to CSV`);
+  }
+
+  const sortIcon = (k: SortKey) =>
+    sortKey !== k
+      ? <ArrowUpDown className="w-3.5 h-3.5 text-[#9CA3AF]" />
+      : <ChevronUp className={`w-3.5 h-3.5 text-[#0057D8] transition-transform ${sortDir === "desc" ? "rotate-180" : ""}`} />;
 
   function selectPill(name: string) {
     setActivePill(name);
@@ -281,11 +384,32 @@ export default function ProductsView({ items }: { items: Product[] }) {
           <p className="text-[14px] text-[#4A5A73] mt-0.5">Manage your product catalog, pricing, and inventory across all channels.</p>
         </div>
         <div className="flex items-center gap-2">
-          <button className="inline-flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E6EDF5] rounded-lg text-[13px] font-medium text-[#4A5A73] hover:bg-[#F7FAFC]">
-            <Calendar className="w-4 h-4" />
-            May 12 – May 18, 2025
-            <ChevronDown className="w-3.5 h-3.5" />
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => setDateOpen((v) => !v)}
+              className="inline-flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E6EDF5] rounded-lg text-[13px] font-medium text-[#4A5A73] hover:bg-[#F7FAFC]"
+            >
+              <Calendar className="w-4 h-4" />
+              May 12 – May 18, 2025
+              <ChevronDown className="w-3.5 h-3.5" />
+            </button>
+            {dateOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setDateOpen(false)} />
+                <div className="absolute right-0 mt-1 z-20 w-44 bg-white rounded-lg border border-[#E6EDF5] shadow-lg py-1">
+                  {["Last 7 days", "Last 30 days", "This quarter", "Year to date"].map((r) => (
+                    <button
+                      key={r}
+                      onClick={() => { setDateOpen(false); toast(`Date range: ${r}`); }}
+                      className="w-full text-left px-3 py-1.5 text-[13px] text-[#4A5A73] hover:bg-[#F7FAFC]"
+                    >
+                      {r}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
           <button
             onClick={handleExport}
             className="inline-flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E6EDF5] rounded-lg text-[13px] font-medium text-[#4A5A73] hover:bg-[#F7FAFC]"
@@ -343,7 +467,10 @@ export default function ProductsView({ items }: { items: Product[] }) {
                 className="w-full pl-9 pr-4 py-2 bg-white border border-[#E6EDF5] rounded-lg text-[13px] text-[#061A3D] placeholder:text-[#9AA8B8] focus:outline-none focus:ring-2 focus:ring-[#0057D8]/20 focus:border-[#0057D8]"
               />
             </div>
-            <button className="w-9 h-9 shrink-0 flex items-center justify-center border border-[#E6EDF5] rounded-lg text-[#66758C] hover:bg-[#F7FAFC]">
+            <button
+              onClick={() => toast("Filters")}
+              className="w-9 h-9 shrink-0 flex items-center justify-center border border-[#E6EDF5] rounded-lg text-[#66758C] hover:bg-[#F7FAFC]"
+            >
               <SlidersHorizontal className="w-4 h-4" />
             </button>
           </div>
@@ -400,7 +527,10 @@ export default function ProductsView({ items }: { items: Product[] }) {
                 {p.count && <span className="text-[11px] text-[#9AA8B8] bg-[#F1F5F9] px-1.5 rounded">{p.count}</span>}
               </button>
             ))}
-            <button className="w-6 h-6 flex items-center justify-center rounded-md border border-[#E6EDF5] text-[#66758C]">
+            <button
+              onClick={() => toast("Add a category")}
+              className="w-6 h-6 flex items-center justify-center rounded-md border border-[#E6EDF5] text-[#66758C]"
+            >
               <PlusSmall className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -464,25 +594,87 @@ export default function ProductsView({ items }: { items: Product[] }) {
             </button>
           </div>
         </div>
+
+        {/* Bulk action bar */}
+        {selected.size > 0 && (
+          <div className="flex items-center justify-between gap-3 px-5 py-2.5 bg-[#EAF1FB] border-b border-[#BFD6F5]">
+            <span className="text-[13px] font-medium text-[#0057D8]">{selected.size} selected</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={exportSelected}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#BFD6F5] rounded-lg text-[13px] text-[#0057D8] hover:bg-[#DBEAFE] transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                Export selected
+              </button>
+              <button
+                onClick={() => setBulkDeleting(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#EF4444] hover:bg-[#DC2626] rounded-lg text-[13px] font-medium text-white transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete selected
+              </button>
+              <button
+                onClick={() => setSelected(new Set())}
+                className="px-2 py-1.5 text-[13px] text-[#66758C] hover:text-[#4A5A73]"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="bg-[#F7FAFC] border-b border-[#E6EDF5]">
-                <th className="text-left text-[11px] font-semibold text-[#66758C] uppercase tracking-wider px-5 py-3 whitespace-nowrap">Product</th>
-                <th className="text-left text-[11px] font-semibold text-[#66758C] uppercase tracking-wider px-5 py-3 whitespace-nowrap">SKU</th>
-                <th className="text-left text-[11px] font-semibold text-[#66758C] uppercase tracking-wider px-5 py-3 whitespace-nowrap">Category</th>
+                <th className="w-10 px-5 py-3">
+                  <input
+                    type="checkbox"
+                    checked={allPageSelected}
+                    onChange={toggleSelectAll}
+                    aria-label="Select all on page"
+                    className="w-4 h-4 rounded border-[#D1D5DB] text-[#0057D8] focus:ring-[#0057D8] cursor-pointer"
+                  />
+                </th>
+                <th className="text-left text-[11px] font-semibold text-[#66758C] uppercase tracking-wider px-5 py-3 whitespace-nowrap">
+                  <button onClick={() => toggleSort("name")} className="inline-flex items-center gap-1 hover:text-[#0057D8]">Product {sortIcon("name")}</button>
+                </th>
+                <th className="text-left text-[11px] font-semibold text-[#66758C] uppercase tracking-wider px-5 py-3 whitespace-nowrap">
+                  <button onClick={() => toggleSort("sku")} className="inline-flex items-center gap-1 hover:text-[#0057D8]">SKU {sortIcon("sku")}</button>
+                </th>
+                <th className="text-left text-[11px] font-semibold text-[#66758C] uppercase tracking-wider px-5 py-3 whitespace-nowrap">
+                  <button onClick={() => toggleSort("category")} className="inline-flex items-center gap-1 hover:text-[#0057D8]">Category {sortIcon("category")}</button>
+                </th>
                 <th className="text-left text-[11px] font-semibold text-[#66758C] uppercase tracking-wider px-5 py-3 whitespace-nowrap">Supplier</th>
-                <th className="text-left text-[11px] font-semibold text-[#66758C] uppercase tracking-wider px-5 py-3 whitespace-nowrap">Unit Cost</th>
-                <th className="text-left text-[11px] font-semibold text-[#66758C] uppercase tracking-wider px-5 py-3 whitespace-nowrap">Selling Price</th>
+                <th className="text-left text-[11px] font-semibold text-[#66758C] uppercase tracking-wider px-5 py-3 whitespace-nowrap">
+                  <button onClick={() => toggleSort("cost")} className="inline-flex items-center gap-1 hover:text-[#0057D8]">Unit Cost {sortIcon("cost")}</button>
+                </th>
+                <th className="text-left text-[11px] font-semibold text-[#66758C] uppercase tracking-wider px-5 py-3 whitespace-nowrap">
+                  <button onClick={() => toggleSort("price")} className="inline-flex items-center gap-1 hover:text-[#0057D8]">Selling Price {sortIcon("price")}</button>
+                </th>
                 <th className="text-left text-[11px] font-semibold text-[#66758C] uppercase tracking-wider px-5 py-3 whitespace-nowrap">Margin</th>
-                <th className="text-left text-[11px] font-semibold text-[#66758C] uppercase tracking-wider px-5 py-3 whitespace-nowrap">Inventory</th>
-                <th className="text-left text-[11px] font-semibold text-[#66758C] uppercase tracking-wider px-5 py-3 whitespace-nowrap">Status</th>
+                <th className="text-left text-[11px] font-semibold text-[#66758C] uppercase tracking-wider px-5 py-3 whitespace-nowrap">
+                  <button onClick={() => toggleSort("stock")} className="inline-flex items-center gap-1 hover:text-[#0057D8]">Inventory {sortIcon("stock")}</button>
+                </th>
+                <th className="text-left text-[11px] font-semibold text-[#66758C] uppercase tracking-wider px-5 py-3 whitespace-nowrap">
+                  <button onClick={() => toggleSort("status")} className="inline-flex items-center gap-1 hover:text-[#0057D8]">Status {sortIcon("status")}</button>
+                </th>
                 <th className="text-right text-[11px] font-semibold text-[#66758C] uppercase tracking-wider px-5 py-3 whitespace-nowrap">Actions</th>
               </tr>
             </thead>
             <tbody>
               {pageRows.map((p) => (
                 <tr key={p.id} className="border-b border-[#E6EDF5] last:border-b-0 hover:bg-[#F7FAFC]/60 transition-colors">
+                  <td className="px-5 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(p.id)}
+                      onChange={() => toggleRow(p.id)}
+                      aria-label={`Select ${p.sku}`}
+                      className="w-4 h-4 rounded border-[#D1D5DB] text-[#0057D8] focus:ring-[#0057D8] cursor-pointer"
+                    />
+                  </td>
                   <td className="px-5 py-3">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#E6EDF5] to-[#F7FAFC] border border-[#E6EDF5] overflow-hidden shrink-0" />
@@ -528,7 +720,7 @@ export default function ProductsView({ items }: { items: Product[] }) {
               ))}
               {pageRows.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="px-5 py-10 text-center">
+                  <td colSpan={11} className="px-5 py-10 text-center">
                     <p className="text-[13px] text-[#66758C]">No products match your filters.</p>
                     <button onClick={openCreate} className="mt-3 inline-flex items-center gap-1.5 text-[13px] font-medium text-[#0057D8] hover:underline">
                       <Plus className="w-4 h-4" /> Add your first product
@@ -576,10 +768,31 @@ export default function ProductsView({ items }: { items: Product[] }) {
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
-            <button className="inline-flex items-center gap-1 px-2 py-1 border border-[#E6EDF5] rounded-md text-[12px] text-[#66758C]">
-              {pageSize} / page
-              <ChevronDown className="w-3 h-3" />
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => setPageSizeOpen((v) => !v)}
+                className="inline-flex items-center gap-1 px-2 py-1 border border-[#E6EDF5] rounded-md text-[12px] text-[#66758C] hover:bg-[#F7FAFC]"
+              >
+                {pageSize} / page
+                <ChevronDown className="w-3 h-3" />
+              </button>
+              {pageSizeOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setPageSizeOpen(false)} />
+                  <div className="absolute right-0 bottom-full mb-1 z-20 w-28 bg-white rounded-lg border border-[#E6EDF5] shadow-lg py-1">
+                    {[8, 10, 20, 50].map((n) => (
+                      <button
+                        key={n}
+                        onClick={() => { setPageSize(n); setPage(1); setPageSizeOpen(false); }}
+                        className={`w-full text-left px-3 py-1.5 text-[12px] hover:bg-[#F7FAFC] ${n === pageSize ? "text-[#0057D8] font-medium" : "text-[#4A5A73]"}`}
+                      >
+                        {n} / page
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -610,6 +823,18 @@ export default function ProductsView({ items }: { items: Product[] }) {
         title="Delete product"
         message={`Are you sure you want to delete ${deleting?.name ?? ""} (${deleting?.sku ?? ""})? This action cannot be undone.`}
         confirmLabel="Delete"
+        destructive
+        loading={busy}
+      />
+
+      {/* Bulk delete confirm */}
+      <ConfirmDialog
+        open={bulkDeleting}
+        onClose={() => setBulkDeleting(false)}
+        onConfirm={bulkDelete}
+        title="Delete selected products"
+        message={`Are you sure you want to delete ${selected.size} product${selected.size === 1 ? "" : "s"}? This action cannot be undone.`}
+        confirmLabel={`Delete ${selected.size}`}
         destructive
         loading={busy}
       />

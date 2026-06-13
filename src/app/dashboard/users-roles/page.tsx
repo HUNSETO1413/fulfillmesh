@@ -163,6 +163,7 @@ let userSeq = 1000;
 export default function UsersRolesPage() {
   const { toast } = useToast();
   const [permTab, setPermTab] = useState<"roles" | "permissions" | "groups">("permissions");
+  const [permCategory, setPermCategory] = useState(permissionCategories[0]);
   const [showDetail, setShowDetail] = useState(false);
 
   const [rows, setRows] = useState<UserRow[]>(initialUsers);
@@ -416,9 +417,9 @@ export default function UsersRolesPage() {
           <div className="flex items-center justify-between px-5 py-4 border-t border-border-soft">
             <p className="text-[13px] text-text-muted">Showing {filteredUsers.length} of {rows.length} users</p>
             <div className="flex items-center gap-1.5">
-              <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-light hover:bg-soft-bg" disabled><ChevronLeft className="w-4 h-4" /></button>
-              <button className="w-8 h-8 flex items-center justify-center rounded-lg bg-action-blue text-white text-[13px] font-medium">1</button>
-              <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-light hover:bg-soft-bg" disabled><ChevronRight className="w-4 h-4" /></button>
+              <button disabled={true} className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-light hover:bg-soft-bg disabled:opacity-40 disabled:cursor-not-allowed" aria-label="Previous page"><ChevronLeft className="w-4 h-4" /></button>
+              <button onClick={() => toast("Page 1 of 1", "info")} className="w-8 h-8 flex items-center justify-center rounded-lg bg-action-blue text-white text-[13px] font-medium">1</button>
+              <button disabled={true} className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-light hover:bg-soft-bg disabled:opacity-40 disabled:cursor-not-allowed" aria-label="Next page"><ChevronRight className="w-4 h-4" /></button>
             </div>
           </div>
         </Card>
@@ -530,8 +531,8 @@ export default function UsersRolesPage() {
               <div className="border-r border-border-soft p-3">
                 <p className="text-[11px] font-medium text-text-light uppercase tracking-wider px-2 mb-2">Permission Categories</p>
                 <div className="space-y-0.5">
-                  {permissionCategories.map((c, i) => (
-                    <button key={c} className={`w-full text-left px-2 py-1.5 rounded text-[12px] ${i === 0 ? "bg-action-blue/10 text-action-blue font-medium" : "text-text-muted hover:bg-soft-bg"}`}>{c}</button>
+                  {permissionCategories.map((c) => (
+                    <button key={c} onClick={() => setPermCategory(c)} className={`w-full text-left px-2 py-1.5 rounded text-[12px] ${permCategory === c ? "bg-action-blue/10 text-action-blue font-medium" : "text-text-muted hover:bg-soft-bg"}`}>{c}</button>
                   ))}
                 </div>
               </div>

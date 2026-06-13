@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Search, Filter, ChevronDown, Download, Plus, Calendar,
-  ChevronLeft, ChevronRight, ArrowUpDown,
+  ChevronLeft, ChevronRight, ArrowUpDown, ChevronUp,
   Package, Truck, CheckCircle2, AlertTriangle,
   ArrowUpRight, ArrowDownRight, Pencil, Trash2,
 } from "lucide-react";
@@ -107,10 +107,30 @@ export default function ShipmentsView({ items }: { items: Shipment[] }) {
   const [activeTab, setActiveTab] = useState("All Shipments");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
-  const pageSize = 8;
+  const [pageSize, setPageSize] = useState(8);
+  const [pageSizeOpen, setPageSizeOpen] = useState(false);
+  const [dateOpen, setDateOpen] = useState(false);
 
   const [carrierFilter, setCarrierFilter] = useState<string>("");
   const [filterOpen, setFilterOpen] = useState(false);
+
+  // sorting
+  type SortKey = "id" | "orderId" | "carrier" | "status" | "origin" | "destination" | "estimatedDelivery";
+  const [sortKey, setSortKey] = useState<SortKey>("estimatedDelivery");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  }
+
+  // bulk selection
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   // create / edit
   const [formOpen, setFormOpen] = useState(false);
@@ -148,10 +168,83 @@ export default function ShipmentsView({ items }: { items: Shipment[] }) {
     });
   }, [items, activeTab, carrierFilter, query]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const sorted = useMemo(() => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      const av = String(a[sortKey] ?? "").toLowerCase();
+      const bv = String(b[sortKey] ?? "").toLowerCase();
+      if (av < bv) return -1 * dir;
+      if (av > bv) return 1 * dir;
+      return 0;
+    });
+  }, [filtered, sortKey, sortDir]);
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const start = (currentPage - 1) * pageSize;
-  const pageRows = filtered.slice(start, start + pageSize);
+  const pageRows = sorted.slice(start, start + pageSize);
+
+  const pageIds = pageRows.map((r) => r.id);
+  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+  const selectedRows = sorted.filter((r) => selected.has(r.id));
+
+  function toggleSelectAll() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allPageSelected) {
+        for (const id of pageIds) next.delete(id);
+      } else {
+        for (const id of pageIds) next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function toggleRow(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function bulkDelete() {
+    setBusy(true);
+    try {
+      for (const id of selected) {
+        await api.del(`/api/shipments/${id}`);
+      }
+      toast(`Deleted ${selected.size} shipment${selected.size === 1 ? "" : "s"}`);
+      setSelected(new Set());
+      setBulkDeleting(false);
+      router.refresh();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not delete shipments", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function exportSelected() {
+    exportToCsv("shipments-selected", selectedRows, [
+      { key: "id", header: "Shipment ID" },
+      { key: "orderId", header: "Order ID" },
+      { key: "carrier", header: "Carrier" },
+      { key: "trackingNumber", header: "Tracking Number" },
+      { key: "status", header: "Status" },
+      { key: "origin", header: "Origin" },
+      { key: "destination", header: "Destination" },
+      { key: "estimatedDelivery", header: "Estimated Delivery" },
+      { key: "weight", header: "Weight" },
+    ]);
+    toast(`Exported ${selectedRows.length} selected shipments to CSV`);
+  }
+
+  const sortIcon = (k: SortKey) =>
+    sortKey !== k
+      ? <ArrowUpDown className="w-3.5 h-3.5 text-[#9CA3AF]" />
+      : <ChevronUp className={`w-3.5 h-3.5 text-[#3B82F6] transition-transform ${sortDir === "desc" ? "rotate-180" : ""}`} />;
 
   function selectTab(tab: string) {
     setActiveTab(tab);
@@ -251,9 +344,30 @@ export default function ShipmentsView({ items }: { items: Shipment[] }) {
           <p className="text-[14px] text-[#64748B] mt-0.5">Track and manage all outgoing shipments.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] font-medium text-[#475569] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-            <Calendar className="w-4 h-4" /> May 12 – May 18, 2025 <ChevronDown className="w-3.5 h-3.5" />
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => setDateOpen((v) => !v)}
+              className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] font-medium text-[#475569] shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
+            >
+              <Calendar className="w-4 h-4" /> May 12 – May 18, 2025 <ChevronDown className="w-3.5 h-3.5" />
+            </button>
+            {dateOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setDateOpen(false)} />
+                <div className="absolute right-0 mt-1 z-20 w-44 bg-white rounded-lg border border-[#E2E8F0] shadow-lg py-1">
+                  {["Last 7 days", "Last 30 days", "This quarter", "Year to date"].map((r) => (
+                    <button
+                      key={r}
+                      onClick={() => { setDateOpen(false); toast(`Date range: ${r}`); }}
+                      className="w-full text-left px-3 py-1.5 text-[13px] text-[#374151] hover:bg-[#F8FAFC]"
+                    >
+                      {r}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
           <button
             onClick={openCreate}
             className="flex items-center gap-2 px-4 py-2 bg-[#3B82F6] hover:bg-[#2563EB] rounded-lg text-[13px] font-medium text-white shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
@@ -362,20 +476,70 @@ export default function ShipmentsView({ items }: { items: Shipment[] }) {
         </button>
       </div>
 
+      {/* Bulk action bar */}
+      {selected.size > 0 && (
+        <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-[#EFF6FF] border border-[#BFDBFE] rounded-xl">
+          <span className="text-[13px] font-medium text-[#1D4ED8]">{selected.size} selected</span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={exportSelected}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#BFDBFE] rounded-lg text-[13px] text-[#1D4ED8] hover:bg-[#DBEAFE] transition-colors"
+            >
+              <Download className="w-4 h-4" />
+              Export selected
+            </button>
+            <button
+              onClick={() => setBulkDeleting(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#EF4444] hover:bg-[#DC2626] rounded-lg text-[13px] font-medium text-white transition-colors"
+            >
+              <Trash2 className="w-4 h-4" />
+              Delete selected
+            </button>
+            <button
+              onClick={() => setSelected(new Set())}
+              className="px-2 py-1.5 text-[13px] text-[#64748B] hover:text-[#1E293B]"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-[0_1px_3px_rgba(0,0,0,0.1)] overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
-                <th className="text-left text-[12px] font-medium text-[#64748B] uppercase tracking-wider px-6 py-3">Shipment ID</th>
-                <th className="text-left text-[12px] font-medium text-[#64748B] uppercase tracking-wider px-6 py-3">Order ID</th>
-                <th className="text-left text-[12px] font-medium text-[#64748B] uppercase tracking-wider px-6 py-3">Carrier</th>
-                <th className="text-left text-[12px] font-medium text-[#64748B] uppercase tracking-wider px-6 py-3">Status</th>
-                <th className="text-left text-[12px] font-medium text-[#64748B] uppercase tracking-wider px-6 py-3">Origin</th>
-                <th className="text-left text-[12px] font-medium text-[#64748B] uppercase tracking-wider px-6 py-3">Destination</th>
+                <th className="w-10 px-6 py-3">
+                  <input
+                    type="checkbox"
+                    checked={allPageSelected}
+                    onChange={toggleSelectAll}
+                    aria-label="Select all on page"
+                    className="w-4 h-4 rounded border-[#D1D5DB] text-[#3B82F6] focus:ring-[#3B82F6] cursor-pointer"
+                  />
+                </th>
                 <th className="text-left text-[12px] font-medium text-[#64748B] uppercase tracking-wider px-6 py-3">
-                  <span className="inline-flex items-center gap-1">ETA <ArrowUpDown className="w-3 h-3" /></span>
+                  <button onClick={() => toggleSort("id")} className="inline-flex items-center gap-1 hover:text-[#3B82F6]">Shipment ID {sortIcon("id")}</button>
+                </th>
+                <th className="text-left text-[12px] font-medium text-[#64748B] uppercase tracking-wider px-6 py-3">
+                  <button onClick={() => toggleSort("orderId")} className="inline-flex items-center gap-1 hover:text-[#3B82F6]">Order ID {sortIcon("orderId")}</button>
+                </th>
+                <th className="text-left text-[12px] font-medium text-[#64748B] uppercase tracking-wider px-6 py-3">
+                  <button onClick={() => toggleSort("carrier")} className="inline-flex items-center gap-1 hover:text-[#3B82F6]">Carrier {sortIcon("carrier")}</button>
+                </th>
+                <th className="text-left text-[12px] font-medium text-[#64748B] uppercase tracking-wider px-6 py-3">
+                  <button onClick={() => toggleSort("status")} className="inline-flex items-center gap-1 hover:text-[#3B82F6]">Status {sortIcon("status")}</button>
+                </th>
+                <th className="text-left text-[12px] font-medium text-[#64748B] uppercase tracking-wider px-6 py-3">
+                  <button onClick={() => toggleSort("origin")} className="inline-flex items-center gap-1 hover:text-[#3B82F6]">Origin {sortIcon("origin")}</button>
+                </th>
+                <th className="text-left text-[12px] font-medium text-[#64748B] uppercase tracking-wider px-6 py-3">
+                  <button onClick={() => toggleSort("destination")} className="inline-flex items-center gap-1 hover:text-[#3B82F6]">Destination {sortIcon("destination")}</button>
+                </th>
+                <th className="text-left text-[12px] font-medium text-[#64748B] uppercase tracking-wider px-6 py-3">
+                  <button onClick={() => toggleSort("estimatedDelivery")} className="inline-flex items-center gap-1 hover:text-[#3B82F6]">ETA {sortIcon("estimatedDelivery")}</button>
                 </th>
                 <th className="text-right text-[12px] font-medium text-[#64748B] uppercase tracking-wider px-6 py-3">Actions</th>
               </tr>
@@ -383,6 +547,15 @@ export default function ShipmentsView({ items }: { items: Shipment[] }) {
             <tbody>
               {pageRows.map((s) => (
                 <tr key={s.id} className="border-b border-[#E2E8F0] last:border-b-0 hover:bg-[#F8FAFC]/60 transition-colors">
+                  <td className="px-6 py-4">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(s.id)}
+                      onChange={() => toggleRow(s.id)}
+                      aria-label={`Select ${s.id}`}
+                      className="w-4 h-4 rounded border-[#D1D5DB] text-[#3B82F6] focus:ring-[#3B82F6] cursor-pointer"
+                    />
+                  </td>
                   <td className="px-6 py-4">
                     <Link href={`/dashboard/shipments/${s.id}`} className="text-[13px] font-medium text-[#3B82F6] font-mono hover:underline">{s.id}</Link>
                   </td>
@@ -417,7 +590,7 @@ export default function ShipmentsView({ items }: { items: Shipment[] }) {
               ))}
               {pageRows.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-6 py-10 text-center text-[13px] text-[#64748B]">
+                  <td colSpan={9} className="px-6 py-10 text-center text-[13px] text-[#64748B]">
                     No shipments match your filters.
                     <button onClick={openCreate} className="mt-3 mx-auto flex items-center gap-1.5 text-[13px] font-medium text-[#3B82F6] hover:underline">
                       <Plus className="w-4 h-4" /> Create your first shipment
@@ -432,9 +605,9 @@ export default function ShipmentsView({ items }: { items: Shipment[] }) {
         {/* Footer / Pagination */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-[#E2E8F0]">
           <p className="text-[13px] text-[#64748B]">
-            {filtered.length === 0
+            {sorted.length === 0
               ? "Showing 0 results"
-              : `Showing ${start + 1} to ${Math.min(start + pageSize, filtered.length)} of ${filtered.length} shipments`}
+              : `Showing ${start + 1} to ${Math.min(start + pageSize, sorted.length)} of ${sorted.length} shipments`}
           </p>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5">
@@ -466,7 +639,30 @@ export default function ShipmentsView({ items }: { items: Shipment[] }) {
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
-            <button className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B]">{pageSize} / page <ChevronDown className="w-3.5 h-3.5" /></button>
+            <div className="relative">
+              <button
+                onClick={() => setPageSizeOpen((v) => !v)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC]"
+              >
+                {pageSize} / page <ChevronDown className="w-3.5 h-3.5" />
+              </button>
+              {pageSizeOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setPageSizeOpen(false)} />
+                  <div className="absolute right-0 bottom-full mb-1 z-20 w-32 bg-white rounded-lg border border-[#E2E8F0] shadow-lg py-1">
+                    {[8, 10, 20, 50].map((n) => (
+                      <button
+                        key={n}
+                        onClick={() => { setPageSize(n); setPage(1); setPageSizeOpen(false); }}
+                        className={`w-full text-left px-3 py-1.5 text-[13px] hover:bg-[#F8FAFC] ${n === pageSize ? "text-[#3B82F6] font-medium" : "text-[#374151]"}`}
+                      >
+                        {n} / page
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -497,6 +693,18 @@ export default function ShipmentsView({ items }: { items: Shipment[] }) {
         title="Delete shipment"
         message={`Are you sure you want to delete ${deleting?.id}? This action cannot be undone.`}
         confirmLabel="Delete"
+        destructive
+        loading={busy}
+      />
+
+      {/* Bulk delete confirm */}
+      <ConfirmDialog
+        open={bulkDeleting}
+        onClose={() => setBulkDeleting(false)}
+        onConfirm={bulkDelete}
+        title="Delete selected shipments"
+        message={`Are you sure you want to delete ${selected.size} shipment${selected.size === 1 ? "" : "s"}? This action cannot be undone.`}
+        confirmLabel={`Delete ${selected.size}`}
         destructive
         loading={busy}
       />

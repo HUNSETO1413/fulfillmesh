@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { usePathname } from "next/navigation";
 import {
   Settings,
@@ -10,10 +11,10 @@ import {
   CreditCard,
   Plug,
   Shield,
-  Calendar,
-  ChevronDown,
   MoreVertical,
 } from "lucide-react";
+import { DateRangeMenu } from "@/components/dashboard/DateRangeMenu";
+import { useToast } from "@/components/dashboard/Toast";
 
 const settingsNav = [
   { label: "General", icon: Settings, href: "/dashboard/settings" },
@@ -28,6 +29,8 @@ const settingsNav = [
 
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const { toast } = useToast();
+  const [range, setRange] = useState("May 12 - May 18, 2025");
 
   return (
     <div className="space-y-6">
@@ -38,15 +41,15 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
           <p className="text-[14px] text-[#64748B] mt-1">Manage your account and system settings.</p>
         </div>
         <div className="flex items-center gap-3 shrink-0">
-          <button className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] font-medium text-[#1E293B] hover:bg-[#F8FAFC] transition-colors">
-            <Calendar className="w-4 h-4 text-[#64748B]" />
-            May 12 - May 18, 2025
-            <ChevronDown className="w-4 h-4 text-[#94A3B8]" />
-          </button>
-          <button className="flex items-center justify-center w-9 h-9 bg-white border border-[#E2E8F0] rounded-lg text-[#64748B] hover:bg-[#F8FAFC] transition-colors">
+          <DateRangeMenu
+            value={range}
+            presets={["May 12 - May 18, 2025", "Last 7 days", "Last 30 days", "This quarter", "Year to date"]}
+            onSelect={(r) => { setRange(r); toast(`Range set to ${r}`, "info"); }}
+          />
+          <button onClick={() => toast("No new settings notifications", "info")} className="flex items-center justify-center w-9 h-9 bg-white border border-[#E2E8F0] rounded-lg text-[#64748B] hover:bg-[#F8FAFC] transition-colors" aria-label="Notifications">
             <Bell className="w-[18px] h-[18px]" />
           </button>
-          <button className="flex items-center justify-center w-9 h-9 bg-white border border-[#E2E8F0] rounded-lg text-[#64748B] hover:bg-[#F8FAFC] transition-colors">
+          <button onClick={() => toast("More options coming soon", "info")} className="flex items-center justify-center w-9 h-9 bg-white border border-[#E2E8F0] rounded-lg text-[#64748B] hover:bg-[#F8FAFC] transition-colors" aria-label="More options">
             <MoreVertical className="w-[18px] h-[18px]" />
           </button>
         </div>

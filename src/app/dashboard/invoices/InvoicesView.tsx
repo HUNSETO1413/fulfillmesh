@@ -22,6 +22,8 @@ import {
   AlertTriangle,
   Clock,
   Wallet,
+  ChevronUp,
+  ArrowUpDown,
 } from "lucide-react";
 import type { Invoice, InvoiceStatus } from "@/types";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
@@ -138,7 +140,28 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
   const [active, setActive] = useState("All Invoices");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
-  const pageSize = 10;
+  const [pageSize, setPageSize] = useState(10);
+  const [pageSizeOpen, setPageSizeOpen] = useState(false);
+  const [statusOpen, setStatusOpen] = useState(false);
+  const [dateOpen, setDateOpen] = useState(false);
+
+  // sorting
+  type SortKey = "id" | "orderId" | "status" | "issuedDate" | "dueDate" | "amount";
+  const [sortKey, setSortKey] = useState<SortKey>("issuedDate");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  }
+
+  // bulk selection
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   // create / edit
   const [formOpen, setFormOpen] = useState(false);
@@ -171,10 +194,87 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
     });
   }, [items, active, query]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const sorted = useMemo(() => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      let av: string | number;
+      let bv: string | number;
+      if (sortKey === "amount") {
+        av = a.amount; bv = b.amount;
+      } else {
+        av = String(a[sortKey] ?? "").toLowerCase();
+        bv = String(b[sortKey] ?? "").toLowerCase();
+      }
+      if (av < bv) return -1 * dir;
+      if (av > bv) return 1 * dir;
+      return 0;
+    });
+  }, [filtered, sortKey, sortDir]);
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const start = (currentPage - 1) * pageSize;
-  const pageRows = filtered.slice(start, start + pageSize);
+  const pageRows = sorted.slice(start, start + pageSize);
+
+  const pageIds = pageRows.map((r) => r.id);
+  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+  const selectedRows = sorted.filter((r) => selected.has(r.id));
+
+  function toggleSelectAll() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allPageSelected) {
+        for (const id of pageIds) next.delete(id);
+      } else {
+        for (const id of pageIds) next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function toggleRow(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function bulkDelete() {
+    setBusy(true);
+    try {
+      for (const id of selected) {
+        await api.del(`/api/invoices/${id}`);
+      }
+      toast(`Deleted ${selected.size} invoice${selected.size === 1 ? "" : "s"}`);
+      setSelected(new Set());
+      setBulkDeleting(false);
+      router.refresh();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not delete invoices", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function exportSelected() {
+    exportToCsv("invoices-selected", selectedRows, [
+      { key: "id", header: "Invoice #" },
+      { key: "customer", header: "Customer" },
+      { key: "orderId", header: "PO / Reference" },
+      { key: "status", header: "Status" },
+      { key: "issuedDate", header: "Invoice Date" },
+      { key: "dueDate", header: "Due Date" },
+      { key: "amount", header: "Amount" },
+    ]);
+    toast(`Exported ${selectedRows.length} selected invoices to CSV`);
+  }
+
+  const sortIcon = (k: SortKey) =>
+    sortKey !== k
+      ? <ArrowUpDown className="w-3.5 h-3.5 text-[#9CA3AF]" />
+      : <ChevronUp className={`w-3.5 h-3.5 text-[#3B82F6] transition-transform ${sortDir === "desc" ? "rotate-180" : ""}`} />;
 
   function selectTab(label: string) {
     setActive(label);
@@ -330,13 +430,55 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
             className="w-full pl-9 pr-4 py-2 border border-[#E2E8F0] rounded-lg text-[13px] text-[#1E293B] placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/30"
           />
         </div>
-        <button className="inline-flex items-center gap-2 px-3 py-2 border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B]">
-          All Statuses <ChevronDown className="w-3.5 h-3.5" />
-        </button>
-        <button className="inline-flex items-center gap-2 px-3 py-2 border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B]">
-          <Calendar className="w-4 h-4" /> May 1 – May 31, 2025 <ChevronDown className="w-3.5 h-3.5" />
-        </button>
-        <button className="inline-flex items-center gap-2 px-3 py-2 border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B]">
+        <div className="relative">
+          <button
+            onClick={() => setStatusOpen((v) => !v)}
+            className="inline-flex items-center gap-2 px-3 py-2 border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC]"
+          >
+            {active === "All Invoices" ? "All Statuses" : active} <ChevronDown className="w-3.5 h-3.5" />
+          </button>
+          {statusOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setStatusOpen(false)} />
+              <div className="absolute left-0 mt-1 z-20 w-44 bg-white rounded-lg border border-[#E2E8F0] shadow-lg py-1">
+                {tabs.map((t) => (
+                  <button
+                    key={t.label}
+                    onClick={() => { selectTab(t.label); setStatusOpen(false); }}
+                    className={`w-full text-left px-3 py-1.5 text-[13px] hover:bg-[#F8FAFC] ${active === t.label ? "text-[#3B82F6] font-medium" : "text-[#64748B]"}`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+        <div className="relative">
+          <button
+            onClick={() => setDateOpen((v) => !v)}
+            className="inline-flex items-center gap-2 px-3 py-2 border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC]"
+          >
+            <Calendar className="w-4 h-4" /> May 1 – May 31, 2025 <ChevronDown className="w-3.5 h-3.5" />
+          </button>
+          {dateOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setDateOpen(false)} />
+              <div className="absolute left-0 mt-1 z-20 w-44 bg-white rounded-lg border border-[#E2E8F0] shadow-lg py-1">
+                {["Last 7 days", "Last 30 days", "This quarter", "Year to date"].map((r) => (
+                  <button
+                    key={r}
+                    onClick={() => { setDateOpen(false); toast(`Date range: ${r}`); }}
+                    className="w-full text-left px-3 py-1.5 text-[13px] text-[#64748B] hover:bg-[#F8FAFC]"
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+        <button onClick={() => toast("More filters coming soon")} className="inline-flex items-center gap-2 px-3 py-2 border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC]">
           <SlidersHorizontal className="w-3.5 h-3.5" /> Filters
         </button>
       </div>
@@ -364,18 +506,80 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
             })}
           </div>
 
+          {selected.size > 0 && (
+            <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-[#EFF6FF] border-b border-[#BFDBFE]">
+              <span className="text-[13px] font-medium text-[#1D4ED8]">{selected.size} selected</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={exportSelected}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#BFDBFE] rounded-lg text-[13px] text-[#1D4ED8] hover:bg-[#DBEAFE] transition-colors"
+                >
+                  <Download className="w-4 h-4" />
+                  Export selected
+                </button>
+                <button
+                  onClick={() => setBulkDeleting(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#EF4444] hover:bg-[#DC2626] rounded-lg text-[13px] font-medium text-white transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete selected
+                </button>
+                <button
+                  onClick={() => setSelected(new Set())}
+                  className="px-2 py-1.5 text-[13px] text-[#64748B] hover:text-[#1E293B]"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
-                  {["Invoice #", "PO / Reference", "Invoice Date", "Due Date", "Amount", "Status", "Actions"].map((h, i) => (
-                    <th key={i} className={`text-[11px] font-semibold text-[#64748B] uppercase tracking-wider px-4 py-3 ${i === 6 ? "text-right" : "text-left"}`}>{h}</th>
-                  ))}
+                  <th className="w-10 px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={allPageSelected}
+                      onChange={toggleSelectAll}
+                      aria-label="Select all on page"
+                      className="w-4 h-4 rounded border-[#D1D5DB] text-[#3B82F6] focus:ring-[#3B82F6] cursor-pointer"
+                    />
+                  </th>
+                  <th className="text-[11px] font-semibold text-[#64748B] uppercase tracking-wider px-4 py-3 text-left">
+                    <button onClick={() => toggleSort("id")} className="inline-flex items-center gap-1 hover:text-[#3B82F6]">Invoice # {sortIcon("id")}</button>
+                  </th>
+                  <th className="text-[11px] font-semibold text-[#64748B] uppercase tracking-wider px-4 py-3 text-left">
+                    <button onClick={() => toggleSort("orderId")} className="inline-flex items-center gap-1 hover:text-[#3B82F6]">PO / Reference {sortIcon("orderId")}</button>
+                  </th>
+                  <th className="text-[11px] font-semibold text-[#64748B] uppercase tracking-wider px-4 py-3 text-left">
+                    <button onClick={() => toggleSort("issuedDate")} className="inline-flex items-center gap-1 hover:text-[#3B82F6]">Invoice Date {sortIcon("issuedDate")}</button>
+                  </th>
+                  <th className="text-[11px] font-semibold text-[#64748B] uppercase tracking-wider px-4 py-3 text-left">
+                    <button onClick={() => toggleSort("dueDate")} className="inline-flex items-center gap-1 hover:text-[#3B82F6]">Due Date {sortIcon("dueDate")}</button>
+                  </th>
+                  <th className="text-[11px] font-semibold text-[#64748B] uppercase tracking-wider px-4 py-3 text-left">
+                    <button onClick={() => toggleSort("amount")} className="inline-flex items-center gap-1 hover:text-[#3B82F6]">Amount {sortIcon("amount")}</button>
+                  </th>
+                  <th className="text-[11px] font-semibold text-[#64748B] uppercase tracking-wider px-4 py-3 text-left">
+                    <button onClick={() => toggleSort("status")} className="inline-flex items-center gap-1 hover:text-[#3B82F6]">Status {sortIcon("status")}</button>
+                  </th>
+                  <th className="text-[11px] font-semibold text-[#64748B] uppercase tracking-wider px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {pageRows.map((inv) => (
                   <tr key={inv.id} className="border-b border-[#E2E8F0] last:border-b-0 hover:bg-[#F8FAFC]/60 transition-colors">
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(inv.id)}
+                        onChange={() => toggleRow(inv.id)}
+                        aria-label={`Select ${inv.id}`}
+                        className="w-4 h-4 rounded border-[#D1D5DB] text-[#3B82F6] focus:ring-[#3B82F6] cursor-pointer"
+                      />
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <FileText className="w-4 h-4 text-[#EF4444] shrink-0" />
@@ -418,7 +622,7 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
                 ))}
                 {pageRows.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-10 text-center">
+                    <td colSpan={8} className="px-4 py-10 text-center">
                       <p className="text-[13px] text-[#64748B]">No invoices match your filters.</p>
                       <button onClick={openCreate} className="mt-3 inline-flex items-center gap-1.5 text-[13px] font-medium text-[#3B82F6] hover:underline">
                         <Plus className="w-4 h-4" /> Create your first invoice
@@ -436,34 +640,61 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
                 ? "Showing 0 invoices"
                 : `Showing ${start + 1} to ${Math.min(start + pageSize, filtered.length)} of ${filtered.length} invoices`}
             </p>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="w-7 h-7 flex items-center justify-center rounded-md border border-[#E2E8F0] text-[#94A3B8] disabled:opacity-40"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+            <div className="flex items-center gap-3">
+              <div className="relative">
                 <button
-                  key={p}
-                  onClick={() => setPage(p)}
-                  className={`w-7 h-7 flex items-center justify-center rounded-md text-[12px] font-medium ${
-                    p === currentPage
-                      ? "bg-[#3B82F6] text-white"
-                      : "border border-[#E2E8F0] text-[#64748B]"
-                  }`}
+                  onClick={() => setPageSizeOpen((v) => !v)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 border border-[#E2E8F0] rounded-md text-[12px] text-[#64748B] hover:bg-[#F8FAFC]"
                 >
-                  {p}
+                  {pageSize} / page
+                  <ChevronDown className="w-3 h-3" />
                 </button>
-              ))}
-              <button
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="w-7 h-7 flex items-center justify-center rounded-md border border-[#E2E8F0] text-[#64748B] disabled:opacity-40"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
+                {pageSizeOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setPageSizeOpen(false)} />
+                    <div className="absolute right-0 bottom-full mb-1 z-20 w-32 bg-white rounded-lg border border-[#E2E8F0] shadow-lg py-1">
+                      {[8, 10, 20, 50].map((n) => (
+                        <button
+                          key={n}
+                          onClick={() => { setPageSize(n); setPage(1); setPageSizeOpen(false); }}
+                          className={`w-full text-left px-3 py-1.5 text-[12px] hover:bg-[#F8FAFC] ${n === pageSize ? "text-[#3B82F6] font-medium" : "text-[#64748B]"}`}
+                        >
+                          {n} / page
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="w-7 h-7 flex items-center justify-center rounded-md border border-[#E2E8F0] text-[#94A3B8] disabled:opacity-40"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setPage(p)}
+                    className={`w-7 h-7 flex items-center justify-center rounded-md text-[12px] font-medium ${
+                      p === currentPage
+                        ? "bg-[#3B82F6] text-white"
+                        : "border border-[#E2E8F0] text-[#64748B]"
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="w-7 h-7 flex items-center justify-center rounded-md border border-[#E2E8F0] text-[#64748B] disabled:opacity-40"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -518,7 +749,7 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
           <div className="bg-white rounded-xl border border-[#E2E8F0] p-5 shadow-[0_1px_3px_rgba(0,0,0,0.1)]">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-[15px] font-semibold text-[#1E293B]">Recent Payments</h3>
-              <button className="text-[12px] font-medium text-[#3B82F6] hover:underline">View all</button>
+              <button onClick={() => toast("Opening all payments")} className="text-[12px] font-medium text-[#3B82F6] hover:underline">View all</button>
             </div>
             <div className="space-y-3">
               {recentPayments.map((p) => (
@@ -607,7 +838,7 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
         <div className="bg-white rounded-xl border border-[#E2E8F0] p-5 shadow-[0_1px_3px_rgba(0,0,0,0.1)]">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-[15px] font-semibold text-[#1E293B]">Account Statement</h3>
-            <button className="text-[12px] font-medium text-[#3B82F6] hover:underline">View full statement</button>
+            <button onClick={() => toast("Opening full statement")} className="text-[12px] font-medium text-[#3B82F6] hover:underline">View full statement</button>
           </div>
           <div className="space-y-2.5">
             {statement.map((s) => (
@@ -630,7 +861,7 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
             {quickActions.map((a) => {
               const Icon = a.icon;
               return (
-                <button key={a.label} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC] transition-colors">
+                <button key={a.label} onClick={() => toast(a.label)} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC] transition-colors">
                   <Icon className="w-4 h-4 text-[#94A3B8]" /> {a.label}
                 </button>
               );
@@ -650,7 +881,7 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
             <p className="text-[12px] text-white/60 mt-0.5">Automatically pay your invoices on the due date using your default payment method.</p>
           </div>
         </div>
-        <button className="flex items-center gap-2 px-5 py-2.5 bg-white rounded-lg text-[13px] font-semibold text-[#003B7A] hover:bg-white/90 shrink-0">
+        <button onClick={() => toast("AutoPay enabled")} className="flex items-center gap-2 px-5 py-2.5 bg-white rounded-lg text-[13px] font-semibold text-[#003B7A] hover:bg-white/90 shrink-0">
           <CheckCircle2 className="w-4 h-4" /> Enable AutoPay
         </button>
       </div>
@@ -681,6 +912,18 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
         title="Delete invoice"
         message={`Are you sure you want to delete ${deleting?.id}? This action cannot be undone.`}
         confirmLabel="Delete"
+        destructive
+        loading={busy}
+      />
+
+      {/* Bulk delete confirm */}
+      <ConfirmDialog
+        open={bulkDeleting}
+        onClose={() => setBulkDeleting(false)}
+        onConfirm={bulkDelete}
+        title="Delete selected invoices"
+        message={`Are you sure you want to delete ${selected.size} invoice${selected.size === 1 ? "" : "s"}? This action cannot be undone.`}
+        confirmLabel={`Delete ${selected.size}`}
         destructive
         loading={busy}
       />

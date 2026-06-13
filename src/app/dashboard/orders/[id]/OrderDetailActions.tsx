@@ -81,7 +81,7 @@ export default function OrderDetailActions({ order }: { order: Order }) {
 
   return (
     <div className="flex items-center gap-3">
-      <button className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] font-medium text-[#64748B] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+      <button onClick={() => toast(`Order placed on ${order.date}`)} className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] font-medium text-[#64748B] shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-[#F8FAFC] transition-colors">
         <Calendar className="w-4 h-4" /> {order.date} <ChevronDown className="w-3.5 h-3.5" />
       </button>
       <button

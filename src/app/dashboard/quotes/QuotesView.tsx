@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   FileText, Users, Clock, CheckCircle2, ArrowUpRight, ArrowDownRight,
   Search, ChevronDown, Pencil, Trash2, Plus, Calendar, Bell, SlidersHorizontal,
-  ChevronLeft, ChevronRight, AlertCircle, Wallet, Download,
+  ChevronLeft, ChevronRight, AlertCircle, Wallet, Download, ChevronUp, ArrowUpDown,
 } from "lucide-react";
 import type { Quote, QuoteStatus } from "@/types";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
@@ -85,7 +85,27 @@ export default function QuotesView({ items }: { items: Quote[] }) {
   const [activeTab, setActiveTab] = useState("All");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
-  const pageSize = 8;
+  const [pageSize, setPageSize] = useState(8);
+  const [pageSizeOpen, setPageSizeOpen] = useState(false);
+  const [dateOpen, setDateOpen] = useState(false);
+
+  // sorting
+  type SortKey = "id" | "customer" | "status" | "createdDate" | "total";
+  const [sortKey, setSortKey] = useState<SortKey>("createdDate");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  }
+
+  // bulk selection
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   // create / edit
   const [formOpen, setFormOpen] = useState(false);
@@ -112,10 +132,86 @@ export default function QuotesView({ items }: { items: Quote[] }) {
     });
   }, [items, activeTab, query]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const sorted = useMemo(() => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      let av: string | number;
+      let bv: string | number;
+      if (sortKey === "total") {
+        av = a.total; bv = b.total;
+      } else {
+        av = String(a[sortKey] ?? "").toLowerCase();
+        bv = String(b[sortKey] ?? "").toLowerCase();
+      }
+      if (av < bv) return -1 * dir;
+      if (av > bv) return 1 * dir;
+      return 0;
+    });
+  }, [filtered, sortKey, sortDir]);
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const start = (currentPage - 1) * pageSize;
-  const pageRows = filtered.slice(start, start + pageSize);
+  const pageRows = sorted.slice(start, start + pageSize);
+
+  const pageIds = pageRows.map((r) => r.id);
+  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+  const selectedRows = sorted.filter((r) => selected.has(r.id));
+
+  function toggleSelectAll() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allPageSelected) {
+        for (const id of pageIds) next.delete(id);
+      } else {
+        for (const id of pageIds) next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function toggleRow(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function bulkDelete() {
+    setBusy(true);
+    try {
+      for (const id of selected) {
+        await api.del(`/api/quotes/${id}`);
+      }
+      toast(`Deleted ${selected.size} RFQ${selected.size === 1 ? "" : "s"}`);
+      setSelected(new Set());
+      setBulkDeleting(false);
+      router.refresh();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not delete RFQs", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function exportSelected() {
+    exportToCsv("quotes-selected", selectedRows, [
+      { key: "id", header: "Request ID" },
+      { key: "customer", header: "Customer" },
+      { key: "status", header: "Status" },
+      { key: "createdDate", header: "Created Date" },
+      { key: "validUntil", header: "Valid Until" },
+      { key: "total", header: "Total" },
+    ]);
+    toast(`Exported ${selectedRows.length} selected RFQs to CSV`);
+  }
+
+  const sortIcon = (k: SortKey) =>
+    sortKey !== k
+      ? <ArrowUpDown className="w-3.5 h-3.5 text-[#9CA3AF]" />
+      : <ChevronUp className={`w-3.5 h-3.5 text-[#3B82F6] transition-transform ${sortDir === "desc" ? "rotate-180" : ""}`} />;
 
   function selectTab(tab: string) {
     setActiveTab(tab);
@@ -208,10 +304,34 @@ export default function QuotesView({ items }: { items: Quote[] }) {
           <p className="text-[14px] text-text-body mt-1">Open RFQs with status, supplier, and response time.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="inline-flex items-center gap-2 px-3.5 py-2 bg-white border border-border-soft rounded-lg text-[13px] font-medium text-text-body hover:bg-soft-bg transition-colors">
-            <Calendar className="w-4 h-4 text-text-light" /> May 1 – May 31, 2025 <ChevronDown className="w-3.5 h-3.5 text-text-light" />
-          </button>
-          <button className="w-9 h-9 flex items-center justify-center bg-white border border-border-soft rounded-lg text-text-muted hover:bg-soft-bg transition-colors">
+          <div className="relative">
+            <button
+              onClick={() => setDateOpen((v) => !v)}
+              className="inline-flex items-center gap-2 px-3.5 py-2 bg-white border border-border-soft rounded-lg text-[13px] font-medium text-text-body hover:bg-soft-bg transition-colors"
+            >
+              <Calendar className="w-4 h-4 text-text-light" /> May 1 – May 31, 2025 <ChevronDown className="w-3.5 h-3.5 text-text-light" />
+            </button>
+            {dateOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setDateOpen(false)} />
+                <div className="absolute right-0 mt-1 z-20 w-44 bg-white rounded-lg border border-border-soft shadow-lg py-1">
+                  {["Last 7 days", "Last 30 days", "This quarter", "Year to date"].map((r) => (
+                    <button
+                      key={r}
+                      onClick={() => { setDateOpen(false); toast(`Date range: ${r}`); }}
+                      className="w-full text-left px-3 py-1.5 text-[13px] text-text-body hover:bg-soft-bg"
+                    >
+                      {r}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+          <button
+            onClick={() => toast("No new notifications")}
+            className="w-9 h-9 flex items-center justify-center bg-white border border-border-soft rounded-lg text-text-muted hover:bg-soft-bg transition-colors"
+          >
             <Bell className="w-4 h-4" />
           </button>
           <button
@@ -279,7 +399,7 @@ export default function QuotesView({ items }: { items: Quote[] }) {
             {t}
           </button>
         ))}
-        <button className="inline-flex items-center gap-1.5 px-3 py-2 bg-[#F9FAFB] border border-[#E2E8F0] rounded-lg text-[13px] text-text-body hover:bg-[#F3F4F6] transition-colors"><SlidersHorizontal className="w-3.5 h-3.5" />More Filters</button>
+        <button onClick={() => toast("More filters coming soon")} className="inline-flex items-center gap-1.5 px-3 py-2 bg-[#F9FAFB] border border-[#E2E8F0] rounded-lg text-[13px] text-text-body hover:bg-[#F3F4F6] transition-colors"><SlidersHorizontal className="w-3.5 h-3.5" />More Filters</button>
       </div>
 
       {/* Table + Sidebar */}
@@ -289,18 +409,77 @@ export default function QuotesView({ items }: { items: Quote[] }) {
           <div className="px-5 py-4 border-b border-border-soft">
             <h3 className="text-[16px] font-semibold text-text-primary">All RFQs</h3>
           </div>
+          {selected.size > 0 && (
+            <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-[#EFF6FF] border-b border-[#BFDBFE]">
+              <span className="text-[13px] font-medium text-[#1D4ED8]">{selected.size} selected</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={exportSelected}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#BFDBFE] rounded-lg text-[13px] text-[#1D4ED8] hover:bg-[#DBEAFE] transition-colors"
+                >
+                  <Download className="w-4 h-4" />
+                  Export selected
+                </button>
+                <button
+                  onClick={() => setBulkDeleting(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#EF4444] hover:bg-[#DC2626] rounded-lg text-[13px] font-medium text-white transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete selected
+                </button>
+                <button
+                  onClick={() => setSelected(new Set())}
+                  className="px-2 py-1.5 text-[13px] text-text-muted hover:text-text-primary"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+          )}
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="bg-[#F9FAFB] border-b border-[#E2E8F0]">
-                  {["Request ID", "Customer", "Status", "Created Date", "Valid Until", "Total", "Actions"].map((h) => (
-                    <th key={h} className="text-left text-[12px] font-semibold text-text-muted uppercase tracking-wide px-4 py-3 whitespace-nowrap">{h}</th>
-                  ))}
+                  <th className="w-10 px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={allPageSelected}
+                      onChange={toggleSelectAll}
+                      aria-label="Select all on page"
+                      className="w-4 h-4 rounded border-[#D1D5DB] text-[#3B82F6] focus:ring-[#3B82F6] cursor-pointer"
+                    />
+                  </th>
+                  <th className="text-left text-[12px] font-semibold text-text-muted uppercase tracking-wide px-4 py-3 whitespace-nowrap">
+                    <button onClick={() => toggleSort("id")} className="inline-flex items-center gap-1 hover:text-[#3B82F6]">Request ID {sortIcon("id")}</button>
+                  </th>
+                  <th className="text-left text-[12px] font-semibold text-text-muted uppercase tracking-wide px-4 py-3 whitespace-nowrap">
+                    <button onClick={() => toggleSort("customer")} className="inline-flex items-center gap-1 hover:text-[#3B82F6]">Customer {sortIcon("customer")}</button>
+                  </th>
+                  <th className="text-left text-[12px] font-semibold text-text-muted uppercase tracking-wide px-4 py-3 whitespace-nowrap">
+                    <button onClick={() => toggleSort("status")} className="inline-flex items-center gap-1 hover:text-[#3B82F6]">Status {sortIcon("status")}</button>
+                  </th>
+                  <th className="text-left text-[12px] font-semibold text-text-muted uppercase tracking-wide px-4 py-3 whitespace-nowrap">
+                    <button onClick={() => toggleSort("createdDate")} className="inline-flex items-center gap-1 hover:text-[#3B82F6]">Created Date {sortIcon("createdDate")}</button>
+                  </th>
+                  <th className="text-left text-[12px] font-semibold text-text-muted uppercase tracking-wide px-4 py-3 whitespace-nowrap">Valid Until</th>
+                  <th className="text-left text-[12px] font-semibold text-text-muted uppercase tracking-wide px-4 py-3 whitespace-nowrap">
+                    <button onClick={() => toggleSort("total")} className="inline-flex items-center gap-1 hover:text-[#3B82F6]">Total {sortIcon("total")}</button>
+                  </th>
+                  <th className="text-left text-[12px] font-semibold text-text-muted uppercase tracking-wide px-4 py-3 whitespace-nowrap">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {pageRows.map((q) => (
                   <tr key={q.id} className="border-b border-[#F3F4F6] last:border-b-0 hover:bg-[#F9FAFB] transition-colors">
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(q.id)}
+                        onChange={() => toggleRow(q.id)}
+                        aria-label={`Select ${q.id}`}
+                        className="w-4 h-4 rounded border-[#D1D5DB] text-[#3B82F6] focus:ring-[#3B82F6] cursor-pointer"
+                      />
+                    </td>
                     <td className="px-4 py-3"><Link href={`/dashboard/quotes/${q.id}`} className="text-[13px] font-semibold text-[#3B82F6] hover:underline font-mono">{q.id}</Link></td>
                     <td className="px-4 py-3 text-[13px] font-medium text-text-primary whitespace-nowrap">{q.customer}</td>
                     <td className="px-4 py-3"><StatusBadge status={q.status} /></td>
@@ -329,7 +508,7 @@ export default function QuotesView({ items }: { items: Quote[] }) {
                 ))}
                 {pageRows.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-10 text-center">
+                    <td colSpan={8} className="px-4 py-10 text-center">
                       <p className="text-[13px] text-text-muted">No RFQs match your filters.</p>
                       <button onClick={openCreate} className="mt-3 inline-flex items-center gap-1.5 text-[13px] font-medium text-[#3B82F6] hover:underline">
                         <Plus className="w-4 h-4" /> Create your first RFQ
@@ -376,10 +555,31 @@ export default function QuotesView({ items }: { items: Quote[] }) {
                   <ChevronRight className="w-4 h-4" />
                 </button>
               </div>
-              <button className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-[#F9FAFB] border border-[#E2E8F0] rounded-md text-[12px] text-text-body hover:bg-[#F3F4F6] transition-colors">
-                {pageSize} / page
-                <ChevronDown className="w-3 h-3" />
-              </button>
+              <div className="relative">
+                <button
+                  onClick={() => setPageSizeOpen((v) => !v)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-[#F9FAFB] border border-[#E2E8F0] rounded-md text-[12px] text-text-body hover:bg-[#F3F4F6] transition-colors"
+                >
+                  {pageSize} / page
+                  <ChevronDown className="w-3 h-3" />
+                </button>
+                {pageSizeOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setPageSizeOpen(false)} />
+                    <div className="absolute right-0 bottom-full mb-1 z-20 w-32 bg-white rounded-lg border border-[#E2E8F0] shadow-lg py-1">
+                      {[8, 10, 20, 50].map((n) => (
+                        <button
+                          key={n}
+                          onClick={() => { setPageSize(n); setPage(1); setPageSizeOpen(false); }}
+                          className={`w-full text-left px-3 py-1.5 text-[12px] hover:bg-[#F3F4F6] ${n === pageSize ? "text-[#3B82F6] font-medium" : "text-text-body"}`}
+                        >
+                          {n} / page
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -438,7 +638,7 @@ export default function QuotesView({ items }: { items: Quote[] }) {
                 <span className="text-[13px] font-semibold text-text-primary">$48,620.00</span>
               </div>
             </div>
-            <button className="w-full mt-4 py-2.5 bg-[#3B82F6] text-white rounded-lg text-[13px] font-semibold hover:bg-[#2563EB] transition-colors shadow-[0_1px_3px_rgba(0,0,0,0.1)]">View All Approvals</button>
+            <button onClick={() => toast("Opening pending approvals")} className="w-full mt-4 py-2.5 bg-[#3B82F6] text-white rounded-lg text-[13px] font-semibold hover:bg-[#2563EB] transition-colors shadow-[0_1px_3px_rgba(0,0,0,0.1)]">View All Approvals</button>
           </div>
         </div>
       </div>
@@ -469,6 +669,18 @@ export default function QuotesView({ items }: { items: Quote[] }) {
         title="Delete RFQ"
         message={`Are you sure you want to delete ${deleting?.id}? This action cannot be undone.`}
         confirmLabel="Delete"
+        destructive
+        loading={busy}
+      />
+
+      {/* Bulk delete confirm */}
+      <ConfirmDialog
+        open={bulkDeleting}
+        onClose={() => setBulkDeleting(false)}
+        onConfirm={bulkDelete}
+        title="Delete selected RFQs"
+        message={`Are you sure you want to delete ${selected.size} RFQ${selected.size === 1 ? "" : "s"}? This action cannot be undone.`}
+        confirmLabel={`Delete ${selected.size}`}
         destructive
         loading={busy}
       />

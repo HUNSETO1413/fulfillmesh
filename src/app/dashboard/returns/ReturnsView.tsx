@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   Search, ChevronDown, ChevronLeft, ChevronRight,
   Calendar, Plus, Filter, Download, Pencil, Trash2,
+  ChevronUp, ArrowUpDown,
 } from "lucide-react";
 import type { ReturnRecord, ReturnStatus } from "@/types";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
@@ -82,10 +83,30 @@ export default function ReturnsView({ items }: { items: ReturnRecord[] }) {
   const [activeTab, setActiveTab] = useState("All Returns");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
-  const pageSize = 10;
+  const [pageSize, setPageSize] = useState(10);
+  const [pageSizeOpen, setPageSizeOpen] = useState(false);
+  const [dateOpen, setDateOpen] = useState(false);
 
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [filterOpen, setFilterOpen] = useState(false);
+
+  // sorting
+  type SortKey = "id" | "orderId" | "customer" | "status" | "reason" | "requestedDate" | "items";
+  const [sortKey, setSortKey] = useState<SortKey>("requestedDate");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  }
+
+  // bulk selection
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   // create / edit
   const [formOpen, setFormOpen] = useState(false);
@@ -111,10 +132,88 @@ export default function ReturnsView({ items }: { items: ReturnRecord[] }) {
     });
   }, [items, activeTab, statusFilter, query]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const sorted = useMemo(() => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      let av: string | number;
+      let bv: string | number;
+      if (sortKey === "items") {
+        av = a.items; bv = b.items;
+      } else {
+        av = String(a[sortKey] ?? "").toLowerCase();
+        bv = String(b[sortKey] ?? "").toLowerCase();
+      }
+      if (av < bv) return -1 * dir;
+      if (av > bv) return 1 * dir;
+      return 0;
+    });
+  }, [filtered, sortKey, sortDir]);
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const start = (currentPage - 1) * pageSize;
-  const pageRows = filtered.slice(start, start + pageSize);
+  const pageRows = sorted.slice(start, start + pageSize);
+
+  const pageIds = pageRows.map((r) => r.id);
+  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+  const selectedRows = sorted.filter((r) => selected.has(r.id));
+
+  function toggleSelectAll() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allPageSelected) {
+        for (const id of pageIds) next.delete(id);
+      } else {
+        for (const id of pageIds) next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function toggleRow(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function bulkDelete() {
+    setBusy(true);
+    try {
+      for (const id of selected) {
+        await api.del(`/api/returns/${id}`);
+      }
+      toast(`Deleted ${selected.size} return${selected.size === 1 ? "" : "s"}`);
+      setSelected(new Set());
+      setBulkDeleting(false);
+      router.refresh();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not delete returns", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function exportSelected() {
+    exportToCsv("returns-selected", selectedRows, [
+      { key: "id", header: "Return ID" },
+      { key: "orderId", header: "Order ID" },
+      { key: "customer", header: "Customer" },
+      { key: "status", header: "Status" },
+      { key: "reason", header: "Reason" },
+      { key: "requestedDate", header: "Request Date" },
+      { key: "items", header: "Items" },
+      { key: "refundAmount", header: "Refund Amount" },
+    ]);
+    toast(`Exported ${selectedRows.length} selected returns to CSV`);
+  }
+
+  const sortIcon = (k: SortKey) =>
+    sortKey !== k
+      ? <ArrowUpDown className="w-3.5 h-3.5 text-[#9CA3AF]" />
+      : <ChevronUp className={`w-3.5 h-3.5 text-[#2563EB] transition-transform ${sortDir === "desc" ? "rotate-180" : ""}`} />;
 
   function selectTab(tab: string) {
     setActiveTab(tab);
@@ -209,11 +308,32 @@ export default function ReturnsView({ items }: { items: ReturnRecord[] }) {
           <p className="text-[14px] text-[#4A5A73] mt-0.5">Manage customer return requests.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#D1D5DB] rounded-lg text-[13px] font-medium text-[#4A5A73] hover:bg-[#F9FAFB] hover:border-[#9CA3AF] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-            <Calendar className="w-4 h-4" />
-            May 12 – May 18, 2025
-            <ChevronDown className="w-3.5 h-3.5" />
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => setDateOpen((v) => !v)}
+              className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#D1D5DB] rounded-lg text-[13px] font-medium text-[#4A5A73] hover:bg-[#F9FAFB] hover:border-[#9CA3AF] shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
+            >
+              <Calendar className="w-4 h-4" />
+              May 12 – May 18, 2025
+              <ChevronDown className="w-3.5 h-3.5" />
+            </button>
+            {dateOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setDateOpen(false)} />
+                <div className="absolute right-0 mt-1 z-20 w-44 bg-white rounded-lg border border-[#E5E7EB] shadow-lg py-1">
+                  {["Last 7 days", "Last 30 days", "This quarter", "Year to date"].map((r) => (
+                    <button
+                      key={r}
+                      onClick={() => { setDateOpen(false); toast(`Date range: ${r}`); }}
+                      className="w-full text-left px-3 py-1.5 text-[13px] text-[#374151] hover:bg-[#F9FAFB]"
+                    >
+                      {r}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
           <button
             onClick={openCreate}
             className="flex items-center gap-2 px-4 py-2 bg-[#2563EB] hover:bg-[#1D4ED8] rounded-lg text-[13px] font-medium text-white shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
@@ -304,23 +424,82 @@ export default function ReturnsView({ items }: { items: ReturnRecord[] }) {
           </button>
         </div>
 
+        {/* Bulk action bar */}
+        {selected.size > 0 && (
+          <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-[#EFF6FF] border-b border-[#BFDBFE]">
+            <span className="text-[13px] font-medium text-[#1D4ED8]">{selected.size} selected</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={exportSelected}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#BFDBFE] rounded-lg text-[13px] text-[#1D4ED8] hover:bg-[#DBEAFE] transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                Export selected
+              </button>
+              <button
+                onClick={() => setBulkDeleting(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-[#EF4444] hover:bg-[#DC2626] rounded-lg text-[13px] font-medium text-white transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete selected
+              </button>
+              <button
+                onClick={() => setSelected(new Set())}
+                className="px-2 py-1.5 text-[13px] text-[#4A5A73] hover:text-[#061A3D]"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Table */}
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="bg-[#F9FAFB] border-b border-[#E5E7EB]">
-                <th className="text-left text-[12px] font-medium text-[#374151] uppercase tracking-wider px-4 py-3">Return ID</th>
-                <th className="text-left text-[12px] font-medium text-[#374151] uppercase tracking-wider px-4 py-3">Order ID</th>
-                <th className="text-left text-[12px] font-medium text-[#374151] uppercase tracking-wider px-4 py-3">Customer</th>
-                <th className="text-left text-[12px] font-medium text-[#374151] uppercase tracking-wider px-4 py-3">Status</th>
-                <th className="text-left text-[12px] font-medium text-[#374151] uppercase tracking-wider px-4 py-3">Reason</th>
-                <th className="text-left text-[12px] font-medium text-[#374151] uppercase tracking-wider px-4 py-3">Request Date</th>
+                <th className="w-10 px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={allPageSelected}
+                    onChange={toggleSelectAll}
+                    aria-label="Select all on page"
+                    className="w-4 h-4 rounded border-[#D1D5DB] text-[#2563EB] focus:ring-[#2563EB] cursor-pointer"
+                  />
+                </th>
+                <th className="text-left text-[12px] font-medium text-[#374151] uppercase tracking-wider px-4 py-3">
+                  <button onClick={() => toggleSort("id")} className="inline-flex items-center gap-1 hover:text-[#2563EB]">Return ID {sortIcon("id")}</button>
+                </th>
+                <th className="text-left text-[12px] font-medium text-[#374151] uppercase tracking-wider px-4 py-3">
+                  <button onClick={() => toggleSort("orderId")} className="inline-flex items-center gap-1 hover:text-[#2563EB]">Order ID {sortIcon("orderId")}</button>
+                </th>
+                <th className="text-left text-[12px] font-medium text-[#374151] uppercase tracking-wider px-4 py-3">
+                  <button onClick={() => toggleSort("customer")} className="inline-flex items-center gap-1 hover:text-[#2563EB]">Customer {sortIcon("customer")}</button>
+                </th>
+                <th className="text-left text-[12px] font-medium text-[#374151] uppercase tracking-wider px-4 py-3">
+                  <button onClick={() => toggleSort("status")} className="inline-flex items-center gap-1 hover:text-[#2563EB]">Status {sortIcon("status")}</button>
+                </th>
+                <th className="text-left text-[12px] font-medium text-[#374151] uppercase tracking-wider px-4 py-3">
+                  <button onClick={() => toggleSort("reason")} className="inline-flex items-center gap-1 hover:text-[#2563EB]">Reason {sortIcon("reason")}</button>
+                </th>
+                <th className="text-left text-[12px] font-medium text-[#374151] uppercase tracking-wider px-4 py-3">
+                  <button onClick={() => toggleSort("requestedDate")} className="inline-flex items-center gap-1 hover:text-[#2563EB]">Request Date {sortIcon("requestedDate")}</button>
+                </th>
                 <th className="text-right text-[12px] font-medium text-[#374151] uppercase tracking-wider px-4 py-3">Actions</th>
               </tr>
             </thead>
             <tbody>
               {pageRows.map((r) => (
                 <tr key={r.id} className="border-b border-[#F3F4F6] last:border-b-0 hover:bg-[#F9FAFB] transition-colors">
+                  <td className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(r.id)}
+                      onChange={() => toggleRow(r.id)}
+                      aria-label={`Select ${r.id}`}
+                      className="w-4 h-4 rounded border-[#D1D5DB] text-[#2563EB] focus:ring-[#2563EB] cursor-pointer"
+                    />
+                  </td>
                   <td className="px-4 py-3">
                     <Link href={`/dashboard/returns/${r.id}`} className="text-[13px] font-medium text-[#061A3D] hover:underline hover:text-[#2563EB]">
                       {r.id}
@@ -358,7 +537,7 @@ export default function ReturnsView({ items }: { items: ReturnRecord[] }) {
               ))}
               {pageRows.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-[13px] text-[#4A5A73]">
+                  <td colSpan={8} className="px-4 py-10 text-center text-[13px] text-[#4A5A73]">
                     No returns match your filters.
                     <button onClick={openCreate} className="mt-3 mx-auto flex items-center gap-1.5 text-[13px] font-medium text-[#2563EB] hover:underline">
                       <Plus className="w-4 h-4" /> Create your first return
@@ -373,9 +552,9 @@ export default function ReturnsView({ items }: { items: ReturnRecord[] }) {
         {/* Footer / Pagination */}
         <div className="flex items-center justify-between px-4 py-3 border-t border-[#E5E7EB]">
           <p className="text-[13px] text-[#4A5A73]">
-            {filtered.length === 0
+            {sorted.length === 0
               ? "Showing 0 results"
-              : `Showing ${start + 1} to ${Math.min(start + pageSize, filtered.length)} of ${filtered.length} returns`}
+              : `Showing ${start + 1} to ${Math.min(start + pageSize, sorted.length)} of ${sorted.length} returns`}
           </p>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1">
@@ -407,10 +586,31 @@ export default function ReturnsView({ items }: { items: ReturnRecord[] }) {
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
-            <button className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#D1D5DB] rounded-lg text-[13px] text-[#4A5A73] hover:bg-[#F9FAFB]">
-              {pageSize} / page
-              <ChevronDown className="w-3.5 h-3.5" />
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => setPageSizeOpen((v) => !v)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#D1D5DB] rounded-lg text-[13px] text-[#4A5A73] hover:bg-[#F9FAFB]"
+              >
+                {pageSize} / page
+                <ChevronDown className="w-3.5 h-3.5" />
+              </button>
+              {pageSizeOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setPageSizeOpen(false)} />
+                  <div className="absolute right-0 bottom-full mb-1 z-20 w-32 bg-white rounded-lg border border-[#E5E7EB] shadow-lg py-1">
+                    {[8, 10, 20, 50].map((n) => (
+                      <button
+                        key={n}
+                        onClick={() => { setPageSize(n); setPage(1); setPageSizeOpen(false); }}
+                        className={`w-full text-left px-3 py-1.5 text-[13px] hover:bg-[#F9FAFB] ${n === pageSize ? "text-[#2563EB] font-medium" : "text-[#374151]"}`}
+                      >
+                        {n} / page
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -441,6 +641,18 @@ export default function ReturnsView({ items }: { items: ReturnRecord[] }) {
         title="Delete return"
         message={`Are you sure you want to delete ${deleting?.id}? This action cannot be undone.`}
         confirmLabel="Delete"
+        destructive
+        loading={busy}
+      />
+
+      {/* Bulk delete confirm */}
+      <ConfirmDialog
+        open={bulkDeleting}
+        onClose={() => setBulkDeleting(false)}
+        onConfirm={bulkDelete}
+        title="Delete selected returns"
+        message={`Are you sure you want to delete ${selected.size} return${selected.size === 1 ? "" : "s"}? This action cannot be undone.`}
+        confirmLabel={`Delete ${selected.size}`}
         destructive
         loading={busy}
       />

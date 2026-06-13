@@ -256,7 +256,7 @@ export default function CycleCountPage() {
             </div>
             <Dropdown label="All Warehouses" value={whFilter} options={WAREHOUSES} onSelect={setWhFilter} />
             <Dropdown label="All Statuses" value={statusFilter} options={STATUSES} onSelect={setStatusFilter} />
-            <button className="flex items-center gap-2 text-[13px] font-medium text-text-muted bg-white border border-border-soft rounded-lg px-3.5 py-2 hover:bg-soft-bg"><Calendar className="w-3.5 h-3.5" /> May 1 – May 31, 2025</button>
+            <button onClick={() => toast("Showing cycle counts for May 1 – May 31, 2025")} className="flex items-center gap-2 text-[13px] font-medium text-text-muted bg-white border border-border-soft rounded-lg px-3.5 py-2 hover:bg-soft-bg transition-colors"><Calendar className="w-3.5 h-3.5" /> May 1 – May 31, 2025</button>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">

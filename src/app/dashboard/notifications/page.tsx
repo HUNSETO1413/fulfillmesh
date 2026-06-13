@@ -299,7 +299,7 @@ export default function NotificationsPage() {
           <div className="flex items-center justify-between px-5 py-4 border-t border-border-soft">
             <p className="text-[13px] text-text-muted">Showing {visible.length} of {items.length} notifications</p>
             <div className="flex items-center gap-1.5">
-              <button className="w-8 h-8 flex items-center justify-center rounded-lg bg-action-blue text-white text-[13px] font-medium">1</button>
+              <button onClick={() => toast("Page 1 of 1", "info")} className="w-8 h-8 flex items-center justify-center rounded-lg bg-action-blue text-white text-[13px] font-medium">1</button>
             </div>
           </div>
         </div>

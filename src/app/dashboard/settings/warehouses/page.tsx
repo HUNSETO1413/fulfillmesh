@@ -318,12 +318,12 @@ export default function WarehousesPage() {
       <div className="flex items-center justify-between mt-4">
         <p className="text-[13px] text-[#64748B]">Showing 1 to {filtered.length} of {filtered.length} warehouses</p>
         <div className="flex items-center gap-2">
-          <button disabled className="flex items-center gap-1 px-3 py-1.5 border border-[#E2E8F0] rounded-md text-[13px] text-[#94A3B8] cursor-not-allowed">
+          <button disabled={true} className="flex items-center gap-1 px-3 py-1.5 border border-[#E2E8F0] rounded-md text-[13px] text-[#94A3B8] cursor-not-allowed">
             <ChevronLeft className="w-4 h-4" />
             Previous
           </button>
-          <button className="w-8 h-8 rounded-md bg-[#3B82F6] text-white text-[13px] font-medium">1</button>
-          <button disabled className="flex items-center gap-1 px-3 py-1.5 border border-[#E2E8F0] rounded-md text-[13px] text-[#94A3B8] cursor-not-allowed">
+          <button onClick={() => toast("Page 1 of 1", "info")} className="w-8 h-8 rounded-md bg-[#3B82F6] text-white text-[13px] font-medium">1</button>
+          <button disabled={true} className="flex items-center gap-1 px-3 py-1.5 border border-[#E2E8F0] rounded-md text-[13px] text-[#94A3B8] cursor-not-allowed">
             Next
             <ChevronRight className="w-4 h-4" />
           </button>

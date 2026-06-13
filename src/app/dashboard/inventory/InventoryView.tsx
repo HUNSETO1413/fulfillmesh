@@ -7,7 +7,7 @@ import {
   Package, Layers, AlertTriangle, XCircle,
   Search, Filter, Download, Calendar, Plus,
   ChevronDown, ChevronLeft, ChevronRight, ArrowUpRight, ArrowDownRight,
-  Pencil, Trash2,
+  Pencil, Trash2, ChevronUp, ArrowUpDown,
 } from "lucide-react";
 import type { InventoryItem, StockStatus } from "@/types";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
@@ -95,11 +95,31 @@ export default function InventoryView({ items }: { items: InventoryItem[] }) {
   const [activeStatus, setActiveStatus] = useState("All");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
-  const pageSize = 8;
+  const [pageSize, setPageSize] = useState(8);
+  const [pageSizeOpen, setPageSizeOpen] = useState(false);
+  const [dateOpen, setDateOpen] = useState(false);
 
   // warehouse filter dropdown
   const [warehouseFilter, setWarehouseFilter] = useState<string>("");
   const [filterOpen, setFilterOpen] = useState(false);
+
+  // sorting
+  type SortKey = "sku" | "name" | "location" | "onHand" | "available" | "status";
+  const [sortKey, setSortKey] = useState<SortKey>("sku");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  }
+
+  // bulk selection
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   // create / edit
   const [formOpen, setFormOpen] = useState(false);
@@ -129,10 +149,92 @@ export default function InventoryView({ items }: { items: InventoryItem[] }) {
     });
   }, [items, activeStatus, warehouseFilter, query]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const sorted = useMemo(() => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    const numericKeys: SortKey[] = ["onHand", "available"];
+    return [...filtered].sort((a, b) => {
+      let av: string | number;
+      let bv: string | number;
+      if (numericKeys.includes(sortKey)) {
+        av = Number(a[sortKey] ?? 0);
+        bv = Number(b[sortKey] ?? 0);
+      } else {
+        av = String(a[sortKey] ?? "").toLowerCase();
+        bv = String(b[sortKey] ?? "").toLowerCase();
+      }
+      if (av < bv) return -1 * dir;
+      if (av > bv) return 1 * dir;
+      return 0;
+    });
+  }, [filtered, sortKey, sortDir]);
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const start = (currentPage - 1) * pageSize;
-  const pageRows = filtered.slice(start, start + pageSize);
+  const pageRows = sorted.slice(start, start + pageSize);
+
+  const pageIds = pageRows.map((r) => r.id);
+  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+  const selectedRows = sorted.filter((r) => selected.has(r.id));
+
+  function toggleSelectAll() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allPageSelected) {
+        for (const id of pageIds) next.delete(id);
+      } else {
+        for (const id of pageIds) next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function toggleRow(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function bulkDelete() {
+    setBusy(true);
+    try {
+      for (const id of selected) {
+        await api.del(`/api/inventory/${id}`);
+      }
+      toast(`Deleted ${selected.size} item${selected.size === 1 ? "" : "s"}`);
+      setSelected(new Set());
+      setBulkDeleting(false);
+      router.refresh();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not delete items", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function exportSelected() {
+    exportToCsv("inventory-selected", selectedRows, [
+      { key: "id", header: "Inventory ID" },
+      { key: "sku", header: "SKU" },
+      { key: "name", header: "Name" },
+      { key: "warehouse", header: "Warehouse" },
+      { key: "location", header: "Location" },
+      { key: "onHand", header: "On Hand" },
+      { key: "reserved", header: "Reserved" },
+      { key: "available", header: "Available" },
+      { key: "reorderPoint", header: "Reorder Point" },
+      { key: "status", header: "Status" },
+    ]);
+    toast(`Exported ${selectedRows.length} selected items to CSV`);
+  }
+
+  const sortIcon = (k: SortKey) =>
+    sortKey !== k
+      ? <ArrowUpDown className="w-3.5 h-3.5 text-[#9CA3AF]" />
+      : <ChevronUp className={`w-3.5 h-3.5 text-[#3B82F6] transition-transform ${sortDir === "desc" ? "rotate-180" : ""}`} />;
 
   function selectStatus(value: string) {
     setActiveStatus(value);
@@ -234,10 +336,32 @@ export default function InventoryView({ items }: { items: InventoryItem[] }) {
           <p className="text-[14px] text-[#64748B] mt-1">May 15, 2023 - May 28, 2023</p>
         </div>
         <div className="flex items-center gap-2">
-          <button className="flex items-center gap-2 text-[13px] text-[#64748B] bg-white border border-[#E2E8F0] rounded-lg px-3 py-2 hover:bg-[#F8FAFC]">
-            <Calendar className="w-4 h-4" />
-            May 12 - May 18, 2025
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => setDateOpen((v) => !v)}
+              className="flex items-center gap-2 text-[13px] text-[#64748B] bg-white border border-[#E2E8F0] rounded-lg px-3 py-2 hover:bg-[#F8FAFC]"
+            >
+              <Calendar className="w-4 h-4" />
+              May 12 - May 18, 2025
+              <ChevronDown className="w-3.5 h-3.5" />
+            </button>
+            {dateOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setDateOpen(false)} />
+                <div className="absolute right-0 mt-1 z-20 w-44 bg-white rounded-lg border border-[#E2E8F0] shadow-lg py-1">
+                  {["Last 7 days", "Last 30 days", "This quarter", "Year to date"].map((r) => (
+                    <button
+                      key={r}
+                      onClick={() => { setDateOpen(false); toast(`Date range: ${r}`); }}
+                      className="w-full text-left px-3 py-1.5 text-[13px] text-[#374151] hover:bg-[#F8FAFC]"
+                    >
+                      {r}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
           <button
             onClick={handleExport}
             className="flex items-center gap-2 text-[13px] font-medium text-[#64748B] bg-white border border-[#E2E8F0] rounded-lg px-3 py-2 hover:bg-[#F8FAFC]"
@@ -361,23 +485,82 @@ export default function InventoryView({ items }: { items: InventoryItem[] }) {
           </button>
         </div>
 
+        {/* Bulk action bar */}
+        {selected.size > 0 && (
+          <div className="flex items-center justify-between gap-3 px-5 py-2.5 bg-[#EFF6FF] border-b border-[#BFDBFE]">
+            <span className="text-[13px] font-medium text-[#1D4ED8]">{selected.size} selected</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={exportSelected}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#BFDBFE] rounded-lg text-[13px] text-[#1D4ED8] hover:bg-[#DBEAFE] transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                Export selected
+              </button>
+              <button
+                onClick={() => setBulkDeleting(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-[#EF4444] hover:bg-[#DC2626] rounded-lg text-[13px] font-medium text-white transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete selected
+              </button>
+              <button
+                onClick={() => setSelected(new Set())}
+                className="px-2 py-1.5 text-[13px] text-[#64748B] hover:text-[#374151]"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Table */}
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
-                <th className="text-left text-[12px] font-medium text-[#64748B] uppercase tracking-wider px-5 py-3">SKU ID</th>
-                <th className="text-left text-[12px] font-medium text-[#64748B] uppercase tracking-wider px-5 py-3">Product Name</th>
-                <th className="text-left text-[12px] font-medium text-[#64748B] uppercase tracking-wider px-5 py-3">Location</th>
-                <th className="text-left text-[12px] font-medium text-[#64748B] uppercase tracking-wider px-5 py-3">Stock</th>
-                <th className="text-left text-[12px] font-medium text-[#64748B] uppercase tracking-wider px-5 py-3">Available</th>
-                <th className="text-left text-[12px] font-medium text-[#64748B] uppercase tracking-wider px-5 py-3">Status</th>
+                <th className="w-10 px-5 py-3">
+                  <input
+                    type="checkbox"
+                    checked={allPageSelected}
+                    onChange={toggleSelectAll}
+                    aria-label="Select all on page"
+                    className="w-4 h-4 rounded border-[#D1D5DB] text-[#3B82F6] focus:ring-[#3B82F6] cursor-pointer"
+                  />
+                </th>
+                <th className="text-left text-[12px] font-medium text-[#64748B] uppercase tracking-wider px-5 py-3">
+                  <button onClick={() => toggleSort("sku")} className="inline-flex items-center gap-1 hover:text-[#3B82F6]">SKU ID {sortIcon("sku")}</button>
+                </th>
+                <th className="text-left text-[12px] font-medium text-[#64748B] uppercase tracking-wider px-5 py-3">
+                  <button onClick={() => toggleSort("name")} className="inline-flex items-center gap-1 hover:text-[#3B82F6]">Product Name {sortIcon("name")}</button>
+                </th>
+                <th className="text-left text-[12px] font-medium text-[#64748B] uppercase tracking-wider px-5 py-3">
+                  <button onClick={() => toggleSort("location")} className="inline-flex items-center gap-1 hover:text-[#3B82F6]">Location {sortIcon("location")}</button>
+                </th>
+                <th className="text-left text-[12px] font-medium text-[#64748B] uppercase tracking-wider px-5 py-3">
+                  <button onClick={() => toggleSort("onHand")} className="inline-flex items-center gap-1 hover:text-[#3B82F6]">Stock {sortIcon("onHand")}</button>
+                </th>
+                <th className="text-left text-[12px] font-medium text-[#64748B] uppercase tracking-wider px-5 py-3">
+                  <button onClick={() => toggleSort("available")} className="inline-flex items-center gap-1 hover:text-[#3B82F6]">Available {sortIcon("available")}</button>
+                </th>
+                <th className="text-left text-[12px] font-medium text-[#64748B] uppercase tracking-wider px-5 py-3">
+                  <button onClick={() => toggleSort("status")} className="inline-flex items-center gap-1 hover:text-[#3B82F6]">Status {sortIcon("status")}</button>
+                </th>
                 <th className="text-right text-[12px] font-medium text-[#64748B] uppercase tracking-wider px-5 py-3">Actions</th>
               </tr>
             </thead>
             <tbody>
               {pageRows.map((item) => (
                 <tr key={item.id} className="border-b border-[#E2E8F0] last:border-b-0 hover:bg-[#F8FAFC]/50 transition-colors">
+                  <td className="px-5 py-3.5">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(item.id)}
+                      onChange={() => toggleRow(item.id)}
+                      aria-label={`Select ${item.sku}`}
+                      className="w-4 h-4 rounded border-[#D1D5DB] text-[#3B82F6] focus:ring-[#3B82F6] cursor-pointer"
+                    />
+                  </td>
                   <td className="px-5 py-3.5 text-[13px] font-medium text-[#3B82F6] font-mono whitespace-nowrap">
                     <Link href={`/dashboard/inventory/${item.id}`} className="hover:underline">{item.sku}</Link>
                   </td>
@@ -411,7 +594,7 @@ export default function InventoryView({ items }: { items: InventoryItem[] }) {
               ))}
               {pageRows.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-5 py-10 text-center">
+                  <td colSpan={8} className="px-5 py-10 text-center">
                     <p className="text-[13px] text-[#64748B]">No inventory items match your filters.</p>
                     <button onClick={openCreate} className="mt-3 inline-flex items-center gap-1.5 text-[13px] font-medium text-[#3B82F6] hover:underline">
                       <Plus className="w-4 h-4" /> Add your first item
@@ -458,7 +641,31 @@ export default function InventoryView({ items }: { items: InventoryItem[] }) {
             >
               <ChevronRight className="w-4 h-4" />
             </button>
-            <span className="ml-2 text-[13px] text-[#64748B] border border-[#E2E8F0] rounded-lg px-3 py-1.5">{pageSize} / page</span>
+            <div className="relative ml-2">
+              <button
+                onClick={() => setPageSizeOpen((v) => !v)}
+                className="inline-flex items-center gap-1 text-[13px] text-[#64748B] border border-[#E2E8F0] rounded-lg px-3 py-1.5 hover:bg-[#F8FAFC]"
+              >
+                {pageSize} / page
+                <ChevronDown className="w-3.5 h-3.5" />
+              </button>
+              {pageSizeOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setPageSizeOpen(false)} />
+                  <div className="absolute right-0 bottom-full mb-1 z-20 w-28 bg-white rounded-lg border border-[#E2E8F0] shadow-lg py-1">
+                    {[8, 10, 20, 50].map((n) => (
+                      <button
+                        key={n}
+                        onClick={() => { setPageSize(n); setPage(1); setPageSizeOpen(false); }}
+                        className={`w-full text-left px-3 py-1.5 text-[13px] hover:bg-[#F8FAFC] ${n === pageSize ? "text-[#3B82F6] font-medium" : "text-[#374151]"}`}
+                      >
+                        {n} / page
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -489,6 +696,18 @@ export default function InventoryView({ items }: { items: InventoryItem[] }) {
         title="Delete inventory item"
         message={`Are you sure you want to delete ${deleting?.name ?? ""} (${deleting?.sku ?? ""})? This action cannot be undone.`}
         confirmLabel="Delete"
+        destructive
+        loading={busy}
+      />
+
+      {/* Bulk delete confirm */}
+      <ConfirmDialog
+        open={bulkDeleting}
+        onClose={() => setBulkDeleting(false)}
+        onConfirm={bulkDelete}
+        title="Delete selected items"
+        message={`Are you sure you want to delete ${selected.size} item${selected.size === 1 ? "" : "s"}? This action cannot be undone.`}
+        confirmLabel={`Delete ${selected.size}`}
         destructive
         loading={busy}
       />

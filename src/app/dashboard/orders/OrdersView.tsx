@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Search, Filter, ChevronDown, Download, Plus, Calendar,
-  ChevronLeft, ChevronRight, Pencil, Trash2,
+  ChevronLeft, ChevronRight, Pencil, Trash2, ChevronUp, ArrowUpDown,
 } from "lucide-react";
 import type { Order, OrderStatus } from "@/types";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
@@ -70,10 +70,30 @@ export default function OrdersView({ orders }: { orders: Order[] }) {
   const [activeTab, setActiveTab] = useState("All Orders");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
-  const pageSize = 8;
+  const [pageSize, setPageSize] = useState(8);
+  const [pageSizeOpen, setPageSizeOpen] = useState(false);
+  const [dateOpen, setDateOpen] = useState(false);
 
   const [channelFilter, setChannelFilter] = useState<string>("");
   const [filterOpen, setFilterOpen] = useState(false);
+
+  // sorting
+  type SortKey = "id" | "customer" | "status" | "date" | "total";
+  const [sortKey, setSortKey] = useState<SortKey>("date");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  // bulk selection
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  }
 
   // create / edit
   const [formOpen, setFormOpen] = useState(false);
@@ -94,10 +114,82 @@ export default function OrdersView({ orders }: { orders: Order[] }) {
     });
   }, [orders, activeTab, channelFilter, query]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const sorted = useMemo(() => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      let av: string | number;
+      let bv: string | number;
+      if (sortKey === "total") {
+        av = a.total; bv = b.total;
+      } else {
+        av = String(a[sortKey] ?? "").toLowerCase();
+        bv = String(b[sortKey] ?? "").toLowerCase();
+      }
+      if (av < bv) return -1 * dir;
+      if (av > bv) return 1 * dir;
+      return 0;
+    });
+  }, [filtered, sortKey, sortDir]);
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const start = (currentPage - 1) * pageSize;
-  const pageRows = filtered.slice(start, start + pageSize);
+  const pageRows = sorted.slice(start, start + pageSize);
+
+  const pageIds = pageRows.map((o) => o.id);
+  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+  const selectedRows = sorted.filter((o) => selected.has(o.id));
+
+  function toggleSelectAll() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allPageSelected) {
+        for (const id of pageIds) next.delete(id);
+      } else {
+        for (const id of pageIds) next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function toggleRow(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function bulkDelete() {
+    setBusy(true);
+    try {
+      for (const id of selected) {
+        await api.del(`/api/orders/${id}`);
+      }
+      toast(`Deleted ${selected.size} order${selected.size === 1 ? "" : "s"}`);
+      setSelected(new Set());
+      setBulkDeleting(false);
+      router.refresh();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not delete orders", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function exportSelected() {
+    exportToCsv("orders-selected", selectedRows, [
+      { key: "id", header: "Order ID" },
+      { key: "customer", header: "Customer" },
+      { key: "status", header: "Status" },
+      { key: "date", header: "Date" },
+      { key: "total", header: "Total" },
+      { key: "channel", header: "Channel" },
+      { key: "destination", header: "Destination" },
+    ]);
+    toast(`Exported ${selectedRows.length} selected orders to CSV`);
+  }
 
   function openCreate() {
     setEditing(null);
@@ -178,17 +270,43 @@ export default function OrdersView({ orders }: { orders: Order[] }) {
     setPage(1);
   }
 
+  const sortIcon = (k: SortKey) =>
+    sortKey !== k
+      ? <ArrowUpDown className="w-3.5 h-3.5 text-[#9CA3AF]" />
+      : <ChevronUp className={`w-3.5 h-3.5 text-[#3B82F6] transition-transform ${sortDir === "desc" ? "rotate-180" : ""}`} />;
+
   return (
     <div className="space-y-4">
       {/* Page header */}
       <div className="flex items-center justify-between">
         <h1 className="text-[24px] font-semibold text-[#1A1A1A]">Orders</h1>
         <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] text-[#6B7280] hover:bg-[#F3F4F6] transition-colors">
-            <Calendar className="w-4 h-4" />
-            May 01 - May 08, 2025
-            <ChevronDown className="w-3.5 h-3.5" />
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => setDateOpen((v) => !v)}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] text-[#6B7280] hover:bg-[#F3F4F6] transition-colors"
+            >
+              <Calendar className="w-4 h-4" />
+              May 01 - May 08, 2025
+              <ChevronDown className="w-3.5 h-3.5" />
+            </button>
+            {dateOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setDateOpen(false)} />
+                <div className="absolute right-0 mt-1 z-20 w-44 bg-white rounded-lg border border-[#E5E7EB] shadow-lg py-1">
+                  {["Last 7 days", "Last 30 days", "This quarter", "Year to date"].map((r) => (
+                    <button
+                      key={r}
+                      onClick={() => { setDateOpen(false); toast(`Date range: ${r}`); }}
+                      className="w-full text-left px-3 py-1.5 text-[13px] text-[#374151] hover:bg-[#F3F4F6]"
+                    >
+                      {r}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
           <button
             onClick={openCreate}
             className="flex items-center gap-2 px-4 py-2 bg-[#3B82F6] hover:bg-[#2563EB] rounded-lg text-[13px] font-medium text-white transition-colors"
@@ -274,22 +392,79 @@ export default function OrdersView({ orders }: { orders: Order[] }) {
           </button>
         </div>
 
+        {/* Bulk action bar */}
+        {selected.size > 0 && (
+          <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-[#EFF6FF] border-b border-[#BFDBFE]">
+            <span className="text-[13px] font-medium text-[#1D4ED8]">{selected.size} selected</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={exportSelected}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#BFDBFE] rounded-lg text-[13px] text-[#1D4ED8] hover:bg-[#DBEAFE] transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                Export selected
+              </button>
+              <button
+                onClick={() => setBulkDeleting(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-[#EF4444] hover:bg-[#DC2626] rounded-lg text-[13px] font-medium text-white transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete selected
+              </button>
+              <button
+                onClick={() => setSelected(new Set())}
+                className="px-2 py-1.5 text-[13px] text-[#6B7280] hover:text-[#374151]"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Table */}
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="bg-[#F9FAFB] border-b border-[#E5E7EB]">
-                <th className="text-left text-[14px] font-semibold text-[#374151] px-4 py-3">Order ID</th>
-                <th className="text-left text-[14px] font-semibold text-[#374151] px-4 py-3">Customer</th>
-                <th className="text-left text-[14px] font-semibold text-[#374151] px-4 py-3">Status</th>
-                <th className="text-left text-[14px] font-semibold text-[#374151] px-4 py-3">Order Date</th>
-                <th className="text-left text-[14px] font-semibold text-[#374151] px-4 py-3">Total</th>
+                <th className="w-10 px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={allPageSelected}
+                    onChange={toggleSelectAll}
+                    aria-label="Select all on page"
+                    className="w-4 h-4 rounded border-[#D1D5DB] text-[#3B82F6] focus:ring-[#3B82F6] cursor-pointer"
+                  />
+                </th>
+                <th className="text-left text-[14px] font-semibold text-[#374151] px-4 py-3">
+                  <button onClick={() => toggleSort("id")} className="inline-flex items-center gap-1 hover:text-[#3B82F6]">Order ID {sortIcon("id")}</button>
+                </th>
+                <th className="text-left text-[14px] font-semibold text-[#374151] px-4 py-3">
+                  <button onClick={() => toggleSort("customer")} className="inline-flex items-center gap-1 hover:text-[#3B82F6]">Customer {sortIcon("customer")}</button>
+                </th>
+                <th className="text-left text-[14px] font-semibold text-[#374151] px-4 py-3">
+                  <button onClick={() => toggleSort("status")} className="inline-flex items-center gap-1 hover:text-[#3B82F6]">Status {sortIcon("status")}</button>
+                </th>
+                <th className="text-left text-[14px] font-semibold text-[#374151] px-4 py-3">
+                  <button onClick={() => toggleSort("date")} className="inline-flex items-center gap-1 hover:text-[#3B82F6]">Order Date {sortIcon("date")}</button>
+                </th>
+                <th className="text-left text-[14px] font-semibold text-[#374151] px-4 py-3">
+                  <button onClick={() => toggleSort("total")} className="inline-flex items-center gap-1 hover:text-[#3B82F6]">Total {sortIcon("total")}</button>
+                </th>
                 <th className="text-right text-[14px] font-semibold text-[#374151] px-4 py-3">Actions</th>
               </tr>
             </thead>
             <tbody>
               {pageRows.map((order) => (
                 <tr key={order.id} className="border-b border-[#F3F4F6] last:border-b-0 hover:bg-[#F9FAFB] transition-colors">
+                  <td className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(order.id)}
+                      onChange={() => toggleRow(order.id)}
+                      aria-label={`Select ${order.id}`}
+                      className="w-4 h-4 rounded border-[#D1D5DB] text-[#3B82F6] focus:ring-[#3B82F6] cursor-pointer"
+                    />
+                  </td>
                   <td className="px-4 py-3">
                     <Link href={`/dashboard/orders/${order.id}`} className="text-[14px] font-medium text-[#374151] font-mono hover:text-[#3B82F6]">
                       {order.id}
@@ -321,7 +496,7 @@ export default function OrdersView({ orders }: { orders: Order[] }) {
               ))}
               {pageRows.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center">
+                  <td colSpan={7} className="px-4 py-12 text-center">
                     <p className="text-[14px] text-[#6B7280]">No orders match your filters.</p>
                     <button onClick={openCreate} className="mt-3 inline-flex items-center gap-1.5 text-[13px] font-medium text-[#3B82F6] hover:underline">
                       <Plus className="w-4 h-4" /> Create your first order
@@ -341,6 +516,31 @@ export default function OrdersView({ orders }: { orders: Order[] }) {
               : `Showing ${start + 1} to ${Math.min(start + pageSize, filtered.length)} of ${filtered.length} orders`}
           </p>
           <div className="flex items-center gap-3">
+            <div className="relative">
+              <button
+                onClick={() => setPageSizeOpen((v) => !v)}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-[#E5E7EB] rounded-md text-[13px] text-[#6B7280] hover:bg-[#F3F4F6]"
+              >
+                {pageSize} per page
+                <ChevronDown className="w-3.5 h-3.5" />
+              </button>
+              {pageSizeOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setPageSizeOpen(false)} />
+                  <div className="absolute right-0 bottom-full mb-1 z-20 w-32 bg-white rounded-lg border border-[#E5E7EB] shadow-lg py-1">
+                    {[8, 10, 20, 50].map((n) => (
+                      <button
+                        key={n}
+                        onClick={() => { setPageSize(n); setPage(1); setPageSizeOpen(false); }}
+                        className={`w-full text-left px-3 py-1.5 text-[13px] hover:bg-[#F3F4F6] ${n === pageSize ? "text-[#3B82F6] font-medium" : "text-[#374151]"}`}
+                      >
+                        {n} per page
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
             <div className="flex items-center gap-1.5">
               <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={currentPage === 1} className="w-8 h-8 flex items-center justify-center rounded-md border border-[#E5E7EB] bg-[#F9FAFB] text-[#6B7280] hover:bg-[#F3F4F6] disabled:opacity-40">
                 <ChevronLeft className="w-4 h-4" />
@@ -384,6 +584,18 @@ export default function OrdersView({ orders }: { orders: Order[] }) {
         title="Delete order"
         message={`Are you sure you want to delete ${deleting?.id}? This action cannot be undone.`}
         confirmLabel="Delete"
+        destructive
+        loading={busy}
+      />
+
+      {/* Bulk delete confirm */}
+      <ConfirmDialog
+        open={bulkDeleting}
+        onClose={() => setBulkDeleting(false)}
+        onConfirm={bulkDelete}
+        title="Delete selected orders"
+        message={`Are you sure you want to delete ${selected.size} order${selected.size === 1 ? "" : "s"}? This action cannot be undone.`}
+        confirmLabel={`Delete ${selected.size}`}
         destructive
         loading={busy}
       />

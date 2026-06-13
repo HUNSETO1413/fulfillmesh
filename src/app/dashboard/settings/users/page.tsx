@@ -242,11 +242,11 @@ export default function UsersPage() {
           <p className="text-[12px] text-[#6B7280]">Showing 1 to {filtered.length} of {filtered.length} users</p>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1">
-              <button disabled className="w-8 h-8 flex items-center justify-center rounded-md border border-[#D1D5DB] text-[#9CA3AF] cursor-not-allowed">
+              <button disabled={true} className="w-8 h-8 flex items-center justify-center rounded-md border border-[#D1D5DB] text-[#9CA3AF] cursor-not-allowed">
                 <ChevronLeft className="w-4 h-4" />
               </button>
-              <button className="w-8 h-8 flex items-center justify-center rounded-md bg-[#3B82F6] text-white text-[12px] font-medium">1</button>
-              <button disabled className="w-8 h-8 flex items-center justify-center rounded-md border border-[#D1D5DB] text-[#9CA3AF] cursor-not-allowed">
+              <button onClick={() => toast("Page 1 of 1", "info")} className="w-8 h-8 flex items-center justify-center rounded-md bg-[#3B82F6] text-white text-[12px] font-medium">1</button>
+              <button disabled={true} className="w-8 h-8 flex items-center justify-center rounded-md border border-[#D1D5DB] text-[#9CA3AF] cursor-not-allowed">
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
