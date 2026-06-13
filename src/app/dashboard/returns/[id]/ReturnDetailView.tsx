@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
 import {
   ArrowLeft, Check, ExternalLink, ArrowRight,
@@ -16,30 +16,78 @@ import { exportToCsv } from "@/lib/client";
 import { formatCurrency, formatDate } from "@/lib/format";
 import ReturnDetailActions from "./ReturnDetailActions";
 
+/** Simple deterministic hash from a string to a positive integer. */
+function hashStr(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+const PHOTO_GRADIENTS = [
+  "from-[#DBEAFE] to-[#E0E7FF]",
+  "from-[#D1FAE5] to-[#CFFAFE]",
+  "from-[#FEF3C7] to-[#FFEDD5]",
+  "from-[#EDE9FE] to-[#FCE7F3]",
+  "from-[#FEE2E2] to-[#FEF3C7]",
+];
+
 /** Neutral placeholder used wherever a returned-item photo would appear. */
-function BottleThumb({ className = "" }: { className?: string }) {
+function BottleThumb({ className = "", gradient }: { className?: string; gradient?: string }) {
   return (
-    <div className={`relative overflow-hidden bg-[#F7FAFC] border border-[#E6EDF5] flex items-center justify-center ${className}`}>
+    <div className={`relative overflow-hidden ${gradient ? `bg-gradient-to-br ${gradient}` : "bg-[#F7FAFC]"} border border-[#E6EDF5] flex items-center justify-center ${className}`}>
       <Package className="w-1/3 h-1/3 text-[#9AA8B8]" />
     </div>
   );
 }
 
-const SUBMITTED_PHOTOS = [0, 1, 2];
+function statusToStep(status: string): number {
+  switch (status) {
+    case "Requested": return 1;
+    case "Approved": return 2;
+    case "In Transit": return 2;
+    case "Received": return 3;
+    case "Refunded": return 4;
+    case "Rejected": return 4;
+    default: return 0;
+  }
+}
 
-const progress = [
-  { label: "Submitted", date: "May 18", done: true, active: false },
-  { label: "Inspected", date: "May 18", done: false, active: true },
-  { label: "Resolved", date: "Pending", done: false, active: false },
-  { label: "Closed", date: "Pending", done: false, active: false },
-];
+function buildProgress(ret: ReturnRecord) {
+  const step = statusToStep(ret.status);
+  const base = new Date(ret.requestedDate);
+  const fmt = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const addDays = (d: Date, n: number) => { const r = new Date(d); r.setDate(r.getDate() + n); return r; };
+  const labels = ["Submitted", "Inspected", "Resolved", "Closed"];
+  return labels.map((label, i) => {
+    const idx = i + 1;
+    const done = idx < step;
+    const active = idx === step;
+    const date = idx <= step ? fmt(addDays(base, idx - 1)) : "Pending";
+    return { label, date, done, active };
+  });
+}
 
-const initialTimeline = [
-  { text: "Return submitted by customer", time: "May 18, 2025 10:34 AM", done: true },
-  { text: "Return received at warehouse", time: "May 18, 2025 02:12 PM", done: true },
-  { text: "Inspection completed", time: "May 18, 2025 03:45 PM", done: true },
-  { text: "Replacement approved", time: "May 18, 2025 03:45 PM", done: true },
-  { text: "Replacement shipped", time: "Pending", done: false },
+function buildTimeline(ret: ReturnRecord) {
+  const base = new Date(ret.requestedDate);
+  const fmt = (d: Date, h: number, m: number) =>
+    d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) +
+    ` ${h > 12 ? h - 12 : h}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
+  const addDays = (d: Date, n: number) => { const r = new Date(d); r.setDate(r.getDate() + n); return r; };
+  const step = statusToStep(ret.status);
+  const entries = [
+    { text: "Return submitted by customer", time: fmt(base, 10, 34), done: step >= 1 },
+    { text: "Return received at warehouse", time: fmt(addDays(base, 0), 14, 12), done: step >= 2 },
+    { text: "Inspection completed", time: fmt(addDays(base, 1), 9, 45), done: step >= 3 },
+    { text: "Replacement approved", time: fmt(addDays(base, 1), 10, 15), done: step >= 3 },
+    { text: "Replacement shipped", time: step >= 4 ? fmt(addDays(base, 2), 11, 30) : "Pending", done: step >= 4 },
+  ];
+  return entries;
+}
+
+const extraTimelineEntries = [
+  { text: "Customer notified of resolution", time: "Auto-generated", done: true },
+  { text: "Return label created via carrier", time: "Auto-generated", done: true },
+  { text: "Refund processed by finance", time: "Auto-generated", done: true },
 ];
 
 interface NoteEntry {
@@ -65,6 +113,41 @@ export default function ReturnDetailView({ ret }: { ret: ReturnRecord }) {
 
   const refund = ret.refundAmount ?? 0;
   const email = `${ret.customer.toLowerCase().replace(/[^a-z]/g, "")}@example.com`;
+
+  // Derive deterministic values from the return ID
+  const h = useMemo(() => hashStr(ret.id), [ret.id]);
+  const shippingCost = parseFloat(((h % 800) / 100 + 3).toFixed(2)); // $3.00–$10.99
+  const recoveryValue = parseFloat(((h % 500) / 100).toFixed(2));   // $0.00–$4.99
+  const restockingFee = parseFloat((((h >> 4) % 300) / 100).toFixed(2)); // $0.00–$2.99
+
+  const progress = useMemo(() => buildProgress(ret), [ret]);
+  const timelineEntries = useMemo(() => buildTimeline(ret), [ret]);
+
+  const [showAllPhotos, setShowAllPhotos] = useState(false);
+  const [showFullTimeline, setShowFullTimeline] = useState(false);
+
+  const allPhotos = useMemo(() => [0, 1, 2, 3, 4], []);
+  const visiblePhotos = showAllPhotos ? allPhotos : allPhotos.slice(0, 3);
+
+  // Deterministic customer description from return ID
+  const customerDescription = useMemo(() => {
+    const reasons = ret.reason.toLowerCase();
+    if (reasons.includes("damage")) return "Item arrived with visible damage to the exterior. The packaging was crushed and the product inside was dented.";
+    if (reasons.includes("defect")) return "Found a manufacturing defect after unboxing. The seal on the cap does not close properly and leaks under pressure.";
+    if (reasons.includes("wrong")) return "Received the wrong item. The product does not match the description or SKU on the order confirmation.";
+    if (reasons.includes("quality")) return "Product quality is significantly below expectations. Material feels cheap and the finish is uneven.";
+    return `The product experienced issues consistent with "${ret.reason}". After initial use, problems became apparent and a return was requested.`;
+  }, [ret.reason]);
+
+  const additionalComment = useMemo(() => {
+    const idx = h % 3;
+    const comments = [
+      "I expected better quality for the price.",
+      "This happened within the first week of use.",
+      "I would like a replacement if possible.",
+    ];
+    return comments[idx];
+  }, [h]);
 
   const [notes, setNotes] = useState<NoteEntry[]>([
     {
@@ -220,11 +303,11 @@ export default function ReturnDetailView({ ret }: { ret: ReturnRecord }) {
             <Field label="Selected Reason" value={ret.reason} />
             <div>
               <p className="text-[#9AA8B8] mb-1">Customer Description</p>
-              <p className="text-[#4A5A73] leading-relaxed">Leakage from the cap when filled. Water leaks out of the cap when I tilt it in my bag.</p>
+              <p className="text-[#4A5A73] leading-relaxed">{customerDescription}</p>
             </div>
             <div>
               <p className="text-[#9AA8B8] mb-1">Additional Comments</p>
-              <p className="text-[#4A5A73]">This bottle leaks a little when I fill it.</p>
+              <p className="text-[#4A5A73]">{additionalComment}</p>
             </div>
           </div>
         </div>
@@ -232,13 +315,13 @@ export default function ReturnDetailView({ ret }: { ret: ReturnRecord }) {
         {/* Submitted Photos */}
         <div className="bg-white rounded-xl border border-[#E6EDF5] shadow-[0_1px_3px_rgba(0,0,0,0.1)] overflow-hidden">
           <div className="flex items-center justify-between px-5 py-3 bg-[#F7FAFC] border-b border-[#E6EDF5]">
-            <h3 className="text-[15px] font-semibold text-[#061A3D]">Submitted Photos <span className="text-[11px] font-normal text-[#9AA8B8]">(3)</span></h3>
-            <button onClick={() => toast("Showing all 3 submitted photos")} className="text-[12px] font-medium text-[#0057D8] hover:underline">View all</button>
+            <h3 className="text-[15px] font-semibold text-[#061A3D]">Submitted Photos <span className="text-[11px] font-normal text-[#9AA8B8]">({visiblePhotos.length})</span></h3>
+            <button onClick={() => setShowAllPhotos((v) => !v)} className="text-[12px] font-medium text-[#0057D8] hover:underline">{showAllPhotos ? "Show less" : "View all"}</button>
           </div>
           <div className="p-5">
             <div className="grid grid-cols-3 gap-2">
-              {SUBMITTED_PHOTOS.map((n) => (
-                <BottleThumb key={n} className="aspect-square rounded-lg" />
+              {visiblePhotos.map((n) => (
+                <BottleThumb key={n} className="aspect-square rounded-lg" gradient={PHOTO_GRADIENTS[n % PHOTO_GRADIENTS.length]} />
               ))}
             </div>
           </div>
@@ -331,15 +414,22 @@ export default function ReturnDetailView({ ret }: { ret: ReturnRecord }) {
           <div className="p-5">
             <div className="relative pl-5">
               <div className="absolute left-[6px] top-1 bottom-3 w-px bg-[#E6EDF5]" />
-              {initialTimeline.map((t, i) => (
+              {timelineEntries.map((t, i) => (
                 <div key={i} className="relative mb-4 last:mb-0">
                   <div className={`absolute -left-5 top-0.5 w-3 h-3 rounded-full border-2 ${t.done ? "bg-[#00B894] border-[#00B894]" : "bg-white border-[#9AA8B8]"}`} />
                   <p className="text-[12px] font-semibold text-[#061A3D]">{t.text}</p>
                   <p className="text-[10px] text-[#9AA8B8]">{t.time}</p>
                 </div>
               ))}
+              {showFullTimeline && extraTimelineEntries.map((t, i) => (
+                <div key={`extra-${i}`} className="relative mb-4 last:mb-0">
+                  <div className="absolute -left-5 top-0.5 w-3 h-3 rounded-full border-2 bg-[#00B894] border-[#00B894]" />
+                  <p className="text-[12px] font-semibold text-[#061A3D]">{t.text}</p>
+                  <p className="text-[10px] text-[#9AA8B8]">{t.time}</p>
+                </div>
+              ))}
             </div>
-            <button onClick={() => toast("Showing full timeline")} className="inline-flex items-center gap-1 text-[12px] font-medium text-[#0057D8] mt-2">View full timeline <ArrowRight className="w-3 h-3" /></button>
+            <button onClick={() => setShowFullTimeline((v) => !v)} className="inline-flex items-center gap-1 text-[12px] font-medium text-[#0057D8] mt-2">{showFullTimeline ? "Show less" : "View full timeline"} <ArrowRight className={`w-3 h-3 transition-transform ${showFullTimeline ? "rotate-90" : ""}`} /></button>
           </div>
         </div>
 
@@ -352,11 +442,11 @@ export default function ReturnDetailView({ ret }: { ret: ReturnRecord }) {
           <div className="p-5">
             <div className="space-y-2.5 text-[12px]">
               <div><p className="text-[#9AA8B8]">Refund Amount</p><p className="font-bold text-[#061A3D]">{formatCurrency(refund)}</p></div>
-              <div><p className="text-[#9AA8B8]">Return Shipping Cost</p><p className="font-bold text-[#EF4444]">$4.80</p></div>
-              <div><p className="text-[#9AA8B8]">Net Impact</p><p className="font-bold text-[#EF4444]">{formatCurrency(refund + 4.8)}</p></div>
-              <div><p className="text-[#9AA8B8]">Recovery Value</p><p className="font-bold text-[#061A3D]">$0.00</p></div>
-              <div><p className="text-[#9AA8B8]">Restocking Fee</p><p className="font-bold text-[#061A3D]">$0.00</p></div>
-              <div className="pt-2 border-t border-[#E6EDF5]"><p className="text-[#9AA8B8]">Total Impact</p><p className="font-bold text-[#EF4444]">{formatCurrency(refund + 4.8)}</p></div>
+              <div><p className="text-[#9AA8B8]">Return Shipping Cost</p><p className="font-bold text-[#EF4444]">{formatCurrency(shippingCost)}</p></div>
+              <div><p className="text-[#9AA8B8]">Net Impact</p><p className="font-bold text-[#EF4444]">{formatCurrency(refund + shippingCost)}</p></div>
+              <div><p className="text-[#9AA8B8]">Recovery Value</p><p className="font-bold text-[#061A3D]">{formatCurrency(recoveryValue)}</p></div>
+              <div><p className="text-[#9AA8B8]">Restocking Fee</p><p className="font-bold text-[#061A3D]">{formatCurrency(restockingFee)}</p></div>
+              <div className="pt-2 border-t border-[#E6EDF5]"><p className="text-[#9AA8B8]">Total Impact</p><p className="font-bold text-[#EF4444]">{formatCurrency(refund + shippingCost - recoveryValue - restockingFee)}</p></div>
             </div>
           </div>
         </div>

@@ -61,6 +61,30 @@ function scrollToId(id: string) {
   if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
+/** Triggers a real browser download of a small text file. */
+function downloadTextFile(filename: string, content: string) {
+  const blob = new Blob([content], { type: "text/plain;charset=utf-8;" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(link.href);
+}
+
+function parseNotes(raw: string): NoteEntry[] {
+  return raw.split("\n").map((l) => l.trim()).filter(Boolean).map((line) => {
+    const idx = line.indexOf(":");
+    if (idx > 0) return { label: line.slice(0, idx).trim(), text: line.slice(idx + 1).trim(), time: "" };
+    return { label: "Note", text: line, time: "" };
+  });
+}
+
+function serializeNotes(notes: NoteEntry[]): string {
+  return notes.map((n) => `${n.label}: ${n.text}`).join("\n");
+}
+
 export default function OrderDetailView({ order }: { order: Order }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -88,12 +112,32 @@ export default function OrderDetailView({ order }: { order: Order }) {
     setAddrDraft((which === "shipping" ? shipping : billing).lines.join("\n"));
     setAddrEdit(which);
   }
-  function saveAddr() {
+  async function saveAddr() {
     const lines = addrDraft.split("\n").map((l) => l.trim()).filter(Boolean);
-    if (addrEdit === "shipping") setShipping({ lines });
-    else if (addrEdit === "billing") setBilling({ lines });
-    toast(`${addrEdit === "shipping" ? "Shipping" : "Billing"} address updated`);
-    setAddrEdit(null);
+    if (lines.length === 0) { toast("Address cannot be empty", "error"); return; }
+    const which = addrEdit;
+    if (which === "shipping") {
+      // The order model stores a single destination string; derive it from the
+      // city/country lines and persist it alongside the local display lines.
+      const destination = lines
+        .filter((l) => !/^(phone|email)/i.test(l))
+        .slice(-2)
+        .join(", ");
+      setBusy(true);
+      try {
+        await api.put(`/api/orders/${order.id}`, { destination });
+        setShipping({ lines });
+        toast("Shipping address updated");
+        setAddrEdit(null);
+        router.refresh();
+      } catch (e) {
+        toast(e instanceof Error ? e.message : "Could not update shipping address", "error");
+      } finally { setBusy(false); }
+    } else {
+      setBilling({ lines });
+      toast("Billing address updated");
+      setAddrEdit(null);
+    }
   }
 
   // Linked shipment
@@ -117,37 +161,54 @@ export default function OrderDetailView({ order }: { order: Order }) {
     } finally { setBusy(false); }
   }
 
-  // Notes
-  const [notes, setNotes] = useState<NoteEntry[]>([
-    { label: "Customer Note", text: "Please gift wrap all items. This is a corporate order.", time: "May 18, 2025 10:24 AM", customer: true },
-    { label: "Internal Note", text: "Expedite shipping if possible. Customer has an event on May 27.", time: "" },
-  ]);
+  // Notes — backed by the order's `notes` field, persisted via PUT.
+  const [notes, setNotes] = useState<NoteEntry[]>(() => (
+    order.notes
+      ? parseNotes(order.notes)
+      : [
+        { label: "Customer Note", text: "Please gift wrap all items. This is a corporate order.", time: "May 18, 2025 10:24 AM", customer: true },
+        { label: "Internal Note", text: "Expedite shipping if possible. Customer has an event on May 27.", time: "" },
+      ]
+  ));
   const [notesEdit, setNotesEdit] = useState(false);
   const [notesDraft, setNotesDraft] = useState("");
   const [addNoteOpen, setAddNoteOpen] = useState(false);
   const [newNote, setNewNote] = useState("");
 
+  async function persistNotes(next: NoteEntry[], successMsg: string): Promise<boolean> {
+    setBusy(true);
+    try {
+      await api.put(`/api/orders/${order.id}`, { notes: serializeNotes(next) });
+      setNotes(next);
+      toast(successMsg);
+      router.refresh();
+      return true;
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not save notes", "error");
+      return false;
+    } finally { setBusy(false); }
+  }
+
   function openNotesEdit() {
     setNotesDraft(notes.map((n) => `${n.label}: ${n.text}`).join("\n"));
     setNotesEdit(true);
   }
-  function saveNotesEdit() {
+  async function saveNotesEdit() {
     const parsed = notesDraft.split("\n").map((l) => l.trim()).filter(Boolean).map((line, i) => {
       const idx = line.indexOf(":");
       if (idx > 0) return { label: line.slice(0, idx).trim(), text: line.slice(idx + 1).trim(), time: notes[i]?.time ?? "", customer: notes[i]?.customer };
       return { label: notes[i]?.label ?? "Note", text: line, time: notes[i]?.time ?? "", customer: notes[i]?.customer };
     });
-    setNotes(parsed);
-    toast("Notes updated");
-    setNotesEdit(false);
+    if (await persistNotes(parsed, "Notes updated")) setNotesEdit(false);
   }
-  function addNote() {
+  async function addNote() {
     const text = newNote.trim();
     if (!text) { toast("Note cannot be empty", "error"); return; }
-    setNotes((prev) => [...prev, { label: "Internal Note", text, time: "Just now" }]);
-    setNewNote("");
-    setAddNoteOpen(false);
-    toast("Note added");
+    const next = [...notes, { label: "Internal Note", text, time: "Just now" }];
+    if (await persistNotes(next, "Note added")) {
+      setNewNote("");
+      setAddNoteOpen(false);
+    }
   }
 
   // Documents
@@ -158,15 +219,40 @@ export default function OrderDetailView({ order }: { order: Order }) {
   ]);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploadName, setUploadName] = useState("");
+  const [uploadSize, setUploadSize] = useState<number | null>(null);
+
+  function onFilePicked(file: File | undefined) {
+    if (!file) return;
+    setUploadName(file.name);
+    setUploadSize(file.size);
+  }
 
   function uploadDoc() {
     let name = uploadName.trim();
-    if (!name) { toast("Enter a document name", "error"); return; }
+    if (!name) { toast("Choose a file or enter a document name", "error"); return; }
     if (!/\.[a-z0-9]+$/i.test(name)) name += ".pdf";
-    setDocs((prev) => [...prev, { name, meta: `Uploaded ${formatDate(new Date().toISOString().slice(0, 10))} · ${(80 + Math.floor(Math.random() * 200))} KB` }]);
+    const sizeKb = uploadSize != null ? Math.max(1, Math.round(uploadSize / 1024)) : 80 + Math.floor(Math.random() * 200);
+    setDocs((prev) => [...prev, { name, meta: `Uploaded ${formatDate(new Date().toISOString().slice(0, 10))} · ${sizeKb} KB` }]);
     setUploadName("");
+    setUploadSize(null);
     setUploadOpen(false);
     toast(`${name} uploaded`);
+  }
+
+  function downloadDoc(d: DocEntry) {
+    const base = d.name.replace(/\.[a-z0-9]+$/i, "");
+    downloadTextFile(`${base}.txt`, [
+      `FulfillMesh — Document Export`,
+      `Document: ${d.name}`,
+      `${d.meta}`,
+      ``,
+      `Order ID: ${order.id}`,
+      `Customer: ${order.customer}`,
+      `Order Date: ${formatDate(order.date)}`,
+      `Status: ${order.status}`,
+      `Total: ${formatCurrency(order.total)} USD`,
+    ].join("\n"));
+    toast(`${d.name} downloaded`);
   }
 
   // Activity history
@@ -419,7 +505,7 @@ export default function OrderDetailView({ order }: { order: Order }) {
                     <p className="text-[12px] font-medium text-[#1E293B] truncate">{d.name}</p>
                     <p className="text-[10px] text-[#94A3B8] truncate">{d.meta}</p>
                   </div>
-                  <button onClick={() => toast(`Downloading ${d.name}…`)} aria-label={`Download ${d.name}`} className="text-[#94A3B8] hover:text-[#64748B] shrink-0"><Download className="w-4 h-4" /></button>
+                  <button onClick={() => downloadDoc(d)} aria-label={`Download ${d.name}`} className="text-[#94A3B8] hover:text-[#64748B] shrink-0"><Download className="w-4 h-4" /></button>
                 </div>
               ))}
             </div>
@@ -535,7 +621,7 @@ export default function OrderDetailView({ order }: { order: Order }) {
         description="One line per row."
         footer={<>
           <SecondaryButton onClick={() => setAddrEdit(null)}>Cancel</SecondaryButton>
-          <PrimaryButton onClick={saveAddr}>Save address</PrimaryButton>
+          <PrimaryButton onClick={saveAddr} disabled={busy}>{busy ? "Saving…" : "Save address"}</PrimaryButton>
         </>}
       >
         <Field label="Address">
@@ -550,7 +636,7 @@ export default function OrderDetailView({ order }: { order: Order }) {
         description="Format: Label: text (one per line)."
         footer={<>
           <SecondaryButton onClick={() => setNotesEdit(false)}>Cancel</SecondaryButton>
-          <PrimaryButton onClick={saveNotesEdit}>Save notes</PrimaryButton>
+          <PrimaryButton onClick={saveNotesEdit} disabled={busy}>{busy ? "Saving…" : "Save notes"}</PrimaryButton>
         </>}
       >
         <Field label="Notes">
@@ -564,7 +650,7 @@ export default function OrderDetailView({ order }: { order: Order }) {
         title="Add Note"
         footer={<>
           <SecondaryButton onClick={() => setAddNoteOpen(false)}>Cancel</SecondaryButton>
-          <PrimaryButton onClick={addNote}>Add note</PrimaryButton>
+          <PrimaryButton onClick={addNote} disabled={busy}>{busy ? "Saving…" : "Add note"}</PrimaryButton>
         </>}
       >
         <Field label="Internal note">
@@ -582,9 +668,18 @@ export default function OrderDetailView({ order }: { order: Order }) {
           <PrimaryButton onClick={uploadDoc}>Upload</PrimaryButton>
         </>}
       >
-        <Field label="Document name">
-          <TextInput value={uploadName} onChange={(e) => setUploadName(e.target.value)} placeholder="e.g. Commercial Invoice.pdf" />
-        </Field>
+        <div className="space-y-4">
+          <Field label="Choose file">
+            <input
+              type="file"
+              onChange={(e) => onFilePicked(e.target.files?.[0])}
+              className="w-full text-[13px] text-[#374151] file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border file:border-[#E5E7EB] file:bg-white file:text-[13px] file:font-medium file:text-[#374151] hover:file:bg-[#F3F4F6] file:cursor-pointer"
+            />
+          </Field>
+          <Field label="Document name" hint={uploadSize != null ? `File size: ${Math.max(1, Math.round(uploadSize / 1024))} KB` : undefined}>
+            <TextInput value={uploadName} onChange={(e) => setUploadName(e.target.value)} placeholder="e.g. Commercial Invoice.pdf" />
+          </Field>
+        </div>
       </Modal>
 
       <Modal

@@ -1,24 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ChevronRight, ShieldCheck, Star, FileText, ClipboardCheck, Award,
-  MapPin, CheckCircle, TrendingDown,
+  MapPin, CheckCircle, TrendingDown, MoreHorizontal, Copy, Printer, Pencil, Download, Plus, X,
 } from "lucide-react";
 import type { Supplier } from "@/types";
 import { Modal } from "@/components/dashboard/Modal";
-import { Field, TextInput, NumberInput, TextArea, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
+import { Field, TextInput, NumberInput, TextArea, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
-import { exportToCsv } from "@/lib/client";
+import { api, exportToCsv } from "@/lib/client";
 import { formatNumber } from "@/lib/format";
 import SupplierDetailActions from "./SupplierDetailActions";
-
-const keyStrengths = [
-  "High-volume production capacity",
-  "ISO 9001 certified",
-  "24/7 customer support",
-];
 
 const productCategories = [
   { name: "Electronics", pct: "45%" },
@@ -44,22 +39,7 @@ const performanceMetrics = [
   { label: "Response Time", value: "2 hours", color: "text-[#10B981]" },
 ];
 
-const qualityHistory = [
-  { month: "Jan", value: 1.2 },
-  { month: "Feb", value: 1.0 },
-  { month: "Mar", value: 1.1 },
-  { month: "Apr", value: 0.9 },
-  { month: "May", value: 0.8 },
-  { month: "Jun", value: 0.7 },
-  { month: "Jul", value: 0.8 },
-  { month: "Aug", value: 0.6 },
-  { month: "Sep", value: 0.7 },
-  { month: "Oct", value: 0.5 },
-  { month: "Nov", value: 0.6 },
-  { month: "Dec", value: 0.5 },
-];
-
-const sampleHistory = [
+const sampleHistorySeed = [
   { date: "2024-05-10", id: "SMP-001", product: "Circuit Board", status: "Approved", result: "Pass" },
   { date: "2024-05-05", id: "SMP-002", product: "Plastic Housing", status: "Pending", result: "—" },
   { date: "2024-04-28", id: "SMP-003", product: "Metal Component", status: "Rejected", result: "Fail" },
@@ -77,12 +57,6 @@ const recentOrders = [
   { id: "ORD-003", date: "2024-05-10", product: "Charger", quantity: "2,000", status: "Delivered", total: "$12,000" },
 ];
 
-const recentActivities = [
-  { date: "2024-05-15", activity: "Quote Request", user: "John Doe", status: "Sent" },
-  { date: "2024-05-14", activity: "Order Shipment", user: "Jane Smith", status: "Completed" },
-  { date: "2024-05-13", activity: "Sample Approval", user: "Mike Johnson", status: "Approved" },
-];
-
 const statusStyle: Record<string, string> = {
   Approved: "bg-[#10B981]/10 text-[#10B981]",
   Pending: "bg-[#F59E0B]/10 text-[#F59E0B]",
@@ -93,6 +67,8 @@ const statusStyle: Record<string, string> = {
   Delivered: "bg-[#10B981]/10 text-[#10B981]",
   Sent: "bg-[#3B82F6]/10 text-[#3B82F6]",
   Completed: "bg-[#10B981]/10 text-[#10B981]",
+  Scheduled: "bg-[#3B82F6]/10 text-[#3B82F6]",
+  Requested: "bg-[#F59E0B]/10 text-[#F59E0B]",
 };
 
 function Radar() {
@@ -128,13 +104,138 @@ function scrollToSection(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
+/** Generate a pseudo-random number 0-1 from a string seed. */
+function hashSeed(str: string): number {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  }
+  return (Math.abs(h) % 10000) / 10000;
+}
+
+function generateQualityHistory(supplierId: string) {
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  let seed = hashSeed(supplierId);
+  return months.map((month, i) => {
+    // Deterministic but varied: combine supplier hash with month index
+    const raw = Math.sin(seed * 1000 + i * 137.5) * 10000;
+    const val = 0.3 + (raw - Math.floor(raw)) * 1.1; // range 0.3 – 1.4
+    seed += 0.1; // shift seed slightly each month for variation
+    return { month, value: Math.round(val * 10) / 10 };
+  });
+}
+
 export default function SupplierDetailView({ supplier }: { supplier: Supplier }) {
+  const router = useRouter();
   const { toast } = useToast();
+  const [busy, setBusy] = useState(false);
   const [quoteOpen, setQuoteOpen] = useState(false);
   const [auditOpen, setAuditOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
 
-  const [quoteDraft, setQuoteDraft] = useState({ product: "", quantity: "1", notes: "" });
-  const [auditDraft, setAuditDraft] = useState({ date: "", type: "On-Site Quality Audit", notes: "" });
+  // Editable key strengths
+  const [strengths, setStrengths] = useState<string[]>([
+    "High-volume production capacity",
+    "ISO 9001 certified",
+    "24/7 customer support",
+  ]);
+  const [strengthsOpen, setStrengthsOpen] = useState(false);
+  const [newStrength, setNewStrength] = useState("");
+
+  // Request Sample modal
+  const [sampleOpen, setSampleOpen] = useState(false);
+  const [sampleDraft, setSampleDraft] = useState({ type: "Product", quantity: "1", notes: "" });
+
+  // Live recent activities — starts with seed data, new entries pushed to front
+  const [activities, setActivities] = useState([
+    { date: "2024-05-15", activity: "Quote Request", user: "John Doe", status: "Sent" },
+    { date: "2024-05-14", activity: "Order Shipment", user: "Jane Smith", status: "Completed" },
+    { date: "2024-05-13", activity: "Sample Approval", user: "Mike Johnson", status: "Approved" },
+  ]);
+
+  // Sample history — live list
+  const [samples, setSamples] = useState(sampleHistorySeed);
+  let sampleCounter = samples.length;
+
+  // Quality history — seeded from supplier ID
+  const qualityHistory = useMemo(() => generateQualityHistory(supplier.id), [supplier.id]);
+
+  // Request Quote form
+  const [quoteDraft, setQuoteDraft] = useState({
+    product: "",
+    quantity: "1",
+    targetPrice: "",
+    deliveryDate: "",
+    notes: "",
+  });
+
+  // Schedule Audit form
+  const [auditDraft, setAuditDraft] = useState({
+    type: "Quality",
+    date: "",
+    auditor: "",
+    focusAreas: "",
+  });
+
+  // Contact info edit
+  const [contactOpen, setContactOpen] = useState(false);
+  const [contactDraft, setContactDraft] = useState({
+    contact: supplier.contact ?? "",
+    email: supplier.email ?? "",
+    country: supplier.country,
+  });
+
+  async function saveContact() {
+    if (!contactDraft.country.trim()) { toast("Country is required", "error"); return; }
+    setBusy(true);
+    try {
+      await api.put(`/api/suppliers/${supplier.id}`, {
+        contact: contactDraft.contact.trim() || undefined,
+        email: contactDraft.email.trim() || undefined,
+        country: contactDraft.country.trim(),
+      });
+      toast(`Contact info updated for ${supplier.name}`);
+      setContactOpen(false);
+      router.refresh();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not update contact info", "error");
+    } finally { setBusy(false); }
+  }
+
+  function copySupplierId() {
+    navigator.clipboard?.writeText(supplier.id).then(
+      () => toast("Supplier ID copied to clipboard"),
+      () => toast("Could not copy supplier ID", "error"),
+    );
+  }
+
+  function exportProfile() {
+    exportToCsv(`supplier-${supplier.id}`, [supplier], [
+      { key: "id", header: "Supplier ID" },
+      { key: "name", header: "Name" },
+      { key: "contact", header: "Contact" },
+      { key: "email", header: "Email" },
+      { key: "country", header: "Country" },
+      { key: "category", header: "Category" },
+      { key: "rating", header: "Rating" },
+      { key: "status", header: "Status" },
+      { key: "leadTimeDays", header: "Lead Time (days)" },
+      { key: "productsSupplied", header: "Products Supplied" },
+    ]);
+    toast("Supplier profile exported");
+  }
+
+  function exportQuoteRow(q: (typeof quoteHistory)[number]) {
+    exportToCsv(`quote-${q.id}`, [q], [
+      { key: "id", header: "Quote ID" },
+      { key: "date", header: "Date" },
+      { key: "product", header: "Product" },
+      { key: "quantity", header: "Quantity" },
+      { key: "price", header: "Price" },
+      { key: "status", header: "Status" },
+    ]);
+    toast(`Quote ${q.id} exported`);
+  }
 
   const monogram = supplier.name.replace(/[^A-Za-z ]/g, "").split(/\s+/).map((w) => w[0]).join("").slice(0, 4).toUpperCase() || "SUP";
   const metricCards = [
@@ -145,17 +246,62 @@ export default function SupplierDetailView({ supplier }: { supplier: Supplier })
   ];
 
   function submitQuote() {
-    if (!quoteDraft.product.trim()) { toast("Product is required", "error"); return; }
-    toast(`Quote request sent to ${supplier.name}`);
+    if (!quoteDraft.product.trim()) { toast("Product name is required", "error"); return; }
+    if (!quoteDraft.quantity || Number(quoteDraft.quantity) < 1) { toast("Quantity must be at least 1", "error"); return; }
+    const ref = `QTE-${(1000 + Math.floor(Math.random() * 9000))}`;
+    toast(`Quote request ${ref} sent to ${supplier.name}`);
     setQuoteOpen(false);
-    setQuoteDraft({ product: "", quantity: "1", notes: "" });
+    setQuoteDraft({ product: "", quantity: "1", targetPrice: "", deliveryDate: "", notes: "" });
+    // Track in activities
+    setActivities((prev) => [
+      { date: new Date().toISOString().slice(0, 10), activity: `Quote Request (${ref})`, user: "You", status: "Sent" },
+      ...prev,
+    ]);
   }
 
   function submitAudit() {
     if (!auditDraft.date) { toast("Please choose an audit date", "error"); return; }
-    toast(`Audit scheduled for ${supplier.name} on ${auditDraft.date}`);
+    if (!auditDraft.auditor.trim()) { toast("Auditor name is required", "error"); return; }
+    const ref = `AUD-${(1000 + Math.floor(Math.random() * 9000))}`;
+    toast(`Audit ${ref} scheduled for ${supplier.name} on ${auditDraft.date}`);
     setAuditOpen(false);
-    setAuditDraft({ date: "", type: "On-Site Quality Audit", notes: "" });
+    setAuditDraft({ type: "Quality", date: "", auditor: "", focusAreas: "" });
+    // Track in activities
+    setActivities((prev) => [
+      { date: auditDraft.date, activity: `Audit Scheduled (${ref})`, user: auditDraft.auditor, status: "Scheduled" },
+      ...prev,
+    ]);
+  }
+
+  function submitSample() {
+    if (!sampleDraft.quantity || Number(sampleDraft.quantity) < 1) { toast("Quantity must be at least 1", "error"); return; }
+    sampleCounter += 1;
+    const ref = `SMP-${String(sampleCounter).padStart(3, "0")}`;
+    const now = new Date().toISOString().slice(0, 10);
+    setSamples((prev) => [
+      { date: now, id: ref, product: sampleDraft.type, status: "Pending", result: "—" },
+      ...prev,
+    ]);
+    toast(`Sample request ${ref} submitted to ${supplier.name}`);
+    setSampleOpen(false);
+    setSampleDraft({ type: "Product", quantity: "1", notes: "" });
+    // Track in activities
+    setActivities((prev) => [
+      { date: now, activity: `Sample Request (${ref})`, user: "You", status: "Requested" },
+      ...prev,
+    ]);
+  }
+
+  function addStrength() {
+    const trimmed = newStrength.trim();
+    if (!trimmed) return;
+    if (strengths.includes(trimmed)) { toast("Strength already exists", "error"); return; }
+    setStrengths((prev) => [...prev, trimmed]);
+    setNewStrength("");
+  }
+
+  function removeStrength(s: string) {
+    setStrengths((prev) => prev.filter((x) => x !== s));
   }
 
   return (
@@ -184,6 +330,16 @@ export default function SupplierDetailView({ supplier }: { supplier: Supplier })
           <button onClick={() => setAuditOpen(true)} className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-[#3B82F6] rounded-lg text-[14px] font-medium text-[#3B82F6]"><ClipboardCheck className="w-4 h-4" />Schedule Audit</button>
           <button onClick={() => scrollToSection("certifications")} className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[14px] font-medium text-[#64748B]"><Award className="w-4 h-4" />View Certificates</button>
           <SupplierDetailActions supplier={supplier} />
+          <div className="relative">
+            <button onClick={() => setMoreOpen((v) => !v)} aria-label="More options" className="w-9 h-9 flex items-center justify-center bg-white border border-[#E2E8F0] rounded-lg text-[#64748B] hover:bg-[#F8FAFC] transition-colors"><MoreHorizontal className="w-4 h-4" /></button>
+            {moreOpen && (
+              <div className="absolute right-0 mt-1 z-20 w-48 bg-white border border-[#E2E8F0] rounded-lg shadow-[0_4px_12px_rgba(0,0,0,0.12)] py-1">
+                <button onClick={() => { copySupplierId(); setMoreOpen(false); }} className="flex items-center gap-2 w-full text-left px-3 py-1.5 text-[12px] text-[#64748B] hover:bg-[#F8FAFC]"><Copy className="w-3.5 h-3.5" /> Copy supplier ID</button>
+                <button onClick={() => { exportProfile(); setMoreOpen(false); }} className="flex items-center gap-2 w-full text-left px-3 py-1.5 text-[12px] text-[#64748B] hover:bg-[#F8FAFC]"><FileText className="w-3.5 h-3.5" /> Export profile CSV</button>
+                <button onClick={() => { setMoreOpen(false); window.print(); }} className="flex items-center gap-2 w-full text-left px-3 py-1.5 text-[12px] text-[#64748B] hover:bg-[#F8FAFC]"><Printer className="w-3.5 h-3.5" /> Print</button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -210,20 +366,27 @@ export default function SupplierDetailView({ supplier }: { supplier: Supplier })
 
           {/* Supplier Information */}
           <div className="mb-4">
-            <h4 className="text-[13px] font-semibold text-[#1E293B] mb-2">Supplier Information</h4>
+            <div className="flex items-center gap-2 mb-2">
+              <h4 className="text-[13px] font-semibold text-[#1E293B]">Supplier Information</h4>
+              <button onClick={() => { setContactDraft({ contact: supplier.contact ?? "", email: supplier.email ?? "", country: supplier.country }); setContactOpen(true); }} aria-label="Edit contact info" className="text-[#94A3B8] hover:text-[#3B82F6] transition-colors"><Pencil className="w-3.5 h-3.5" /></button>
+            </div>
             <p className="text-[13px] font-semibold text-[#1E293B]">{supplier.name}</p>
             <div className="mt-1.5 space-y-1">
               <p className="text-[12px] text-[#64748B]">Category: {supplier.category ?? "General"}</p>
               <p className="text-[12px] text-[#64748B]">Location: {supplier.country}</p>
-              <p className="text-[12px] text-[#64748B]">Contact: {supplier.contact ?? supplier.email ?? "—"}</p>
+              <p className="text-[12px] text-[#64748B]">Contact: {supplier.contact ?? "—"}</p>
+              <p className="text-[12px] text-[#64748B]">Email: {supplier.email ?? "—"}</p>
             </div>
           </div>
 
-          {/* Key Strengths */}
+          {/* Key Strengths — editable */}
           <div className="mb-4">
-            <h4 className="text-[13px] font-semibold text-[#1E293B] mb-2">Key Strengths</h4>
+            <div className="flex items-center gap-2 mb-2">
+              <h4 className="text-[13px] font-semibold text-[#1E293B]">Key Strengths</h4>
+              <button onClick={() => setStrengthsOpen(true)} aria-label="Edit strengths" className="text-[#94A3B8] hover:text-[#3B82F6] transition-colors"><Pencil className="w-3.5 h-3.5" /></button>
+            </div>
             <ul className="space-y-1.5">
-              {keyStrengths.map((s) => (
+              {strengths.map((s) => (
                 <li key={s} className="flex items-center gap-2 text-[12px] text-[#64748B]">
                   <CheckCircle className="w-3.5 h-3.5 text-[#10B981] shrink-0" />
                   {s}
@@ -333,18 +496,27 @@ export default function SupplierDetailView({ supplier }: { supplier: Supplier })
         <div className="bg-white rounded-xl border border-[#E2E8F0] p-6 shadow-[0_1px_3px_rgba(0,0,0,0.1)]">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-[15px] font-semibold text-[#1E293B]">Sample History</h3>
-            <button
-              onClick={() => exportToCsv(`${supplier.id}-sample-history`, sampleHistory, [
-                { key: "date", header: "Date" },
-                { key: "id", header: "Sample ID" },
-                { key: "product", header: "Product" },
-                { key: "status", header: "Status" },
-                { key: "result", header: "Result" },
-              ])}
-              className="text-[12px] text-[#3B82F6] font-medium hover:underline"
-            >
-              View all
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setSampleOpen(true)}
+                className="inline-flex items-center gap-1 text-[12px] text-white bg-[#3B82F6] font-medium hover:bg-[#2563EB] px-3 py-1 rounded-md transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Request new sample
+              </button>
+              <button
+                onClick={() => exportToCsv(`${supplier.id}-sample-history`, samples, [
+                  { key: "date", header: "Date" },
+                  { key: "id", header: "Sample ID" },
+                  { key: "product", header: "Product" },
+                  { key: "status", header: "Status" },
+                  { key: "result", header: "Result" },
+                ])}
+                className="text-[12px] text-[#3B82F6] font-medium hover:underline"
+              >
+                View all
+              </button>
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -356,7 +528,7 @@ export default function SupplierDetailView({ supplier }: { supplier: Supplier })
                 </tr>
               </thead>
               <tbody>
-                {sampleHistory.map((s) => (
+                {samples.map((s) => (
                   <tr key={s.id} className="border-b border-[#F1F5F9] last:border-b-0 hover:bg-[#F8FAFC]/60">
                     <td className="px-3 py-2.5 text-[12px] text-[#64748B] whitespace-nowrap">{s.date}</td>
                     <td className="px-3 py-2.5 text-[12px] font-mono text-[#3B82F6] font-medium">{s.id}</td>
@@ -383,8 +555,8 @@ export default function SupplierDetailView({ supplier }: { supplier: Supplier })
             <table className="w-full">
               <thead>
                 <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
-                  {["Date", "Quote ID", "Product", "Quantity", "Price", "Status"].map((h) => (
-                    <th key={h} className="text-left text-[10px] font-semibold text-[#64748B] uppercase tracking-wider px-4 py-2.5 whitespace-nowrap">{h}</th>
+                  {["Date", "Quote ID", "Product", "Quantity", "Price", "Status", ""].map((h, i) => (
+                    <th key={`${h}-${i}`} className="text-left text-[10px] font-semibold text-[#64748B] uppercase tracking-wider px-4 py-2.5 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -399,6 +571,9 @@ export default function SupplierDetailView({ supplier }: { supplier: Supplier })
                     <td className="px-4 py-2.5 text-[12px] text-[#64748B]">{q.quantity}</td>
                     <td className="px-4 py-2.5 text-[12px] font-medium text-[#1E293B]">{q.price}</td>
                     <td className="px-4 py-2.5"><span className={`inline-flex px-2 py-0.5 rounded-md text-[11px] font-medium ${statusStyle[q.status]}`}>{q.status}</span></td>
+                    <td className="px-4 py-2.5">
+                      <button onClick={() => exportQuoteRow(q)} aria-label={`Download quote ${q.id}`} className="text-[#94A3B8] hover:text-[#3B82F6] transition-colors"><Download className="w-3.5 h-3.5" /></button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -445,7 +620,7 @@ export default function SupplierDetailView({ supplier }: { supplier: Supplier })
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0]">
           <h3 className="text-[15px] font-semibold text-[#1E293B]">Recent Activities</h3>
           <button
-            onClick={() => exportToCsv(`${supplier.id}-activities`, recentActivities, [
+            onClick={() => exportToCsv(`${supplier.id}-activities`, activities, [
               { key: "date", header: "Date" },
               { key: "activity", header: "Activity" },
               { key: "user", header: "User" },
@@ -466,12 +641,12 @@ export default function SupplierDetailView({ supplier }: { supplier: Supplier })
               </tr>
             </thead>
             <tbody>
-              {recentActivities.map((a, i) => (
+              {activities.map((a, i) => (
                 <tr key={i} className="border-b border-[#F1F5F9] last:border-b-0 hover:bg-[#F8FAFC]/60">
                   <td className="px-6 py-3 text-[12px] text-[#64748B] whitespace-nowrap">{a.date}</td>
                   <td className="px-6 py-3 text-[12px] font-medium text-[#1E293B] whitespace-nowrap">{a.activity}</td>
                   <td className="px-6 py-3 text-[12px] text-[#64748B] whitespace-nowrap">{a.user}</td>
-                  <td className="px-6 py-3"><span className={`inline-flex px-2 py-0.5 rounded-md text-[11px] font-medium ${statusStyle[a.status]}`}>{a.status}</span></td>
+                  <td className="px-6 py-3"><span className={`inline-flex px-2 py-0.5 rounded-md text-[11px] font-medium ${statusStyle[a.status] ?? "bg-[#94A3B8]/10 text-[#94A3B8]"}`}>{a.status}</span></td>
                 </tr>
               ))}
             </tbody>
@@ -479,7 +654,9 @@ export default function SupplierDetailView({ supplier }: { supplier: Supplier })
         </div>
       </div>
 
-      {/* Request Quote modal */}
+      {/* ── Modals ──────────────────────────────────────────── */}
+
+      {/* Request Quote modal — full form */}
       <Modal
         open={quoteOpen}
         onClose={() => setQuoteOpen(false)}
@@ -488,24 +665,32 @@ export default function SupplierDetailView({ supplier }: { supplier: Supplier })
         footer={
           <>
             <SecondaryButton onClick={() => setQuoteOpen(false)}>Cancel</SecondaryButton>
-            <PrimaryButton onClick={submitQuote}>Send request</PrimaryButton>
+            <PrimaryButton onClick={submitQuote}>Send Request</PrimaryButton>
           </>
         }
       >
         <div className="space-y-4">
-          <Field label="Product" required>
+          <Field label="Product Name" required>
             <TextInput value={quoteDraft.product} onChange={(e) => setQuoteDraft({ ...quoteDraft, product: e.target.value })} placeholder="e.g. LED Display" />
           </Field>
-          <Field label="Quantity">
-            <NumberInput value={quoteDraft.quantity} onChange={(e) => setQuoteDraft({ ...quoteDraft, quantity: e.target.value })} min="1" step="1" />
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Quantity" required>
+              <NumberInput value={quoteDraft.quantity} onChange={(e) => setQuoteDraft({ ...quoteDraft, quantity: e.target.value })} min="1" step="1" />
+            </Field>
+            <Field label="Target Price">
+              <TextInput value={quoteDraft.targetPrice} onChange={(e) => setQuoteDraft({ ...quoteDraft, targetPrice: e.target.value })} placeholder="e.g. $12.50 / unit" />
+            </Field>
+          </div>
+          <Field label="Delivery Date">
+            <TextInput type="date" value={quoteDraft.deliveryDate} onChange={(e) => setQuoteDraft({ ...quoteDraft, deliveryDate: e.target.value })} />
           </Field>
-          <Field label="Notes">
-            <TextArea value={quoteDraft.notes} onChange={(e) => setQuoteDraft({ ...quoteDraft, notes: e.target.value })} placeholder="Specifications, target price, …" />
+          <Field label="Notes / Requirements">
+            <TextArea value={quoteDraft.notes} onChange={(e) => setQuoteDraft({ ...quoteDraft, notes: e.target.value })} placeholder="Specifications, packaging requirements, compliance standards…" />
           </Field>
         </div>
       </Modal>
 
-      {/* Schedule Audit modal */}
+      {/* Schedule Audit modal — full form */}
       <Modal
         open={auditOpen}
         onClose={() => setAuditOpen(false)}
@@ -519,14 +704,115 @@ export default function SupplierDetailView({ supplier }: { supplier: Supplier })
         }
       >
         <div className="space-y-4">
-          <Field label="Audit date" required>
+          <Field label="Audit Type">
+            <Select
+              options={["Quality", "Compliance", "Performance", "Full"]}
+              value={auditDraft.type}
+              onChange={(e) => setAuditDraft({ ...auditDraft, type: e.target.value })}
+            />
+          </Field>
+          <Field label="Preferred Date" required>
             <TextInput type="date" value={auditDraft.date} onChange={(e) => setAuditDraft({ ...auditDraft, date: e.target.value })} />
           </Field>
-          <Field label="Audit type">
-            <TextInput value={auditDraft.type} onChange={(e) => setAuditDraft({ ...auditDraft, type: e.target.value })} />
+          <Field label="Auditor Name" required>
+            <TextInput value={auditDraft.auditor} onChange={(e) => setAuditDraft({ ...auditDraft, auditor: e.target.value })} placeholder="e.g. Sarah Chen" />
+          </Field>
+          <Field label="Focus Areas">
+            <TextArea value={auditDraft.focusAreas} onChange={(e) => setAuditDraft({ ...auditDraft, focusAreas: e.target.value })} placeholder="Quality control processes, documentation review, facility inspection…" />
+          </Field>
+        </div>
+      </Modal>
+
+      {/* Edit Key Strengths modal */}
+      <Modal
+        open={strengthsOpen}
+        onClose={() => { setStrengthsOpen(false); setNewStrength(""); }}
+        title="Edit Key Strengths"
+        description="Add or remove strengths for this supplier."
+        size="sm"
+        footer={
+          <>
+            <SecondaryButton onClick={() => { setStrengthsOpen(false); setNewStrength(""); }}>Done</SecondaryButton>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            {strengths.map((s) => (
+              <span key={s} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium bg-[#F0FDF4] text-[#16A34A]">
+                {s}
+                <button onClick={() => removeStrength(s)} aria-label={`Remove ${s}`} className="hover:text-[#EF4444] transition-colors"><X className="w-3 h-3" /></button>
+              </span>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <TextInput
+              value={newStrength}
+              onChange={(e) => setNewStrength(e.target.value)}
+              placeholder="Add a strength…"
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addStrength(); } }}
+              className="flex-1"
+            />
+            <PrimaryButton onClick={addStrength} disabled={!newStrength.trim()}>
+              <Plus className="w-4 h-4" />
+            </PrimaryButton>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Request Sample modal */}
+      <Modal
+        open={sampleOpen}
+        onClose={() => setSampleOpen(false)}
+        title="Request New Sample"
+        description={`Request a sample from ${supplier.name}.`}
+        footer={
+          <>
+            <SecondaryButton onClick={() => setSampleOpen(false)}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={submitSample}>Submit Request</PrimaryButton>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Field label="Sample Type">
+            <Select
+              options={["Product", "Material", "Color Swatch", "Prototype", "Other"]}
+              value={sampleDraft.type}
+              onChange={(e) => setSampleDraft({ ...sampleDraft, type: e.target.value })}
+            />
+          </Field>
+          <Field label="Quantity" required>
+            <NumberInput value={sampleDraft.quantity} onChange={(e) => setSampleDraft({ ...sampleDraft, quantity: e.target.value })} min="1" step="1" />
           </Field>
           <Field label="Notes">
-            <TextArea value={auditDraft.notes} onChange={(e) => setAuditDraft({ ...auditDraft, notes: e.target.value })} placeholder="Scope, focus areas, …" />
+            <TextArea value={sampleDraft.notes} onChange={(e) => setSampleDraft({ ...sampleDraft, notes: e.target.value })} placeholder="Specifications, color codes, dimensions…" />
+          </Field>
+        </div>
+      </Modal>
+
+      {/* Edit contact info modal */}
+      <Modal
+        open={contactOpen}
+        onClose={() => setContactOpen(false)}
+        title="Edit Contact Info"
+        description={`Update contact details for ${supplier.name}.`}
+        size="sm"
+        footer={
+          <>
+            <SecondaryButton onClick={() => setContactOpen(false)}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={saveContact} disabled={busy}>{busy ? "Saving…" : "Save changes"}</PrimaryButton>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Field label="Contact name / phone">
+            <TextInput value={contactDraft.contact} onChange={(e) => setContactDraft({ ...contactDraft, contact: e.target.value })} placeholder="e.g. Li Wei · +86 755 1234 5678" />
+          </Field>
+          <Field label="Email">
+            <TextInput type="email" value={contactDraft.email} onChange={(e) => setContactDraft({ ...contactDraft, email: e.target.value })} placeholder="contact@supplier.com" />
+          </Field>
+          <Field label="Country / location" required>
+            <TextInput value={contactDraft.country} onChange={(e) => setContactDraft({ ...contactDraft, country: e.target.value })} />
           </Field>
         </div>
       </Modal>

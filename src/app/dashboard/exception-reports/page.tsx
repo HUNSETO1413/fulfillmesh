@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Filter, Download, ChevronDown, Search, AlertTriangle, AlertCircle, CheckCircle2, ShieldAlert, Clock, ArrowUpRight, ArrowDownRight, MoreHorizontal, Plus, Settings, UserPlus, FileDown } from "lucide-react";
+import { Fragment, useMemo, useState } from "react";
+import { Filter, Download, ChevronDown, ChevronLeft, ChevronRight, Search, AlertTriangle, AlertCircle, CheckCircle2, ShieldAlert, Clock, ArrowUpRight, ArrowDownRight, MoreHorizontal, Plus, Settings, UserPlus, FileDown, X } from "lucide-react";
 import { DateRangeMenu } from "@/components/dashboard/DateRangeMenu";
 import { useToast } from "@/components/dashboard/Toast";
 import { exportToCsv } from "@/lib/client";
@@ -22,19 +22,20 @@ const tabs = [
   { name: "Ignored", count: 8 },
 ];
 
-type ExcRow = { id: string; type: string; desc: string; wh: string; priority: string; pc: string; status: string; sc: string; on: string };
+type LogEntry = { at: string; text: string };
+type ExcRow = { id: string; type: string; desc: string; wh: string; priority: string; pc: string; status: string; sc: string; on: string; log: LogEntry[] };
 
 const initialRows: ExcRow[] = [
-  { id: "EXC-0005-0001-001", type: "Inventory", desc: "Inventory discrepancy on SKU-10023", wh: "ATL-1 · Atlanta", priority: "High", pc: "#EF4444", status: "Open", sc: "open", on: "May 31, 2025 09:42 AM" },
-  { id: "EXC-0005-0001-002", type: "Shipment", desc: "Shipment delayed > 24 hr", wh: "DFW-1 · Dallas", priority: "Medium", pc: "#F59E0B", status: "Open", sc: "open", on: "May 31, 2025 08:15 AM" },
-  { id: "EXC-0005-0001-003", type: "Order", desc: "Order not allocated", wh: "LAX-1 · Los Angeles", priority: "High", pc: "#EF4444", status: "Investigating", sc: "investigating", on: "May 30, 2025 06:30 PM" },
-  { id: "EXC-0005-0001-004", type: "Return", desc: "Return received without RMA", wh: "MIA-1 · Miami", priority: "Low", pc: "#3B82F6", status: "Open", sc: "open", on: "May 30, 2025 04:12 PM" },
-  { id: "EXC-0005-0001-005", type: "Inventory", desc: "Negative inventory count", wh: "ORD-1 · Chicago", priority: "Medium", pc: "#F59E0B", status: "Resolved", sc: "resolved", on: "May 30, 2025 02:45 PM" },
-  { id: "EXC-0005-0001-006", type: "Inbound", desc: "ASN qty mismatch", wh: "DFW-1 · Dallas", priority: "Low", pc: "#3B82F6", status: "Resolved", sc: "resolved", on: "May 30, 2025 11:20 AM" },
-  { id: "EXC-0005-0001-007", type: "Order", desc: "Carrier rejection", wh: "ATL-1 · Atlanta", priority: "Medium", pc: "#F59E0B", status: "Investigating", sc: "investigating", on: "May 30, 2025 09:05 AM" },
-  { id: "EXC-0005-0001-008", type: "Shipment", desc: "Address verification failed", wh: "LAX-1 · Los Angeles", priority: "High", pc: "#EF4444", status: "Open", sc: "open", on: "May 29, 2025 03:50 PM" },
-  { id: "EXC-0005-0001-009", type: "Transfer", desc: "Transfer delay > 48 hr", wh: "MIA-1 · Miami", priority: "Low", pc: "#3B82F6", status: "Resolved", sc: "resolved", on: "May 29, 2025 01:18 PM" },
-  { id: "EXC-0005-0001-010", type: "Inventory", desc: "Cycle count variance", wh: "ORD-1 · Chicago", priority: "Medium", pc: "#F59E0B", status: "Open", sc: "open", on: "May 29, 2025 10:02 AM" },
+  { id: "EXC-0005-0001-001", type: "Inventory", desc: "Inventory discrepancy on SKU-10023", wh: "ATL-1 · Atlanta", priority: "High", pc: "#EF4444", status: "Open", sc: "open", on: "May 31, 2025 09:42 AM", log: [] },
+  { id: "EXC-0005-0001-002", type: "Shipment", desc: "Shipment delayed > 24 hr", wh: "DFW-1 · Dallas", priority: "Medium", pc: "#F59E0B", status: "Open", sc: "open", on: "May 31, 2025 08:15 AM", log: [] },
+  { id: "EXC-0005-0001-003", type: "Order", desc: "Order not allocated", wh: "LAX-1 · Los Angeles", priority: "High", pc: "#EF4444", status: "Investigating", sc: "investigating", on: "May 30, 2025 06:30 PM", log: [] },
+  { id: "EXC-0005-0001-004", type: "Return", desc: "Return received without RMA", wh: "MIA-1 · Miami", priority: "Low", pc: "#3B82F6", status: "Open", sc: "open", on: "May 30, 2025 04:12 PM", log: [] },
+  { id: "EXC-0005-0001-005", type: "Inventory", desc: "Negative inventory count", wh: "ORD-1 · Chicago", priority: "Medium", pc: "#F59E0B", status: "Resolved", sc: "resolved", on: "May 30, 2025 02:45 PM", log: [] },
+  { id: "EXC-0005-0001-006", type: "Inbound", desc: "ASN qty mismatch", wh: "DFW-1 · Dallas", priority: "Low", pc: "#3B82F6", status: "Resolved", sc: "resolved", on: "May 30, 2025 11:20 AM", log: [] },
+  { id: "EXC-0005-0001-007", type: "Order", desc: "Carrier rejection", wh: "ATL-1 · Atlanta", priority: "Medium", pc: "#F59E0B", status: "Investigating", sc: "investigating", on: "May 30, 2025 09:05 AM", log: [] },
+  { id: "EXC-0005-0001-008", type: "Shipment", desc: "Address verification failed", wh: "LAX-1 · Los Angeles", priority: "High", pc: "#EF4444", status: "Open", sc: "open", on: "May 29, 2025 03:50 PM", log: [] },
+  { id: "EXC-0005-0001-009", type: "Transfer", desc: "Transfer delay > 48 hr", wh: "MIA-1 · Miami", priority: "Low", pc: "#3B82F6", status: "Resolved", sc: "resolved", on: "May 29, 2025 01:18 PM", log: [] },
+  { id: "EXC-0005-0001-010", type: "Inventory", desc: "Cycle count variance", wh: "ORD-1 · Chicago", priority: "Medium", pc: "#F59E0B", status: "Open", sc: "open", on: "May 29, 2025 10:02 AM", log: [] },
 ];
 
 const statusStyle: Record<string, string> = {
@@ -121,6 +122,17 @@ const TYPE_FILTER = ["All Types", "Inventory", "Shipment", "Order", "Return", "I
 const WH_FILTER = ["All Warehouses", "ATL-1 · Atlanta", "DFW-1 · Dallas", "LAX-1 · Los Angeles", "MIA-1 · Miami", "ORD-1 · Chicago"];
 const PRIORITY_FILTER = ["All Priorities", "High", "Medium", "Low"];
 
+const PAGE_SIZE = 5;
+
+function nowStamp() {
+  return new Date().toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+function dayOf(on: string): string {
+  // "May 31, 2025 09:42 AM" -> "May 31, 2025"
+  return on.split(" ").slice(0, 3).join(" ");
+}
+
 export default function ExceptionReportsPage() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("All Exceptions");
@@ -131,7 +143,8 @@ export default function ExceptionReportsPage() {
   const [priorityFilter, setPriorityFilter] = useState("All Priorities");
   const [rows, setRows] = useState(initialRows);
   const [rowMenu, setRowMenu] = useState<string | null>(null);
-  const [gran, setGran] = useState("Daily");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
   const tabFilter: Record<string, (r: ExcRow) => boolean> = {
     "All Exceptions": () => true,
@@ -153,17 +166,19 @@ export default function ExceptionReportsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, activeTab, typeFilter, whFilter, priorityFilter, query]);
 
+  // real pagination over the filtered rows
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const start = (currentPage - 1) * PAGE_SIZE;
+  const pageRows = filteredRows.slice(start, start + PAGE_SIZE);
+
   function setStatus(id: string, status: string, sc: string, verb: string) {
-    setRows((prev) => prev.map((r) => r.id === id ? { ...r, status, sc } : r));
+    const stamp = nowStamp();
+    setRows((prev) => prev.map((r) => r.id === id
+      ? { ...r, status, sc, log: [...r.log, { at: stamp, text: `Status changed to ${status}` }] }
+      : r));
     setRowMenu(null);
     toast(`${id} ${verb}`);
-  }
-
-  function cycleGran() {
-    const opts = ["Daily", "Weekly", "Monthly"];
-    const next = opts[(opts.indexOf(gran) + 1) % opts.length];
-    setGran(next);
-    toast(`Exceptions grouped by ${next.toLowerCase()}`, "info");
   }
 
   function exportExceptions() {
@@ -179,16 +194,51 @@ export default function ExceptionReportsPage() {
     toast(`Exported ${filteredRows.length} exceptions to CSV`);
   }
 
-  // exceptions over time chart
-  const W = 760, H = 200, padL = 28, padB = 22, padT = 8, yMax = 60;
-  const otSeries = [
-    { name: "Total Exceptions", color: "#0057D8", pts: [40, 48, 42, 52, 45, 50, 44, 54, 46, 50] },
-    { name: "Open", color: "#F59E0B", pts: [22, 26, 20, 28, 24, 27, 22, 30, 25, 27] },
-    { name: "Resolved", color: "#10B981", pts: [16, 20, 18, 22, 19, 21, 18, 23, 20, 22] },
-    { name: "SLA Breached", color: "#EF4444", pts: [4, 6, 5, 8, 6, 7, 5, 9, 6, 7] },
-  ];
-  const cx = (i: number) => padL + (i * (W - padL - 10)) / 9;
-  const cy = (v: number) => padT + (1 - v / yMax) * (H - padT - padB);
+  // active-filter chips
+  const activeFilters: { label: string; clear: () => void }[] = [];
+  if (query.trim()) activeFilters.push({ label: `Search: “${query.trim()}”`, clear: () => { setQuery(""); setPage(1); } });
+  if (typeFilter !== "All Types") activeFilters.push({ label: `Type: ${typeFilter}`, clear: () => { setTypeFilter("All Types"); setPage(1); } });
+  if (whFilter !== "All Warehouses") activeFilters.push({ label: `Warehouse: ${whFilter}`, clear: () => { setWhFilter("All Warehouses"); setPage(1); } });
+  if (priorityFilter !== "All Priorities") activeFilters.push({ label: `Priority: ${priorityFilter}`, clear: () => { setPriorityFilter("All Priorities"); setPage(1); } });
+
+  function clearAllFilters() {
+    setQuery("");
+    setTypeFilter("All Types");
+    setWhFilter("All Warehouses");
+    setPriorityFilter("All Priorities");
+    setPage(1);
+  }
+
+  // exceptions over time chart — recomputed from the FILTERED rows, grouped by day
+  const chartData = useMemo(() => {
+    const days = Array.from(new Set(filteredRows.map((r) => dayOf(r.on))))
+      .sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+    const counts = days.map((d) => {
+      const dayRows = filteredRows.filter((r) => dayOf(r.on) === d);
+      return {
+        total: dayRows.length,
+        open: dayRows.filter((r) => r.sc === "open").length,
+        resolved: dayRows.filter((r) => r.sc === "resolved").length,
+        sla: dayRows.filter((r) => r.priority === "High").length,
+      };
+    });
+    const yMax = Math.max(4, ...counts.map((c) => c.total));
+    return {
+      days,
+      yMax,
+      series: [
+        { name: "Total Exceptions", color: "#0057D8", pts: counts.map((c) => c.total) },
+        { name: "Open", color: "#F59E0B", pts: counts.map((c) => c.open) },
+        { name: "Resolved", color: "#10B981", pts: counts.map((c) => c.resolved) },
+        { name: "SLA Breached", color: "#EF4444", pts: counts.map((c) => c.sla) },
+      ],
+    };
+  }, [filteredRows]);
+
+  const W = 760, H = 200, padL = 28, padB = 22, padT = 8;
+  const nDays = chartData.days.length;
+  const cx = (i: number) => padL + (i * (W - padL - 10)) / Math.max(1, nDays - 1);
+  const cy = (v: number) => padT + (1 - v / chartData.yMax) * (H - padT - padB);
 
   return (
     <div className="space-y-6">
@@ -204,7 +254,7 @@ export default function ExceptionReportsPage() {
             onSelect={(r) => { setRange(r); toast(`Exceptions scoped to ${r}`, "info"); }}
             presets={["May 1 – May 31, 2025", "Last 7 days", "Last 30 days", "This quarter", "Year to date"]}
           />
-          <button onClick={() => toast("Filter panel opened", "info")} className="flex items-center gap-2 px-3.5 py-2 bg-white border border-border-soft rounded-lg text-[13px] font-medium text-text-primary hover:bg-soft-bg transition-colors">
+          <button onClick={() => toast("Use the search and filter pills above the table", "info")} className="flex items-center gap-2 px-3.5 py-2 bg-white border border-border-soft rounded-lg text-[13px] font-medium text-text-primary hover:bg-soft-bg transition-colors">
             <Filter className="w-4 h-4 text-text-muted" />
             Filters
           </button>
@@ -250,7 +300,7 @@ export default function ExceptionReportsPage() {
         {tabs.map((t) => (
           <button
             key={t.name}
-            onClick={() => setActiveTab(t.name)}
+            onClick={() => { setActiveTab(t.name); setPage(1); }}
             className={`px-4 py-2.5 text-[13px] font-medium whitespace-nowrap border-b-2 -mb-px transition-colors cursor-pointer ${
               activeTab === t.name
                 ? "border-action-blue text-action-blue"
@@ -271,15 +321,32 @@ export default function ExceptionReportsPage() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-light" />
               <input
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => { setQuery(e.target.value); setPage(1); }}
                 placeholder="Search exceptions..."
                 className="w-full pl-9 pr-3 py-2 bg-white border border-border-soft rounded-lg text-[13px] text-text-primary placeholder:text-text-light focus:outline-none focus:ring-2 focus:ring-action-blue/20 focus:border-action-blue/40 transition-colors"
               />
             </div>
-            <FilterPill value={typeFilter} options={TYPE_FILTER} onSelect={setTypeFilter} />
-            <FilterPill value={whFilter} options={WH_FILTER} onSelect={setWhFilter} />
-            <FilterPill value={priorityFilter} options={PRIORITY_FILTER} onSelect={setPriorityFilter} />
+            <FilterPill value={typeFilter} options={TYPE_FILTER} onSelect={(v) => { setTypeFilter(v); setPage(1); }} />
+            <FilterPill value={whFilter} options={WH_FILTER} onSelect={(v) => { setWhFilter(v); setPage(1); }} />
+            <FilterPill value={priorityFilter} options={PRIORITY_FILTER} onSelect={(v) => { setPriorityFilter(v); setPage(1); }} />
           </div>
+
+          {/* Active filter chips */}
+          {activeFilters.length > 0 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              {activeFilters.map((f) => (
+                <span key={f.label} className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 bg-action-blue/10 text-action-blue rounded-full text-[12px] font-medium">
+                  {f.label}
+                  <button onClick={f.clear} className="w-4 h-4 flex items-center justify-center rounded-full hover:bg-action-blue/20" aria-label={`Clear ${f.label}`}>
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              ))}
+              <button onClick={clearAllFilters} className="text-[12px] font-medium text-text-muted hover:text-text-primary underline-offset-2 hover:underline">
+                Clear all
+              </button>
+            </div>
+          )}
 
           <div className="bg-white rounded-xl border border-border-soft overflow-hidden">
             <div className="overflow-x-auto">
@@ -292,9 +359,18 @@ export default function ExceptionReportsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredRows.map((r) => (
-                    <tr key={r.id} className="border-b border-border-soft/60 last:border-b-0 hover:bg-soft-bg/50 transition-colors">
-                      <td className="px-4 py-3 text-[13px] font-semibold text-action-blue font-mono whitespace-nowrap">{r.id}</td>
+                  {pageRows.map((r) => (
+                    <Fragment key={r.id}>
+                    <tr
+                      onClick={() => setExpandedId(expandedId === r.id ? null : r.id)}
+                      className="border-b border-border-soft/60 last:border-b-0 hover:bg-soft-bg/50 transition-colors cursor-pointer"
+                    >
+                      <td className="px-4 py-3 text-[13px] font-semibold text-action-blue font-mono whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1.5">
+                          <ChevronRight className={`w-3.5 h-3.5 text-text-light transition-transform ${expandedId === r.id ? "rotate-90" : ""}`} />
+                          {r.id}
+                        </span>
+                      </td>
                       <td className="px-4 py-3 text-[13px] text-text-muted font-medium">{r.type}</td>
                       <td className="px-4 py-3 text-[13px] text-text-primary max-w-[180px] truncate">{r.desc}</td>
                       <td className="px-4 py-3 text-[13px] text-text-muted whitespace-nowrap">{r.wh}</td>
@@ -309,7 +385,7 @@ export default function ExceptionReportsPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-[13px] text-text-muted whitespace-nowrap">{r.on}</td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                         <div className="relative">
                           <button onClick={() => setRowMenu(rowMenu === r.id ? null : r.id)} className="text-text-light hover:text-text-muted transition-colors">
                             <MoreHorizontal className="w-4 h-4" />
@@ -328,8 +404,48 @@ export default function ExceptionReportsPage() {
                         </div>
                       </td>
                     </tr>
+                    {expandedId === r.id && (
+                      <tr className="border-b border-border-soft/60 last:border-b-0 bg-soft-bg/40">
+                        <td colSpan={8} className="px-6 py-4">
+                          <div className="grid gap-6" style={{ gridTemplateColumns: "1fr 1.4fr" }}>
+                            <div className="space-y-2">
+                              <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">Details</p>
+                              <p className="text-[13px] text-text-primary">{r.desc}</p>
+                              <p className="text-[12px] text-text-muted">Warehouse: <span className="text-text-primary font-medium">{r.wh}</span></p>
+                              <p className="text-[12px] text-text-muted">Priority: <span className="font-medium" style={{ color: r.pc }}>{r.priority}</span></p>
+                              <p className="text-[12px] text-text-muted">Current status: <span className="text-text-primary font-medium">{r.status}</span></p>
+                            </div>
+                            <div>
+                              <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wide mb-2">Activity timeline</p>
+                              <div className="space-y-2">
+                                <div className="flex items-start gap-2.5">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-[#94A3B8] mt-1.5 shrink-0" />
+                                  <div>
+                                    <p className="text-[13px] text-text-primary">Exception detected</p>
+                                    <p className="text-[11px] text-text-light">{r.on}</p>
+                                  </div>
+                                </div>
+                                {r.log.map((entry, i) => (
+                                  <div key={i} className="flex items-start gap-2.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-action-blue mt-1.5 shrink-0" />
+                                    <div>
+                                      <p className="text-[13px] text-text-primary">{entry.text}</p>
+                                      <p className="text-[11px] text-text-light">{entry.at}</p>
+                                    </div>
+                                  </div>
+                                ))}
+                                {r.log.length === 0 && (
+                                  <p className="text-[12px] text-text-light">No status changes yet.</p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   ))}
-                  {filteredRows.length === 0 && (
+                  {pageRows.length === 0 && (
                     <tr>
                       <td colSpan={8} className="px-4 py-10 text-center text-[13px] text-text-muted">No exceptions match your filters.</td>
                     </tr>
@@ -338,19 +454,39 @@ export default function ExceptionReportsPage() {
               </table>
             </div>
             <div className="flex items-center justify-between px-4 py-3 border-t border-border-soft">
-              <span className="text-[12px] text-text-muted">Showing {filteredRows.length} of {rows.length} exceptions</span>
+              <span className="text-[12px] text-text-muted">
+                {filteredRows.length === 0
+                  ? "Showing 0 exceptions"
+                  : `Showing ${start + 1} to ${Math.min(start + PAGE_SIZE, filteredRows.length)} of ${filteredRows.length} exceptions`}
+              </span>
               <div className="flex items-center gap-1">
-                {["1", "2", "3", "4", "5", "…", "32"].map((p, i) => (
+                <button
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="w-7 h-7 flex items-center justify-center rounded-md border border-border-soft text-text-muted hover:bg-soft-bg disabled:opacity-40 disabled:cursor-not-allowed"
+                  aria-label="Previous page"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
                   <button
-                    key={i}
-                    onClick={() => p !== "…" && toast(`Page ${p}`, "info")}
+                    key={p}
+                    onClick={() => setPage(p)}
                     className={`min-w-[28px] h-7 px-2 rounded-md text-[12px] font-medium transition-colors ${
-                      p === "1" ? "bg-action-blue text-white" : "text-text-muted hover:bg-soft-bg"
+                      p === currentPage ? "bg-action-blue text-white" : "text-text-muted hover:bg-soft-bg"
                     }`}
                   >
                     {p}
                   </button>
                 ))}
+                <button
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="w-7 h-7 flex items-center justify-center rounded-md border border-border-soft text-text-muted hover:bg-soft-bg disabled:opacity-40 disabled:cursor-not-allowed"
+                  aria-label="Next page"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
               </div>
             </div>
           </div>
@@ -458,41 +594,49 @@ export default function ExceptionReportsPage() {
         </div>
       </div>
 
-      {/* Exceptions Over Time */}
+      {/* Exceptions Over Time — driven by the filtered rows */}
       <div className="bg-white rounded-xl border border-border-soft p-5">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-[15px] font-semibold text-text-primary">Exceptions Over Time</h3>
-          <button onClick={cycleGran} className="inline-flex items-center gap-1.5 text-[12px] font-medium text-text-muted bg-soft-bg px-2.5 py-1.5 rounded-lg cursor-pointer hover:bg-border-soft transition-colors">
-            {gran} <ChevronDown className="w-3 h-3" />
-          </button>
+          <span className="text-[12px] font-medium text-text-muted bg-soft-bg px-2.5 py-1.5 rounded-lg">
+            {filteredRows.length} matching exception{filteredRows.length === 1 ? "" : "s"} · grouped by day
+          </span>
         </div>
         <div className="flex items-center gap-5 mb-4">
-          {otSeries.map((s) => (
+          {chartData.series.map((s) => (
             <div key={s.name} className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.color }} />
               <span className="text-[11px] font-medium text-text-muted">{s.name}</span>
             </div>
           ))}
         </div>
-        <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 200 }}>
-          {[0, 1, 2, 3, 4].map((i) => (
-            <line key={i} x1={padL} y1={padT + i * ((H - padT - padB) / 4)} x2={W - 10} y2={padT + i * ((H - padT - padB) / 4)} stroke="#E6EDF5" strokeWidth="1" />
-          ))}
-          {["60", "45", "30", "15", "0"].map((l, i) => (
-            <text key={i} x={padL - 5} y={padT + i * ((H - padT - padB) / 4) + 3} textAnchor="end" fontSize="9" fill="#9AA8B8">{l}</text>
-          ))}
-          {otSeries.map((s, si) => (
-            <g key={si}>
-              <polyline fill="none" stroke={s.color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" points={s.pts.map((v, i) => `${cx(i)},${cy(v)}`).join(" ")} />
-              {s.pts.map((v, i) => (
-                <circle key={i} cx={cx(i)} cy={cy(v)} r="2.5" fill="white" stroke={s.color} strokeWidth="1.5" />
-              ))}
-            </g>
-          ))}
-          {["May 1", "May 5", "May 11", "May 16", "May 21", "May 26", "May 31"].map((l, i) => (
-            <text key={i} x={padL + i * ((W - padL - 10) / 6)} y={H - 5} textAnchor="middle" fontSize="9" fill="#9AA8B8">{l}</text>
-          ))}
-        </svg>
+        {nDays === 0 ? (
+          <div className="h-[200px] flex items-center justify-center text-[13px] text-text-muted">
+            No exceptions match the current filters.
+          </div>
+        ) : (
+          <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 200 }}>
+            {[0, 1, 2, 3, 4].map((i) => (
+              <line key={i} x1={padL} y1={padT + i * ((H - padT - padB) / 4)} x2={W - 10} y2={padT + i * ((H - padT - padB) / 4)} stroke="#E6EDF5" strokeWidth="1" />
+            ))}
+            {[0, 1, 2, 3, 4].map((i) => (
+              <text key={i} x={padL - 5} y={padT + i * ((H - padT - padB) / 4) + 3} textAnchor="end" fontSize="9" fill="#9AA8B8">
+                {Math.round(chartData.yMax * (1 - i / 4))}
+              </text>
+            ))}
+            {chartData.series.map((s, si) => (
+              <g key={si}>
+                <polyline fill="none" stroke={s.color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" points={s.pts.map((v, i) => `${cx(i)},${cy(v)}`).join(" ")} />
+                {s.pts.map((v, i) => (
+                  <circle key={i} cx={cx(i)} cy={cy(v)} r="2.5" fill="white" stroke={s.color} strokeWidth="1.5" />
+                ))}
+              </g>
+            ))}
+            {chartData.days.map((l, i) => (
+              <text key={l} x={cx(i)} y={H - 5} textAnchor="middle" fontSize="9" fill="#9AA8B8">{l.replace(", 2025", "")}</text>
+            ))}
+          </svg>
+        )}
         <div className="text-right mt-2">
           <button onClick={exportExceptions} className="text-[13px] font-medium text-action-blue hover:underline">View full report →</button>
         </div>

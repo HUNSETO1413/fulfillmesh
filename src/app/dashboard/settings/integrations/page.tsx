@@ -3,8 +3,11 @@
 import type { ReactElement } from "react";
 import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, RefreshCw, XCircle, MoreHorizontal, HelpCircle } from "lucide-react";
+import { Modal } from "@/components/dashboard/Modal";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
+import { Field, TextInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
+import { isUrl } from "@/lib/validate";
 
 type Status = "Connected" | "Syncing" | "Available" | "Disconnected";
 
@@ -85,7 +88,7 @@ type Integration = {
 const initialIntegrations: Integration[] = [
   { name: "Shopify", desc: "Sync orders, products, and inventory from your Shopify store.", Logo: ShopifyLogo, status: "Connected", lastSync: "May 18, 2025 9:41 AM", action: "Manage" },
   { name: "WooCommerce", desc: "Sync orders from your WooCommerce store.", Logo: WooLogo, status: "Connected", lastSync: "May 18, 2025 8:15 AM", action: "Manage" },
-  { name: "Amazon", desc: "Sync orders and fulfillments from your Amazon account.", Logo: AmazonLogo, status: "Syncing", lastSync: "May 18, 2025 9:37 AM", action: "Manage" },
+  { name: "Amazon", desc: "Sync orders and fulfillments from your Amazon account.", Logo: AmazonLogo, status: "Connected", lastSync: "May 18, 2025 9:37 AM", action: "Manage" },
   { name: "TikTok Shop", desc: "Sync orders and products from your TikTok Shop.", Logo: TikTokLogo, status: "Connected", lastSync: "May 18, 2025 9:10 AM", action: "Manage" },
   { name: "17TRACK", desc: "Track shipments and get real-time tracking updates.", Logo: TrackLogo, status: "Connected", lastSync: "May 18, 2025 9:05 AM", action: "Manage" },
   { name: "Slack", desc: "Get notifications and updates in your Slack channels.", Logo: SlackLogo, status: "Available", lastSync: "—", action: "Connect" },
@@ -102,7 +105,7 @@ function StatusBadge({ status }: { status: Status }) {
   const Icon = map.Icon;
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-[12px] font-medium rounded-md ${map.cls}`}>
-      <Icon className="w-3.5 h-3.5" />
+      <Icon className={`w-3.5 h-3.5 ${status === "Syncing" ? "animate-spin" : ""}`} />
       {status}
     </span>
   );
@@ -118,12 +121,24 @@ function nowStamp() {
   });
 }
 
+type IntegrationConfig = { apiKey: string; freq: string; webhook: string };
+
+const SYNC_FREQUENCIES = ["Real-time", "Every 15 minutes", "Every hour", "Daily"];
+
+const defaultConfig: IntegrationConfig = { apiKey: "", freq: "Every hour", webhook: "" };
+
 export default function IntegrationsPage() {
   const { toast } = useToast();
   const [integrations, setIntegrations] = useState<Integration[]>(initialIntegrations);
+  const [configs, setConfigs] = useState<Record<string, IntegrationConfig>>({});
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState<Integration | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // Configure modal
+  const [configFor, setConfigFor] = useState<Integration | null>(null);
+  const [configDraft, setConfigDraft] = useState<IntegrationConfig>(defaultConfig);
+  const [configErrors, setConfigErrors] = useState<{ apiKey?: string; webhook?: string }>({});
 
   useEffect(() => {
     if (!menuFor) return;
@@ -134,21 +149,50 @@ export default function IntegrationsPage() {
     return () => document.removeEventListener("mousedown", onDoc);
   }, [menuFor]);
 
-  const connect = (name: string) => {
-    setIntegrations((list) =>
-      list.map((it) =>
-        it.name === name ? { ...it, status: "Connected", action: "Manage", lastSync: nowStamp() } : it,
-      ),
-    );
-    toast(`${name} connected`);
+  const openConfig = (it: Integration) => {
+    setMenuFor(null);
+    setConfigFor(it);
+    setConfigDraft(configs[it.name] ?? { ...defaultConfig, apiKey: it.status === "Connected" || it.status === "Syncing" ? `${it.name.toLowerCase().replace(/\s+/g, "_")}_live_4f8a2c` : "" });
+    setConfigErrors({});
+  };
+
+  const saveConfig = () => {
+    if (!configFor) return;
+    const errors: { apiKey?: string; webhook?: string } = {};
+    if (!configDraft.apiKey.trim()) errors.apiKey = "API key is required";
+    if (configDraft.webhook.trim() && !isUrl(configDraft.webhook)) errors.webhook = "Enter a valid URL (https://…)";
+    setConfigErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+
+    const name = configFor.name;
+    const wasConnected = configFor.status === "Connected" || configFor.status === "Syncing";
+    setConfigs((c) => ({ ...c, [name]: { ...configDraft, apiKey: configDraft.apiKey.trim(), webhook: configDraft.webhook.trim() } }));
+    if (!wasConnected) {
+      setIntegrations((list) =>
+        list.map((it) =>
+          it.name === name ? { ...it, status: "Connected", action: "Manage", lastSync: nowStamp() } : it,
+        ),
+      );
+      toast(`${name} connected`);
+    } else {
+      toast(`${name} settings saved`);
+    }
+    setConfigFor(null);
   };
 
   const sync = (name: string) => {
-    setIntegrations((list) =>
-      list.map((it) => (it.name === name ? { ...it, lastSync: nowStamp() } : it)),
-    );
     setMenuFor(null);
-    toast(`${name} sync started`, "info");
+    setIntegrations((list) =>
+      list.map((it) => (it.name === name ? { ...it, status: "Syncing" } : it)),
+    );
+    setTimeout(() => {
+      setIntegrations((list) =>
+        list.map((it) =>
+          it.name === name ? { ...it, status: "Connected", action: "Manage", lastSync: "Just now" } : it,
+        ),
+      );
+      toast(`${name} synced`);
+    }, 1000);
   };
 
   const handleDisconnect = () => {
@@ -200,14 +244,14 @@ export default function IntegrationsPage() {
                   <div className="flex items-center justify-end gap-2">
                     {it.action === "Manage" ? (
                       <button
-                        onClick={() => toast(`Opening ${it.name} settings…`, "info")}
+                        onClick={() => openConfig(it)}
                         className="px-3.5 py-1.5 text-[13px] font-medium text-action-blue border border-border-soft rounded-lg hover:bg-soft-bg transition-colors"
                       >
                         Manage
                       </button>
                     ) : (
                       <button
-                        onClick={() => connect(it.name)}
+                        onClick={() => openConfig(it)}
                         className="px-3.5 py-1.5 text-[13px] font-medium text-white bg-action-blue rounded-lg hover:bg-action-blue/90 transition-colors"
                       >
                         Connect
@@ -223,28 +267,34 @@ export default function IntegrationsPage() {
                       </button>
                       {menuFor === it.name && (
                         <div className="absolute right-0 top-7 z-20 w-44 bg-white border border-[#E2E8F0] rounded-lg shadow-lg py-1 text-left">
-                          <button
-                            onClick={() => sync(it.name)}
-                            className="block w-full text-left px-3 py-2 text-[13px] text-[#374151] hover:bg-[#F8FAFC]"
-                          >
-                            Sync now
-                          </button>
                           {it.action === "Manage" ? (
-                            <button
-                              onClick={() => {
-                                setMenuFor(null);
-                                setDisconnecting(it);
-                              }}
-                              className="block w-full text-left px-3 py-2 text-[13px] text-[#EF4444] hover:bg-[#FEF2F2]"
-                            >
-                              Disconnect
-                            </button>
+                            <>
+                              <button
+                                onClick={() => sync(it.name)}
+                                disabled={it.status === "Syncing"}
+                                className="block w-full text-left px-3 py-2 text-[13px] text-[#374151] hover:bg-[#F8FAFC] disabled:opacity-50"
+                              >
+                                {it.status === "Syncing" ? "Syncing…" : "Sync now"}
+                              </button>
+                              <button
+                                onClick={() => openConfig(it)}
+                                className="block w-full text-left px-3 py-2 text-[13px] text-[#374151] hover:bg-[#F8FAFC]"
+                              >
+                                Configure
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setMenuFor(null);
+                                  setDisconnecting(it);
+                                }}
+                                className="block w-full text-left px-3 py-2 text-[13px] text-[#EF4444] hover:bg-[#FEF2F2]"
+                              >
+                                Disconnect
+                              </button>
+                            </>
                           ) : (
                             <button
-                              onClick={() => {
-                                setMenuFor(null);
-                                connect(it.name);
-                              }}
+                              onClick={() => openConfig(it)}
                               className="block w-full text-left px-3 py-2 text-[13px] text-[#374151] hover:bg-[#F8FAFC]"
                             >
                               Connect
@@ -272,6 +322,50 @@ export default function IntegrationsPage() {
           Contact our support team.
         </button>
       </div>
+
+      {/* Configure / Connect Modal */}
+      <Modal
+        open={configFor !== null}
+        onClose={() => setConfigFor(null)}
+        title={configFor ? `Configure ${configFor.name}` : "Configure"}
+        description={
+          configFor && configFor.action === "Connect"
+            ? "Enter your credentials to connect this integration."
+            : "Update credentials and sync preferences for this integration."
+        }
+        footer={
+          <>
+            <SecondaryButton onClick={() => setConfigFor(null)}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={saveConfig}>
+              {configFor && configFor.action === "Connect" ? "Connect" : "Save settings"}
+            </PrimaryButton>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Field label="API key" required error={configErrors.apiKey}>
+            <TextInput
+              value={configDraft.apiKey}
+              onChange={(e) => { setConfigDraft((d) => ({ ...d, apiKey: e.target.value })); setConfigErrors((p) => ({ ...p, apiKey: undefined })); }}
+              placeholder="sk_live_…"
+            />
+          </Field>
+          <Field label="Sync frequency">
+            <Select
+              options={SYNC_FREQUENCIES}
+              value={configDraft.freq}
+              onChange={(e) => setConfigDraft((d) => ({ ...d, freq: e.target.value }))}
+            />
+          </Field>
+          <Field label="Webhook URL" error={configErrors.webhook} hint="Optional. We'll POST sync events to this endpoint.">
+            <TextInput
+              value={configDraft.webhook}
+              onChange={(e) => { setConfigDraft((d) => ({ ...d, webhook: e.target.value })); setConfigErrors((p) => ({ ...p, webhook: undefined })); }}
+              placeholder="https://example.com/webhooks/fulfillmesh"
+            />
+          </Field>
+        </div>
+      </Modal>
 
       {/* Disconnect Confirm */}
       <ConfirmDialog

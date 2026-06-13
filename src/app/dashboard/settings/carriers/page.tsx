@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useMemo } from "react";
 import { Plus, CheckCircle2, AlertCircle, XCircle, MoreVertical, ChevronLeft, ChevronRight } from "lucide-react";
 import { Modal } from "@/components/dashboard/Modal";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
@@ -26,6 +26,8 @@ const initialCarriers: Carrier[] = [
   { name: "YunExpress", service: "Express, Standard", conn: "Needs Attention", regions: "200+ countries", defaultStatus: "Inactive", tracking: true },
   { name: "4PX", service: "Express, Economy", conn: "Disabled", regions: "150+ countries", defaultStatus: "Inactive", tracking: false },
 ];
+
+const PAGE_SIZE = 5;
 
 const connConfig: Record<Conn, { cls: string; Icon: typeof CheckCircle2 }> = {
   "Connected": { cls: "bg-[#10B981] text-white", Icon: CheckCircle2 },
@@ -60,17 +62,23 @@ function ToggleSwitch({ enabled, onClick }: { enabled: boolean; onClick: () => v
   );
 }
 
-const emptyDraft = { name: "", service: "", regions: "", conn: "Connected" as Conn, defaultStatus: "Active" };
+type Draft = { name: string; service: string; regions: string; conn: Conn; defaultStatus: string };
+const emptyDraft: Draft = { name: "", service: "", regions: "", conn: "Connected", defaultStatus: "Active" };
 
 export default function CarriersPage() {
   const { toast } = useToast();
   const [carriers, setCarriers] = useState<Carrier[]>(initialCarriers);
+  const [page, setPage] = useState(1);
 
-  const [addOpen, setAddOpen] = useState(false);
-  const [draft, setDraft] = useState(emptyDraft);
+  // add / edit modal — `editing` holds the original carrier name when editing
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const [nameError, setNameError] = useState("");
 
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [removing, setRemoving] = useState<Carrier | null>(null);
+  const [disabling, setDisabling] = useState<Carrier | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -82,39 +90,84 @@ export default function CarriersPage() {
     return () => document.removeEventListener("mousedown", onDoc);
   }, [menuFor]);
 
+  const totalPages = Math.max(1, Math.ceil(carriers.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const start = (currentPage - 1) * PAGE_SIZE;
+  const pageRows = useMemo(() => carriers.slice(start, start + PAGE_SIZE), [carriers, start]);
+
   const toggleTracking = (name: string) => {
     setCarriers((cs) => cs.map((c) => (c.name === name ? { ...c, tracking: !c.tracking } : c)));
     const c = carriers.find((x) => x.name === name);
     toast(`${name} tracking sync ${c && !c.tracking ? "enabled" : "disabled"}`);
   };
 
-  const toggleStatus = (name: string) => {
-    setCarriers((cs) =>
-      cs.map((c) => (c.name === name ? { ...c, defaultStatus: c.defaultStatus === "Active" ? "Inactive" : "Active" } : c)),
-    );
-    setMenuFor(null);
-    toast(`${name} status updated`);
+  const setStatus = (name: string, status: string) => {
+    setCarriers((cs) => cs.map((c) => (c.name === name ? { ...c, defaultStatus: status } : c)));
+    toast(`${name} set to ${status.toLowerCase()}`);
   };
 
-  const handleAdd = () => {
-    if (!draft.name.trim()) {
-      toast("Carrier name is required", "error");
+  const requestToggleStatus = (c: Carrier) => {
+    setMenuFor(null);
+    if (c.defaultStatus === "Active") {
+      // Disabling an active (default) carrier is destructive — confirm first.
+      setDisabling(c);
+    } else {
+      setStatus(c.name, "Active");
+    }
+  };
+
+  const openAdd = () => {
+    setEditing(null);
+    setDraft(emptyDraft);
+    setNameError("");
+    setFormOpen(true);
+  };
+
+  const openEdit = (c: Carrier) => {
+    setMenuFor(null);
+    setEditing(c.name);
+    setDraft({ name: c.name, service: c.service, regions: c.regions, conn: c.conn, defaultStatus: c.defaultStatus });
+    setNameError("");
+    setFormOpen(true);
+  };
+
+  const handleSave = () => {
+    const name = draft.name.trim();
+    if (!name) {
+      setNameError("Carrier name is required");
       return;
     }
-    setCarriers((cs) => [
-      ...cs,
-      {
-        name: draft.name.trim(),
-        service: draft.service.trim() || "Standard",
-        regions: draft.regions.trim() || "—",
-        conn: draft.conn,
-        defaultStatus: draft.defaultStatus,
-        tracking: true,
-      },
-    ]);
-    setAddOpen(false);
+    const duplicate = carriers.some((c) => c.name.toLowerCase() === name.toLowerCase() && c.name !== editing);
+    if (duplicate) {
+      setNameError("A carrier with this name already exists");
+      return;
+    }
+    if (editing) {
+      setCarriers((cs) =>
+        cs.map((c) =>
+          c.name === editing
+            ? { ...c, name, service: draft.service.trim() || "Standard", regions: draft.regions.trim() || "—", conn: draft.conn, defaultStatus: draft.defaultStatus }
+            : c,
+        ),
+      );
+      toast(`${name} updated`);
+    } else {
+      setCarriers((cs) => [
+        ...cs,
+        {
+          name,
+          service: draft.service.trim() || "Standard",
+          regions: draft.regions.trim() || "—",
+          conn: draft.conn,
+          defaultStatus: draft.defaultStatus,
+          tracking: true,
+        },
+      ]);
+      toast(`${name} added`);
+    }
+    setFormOpen(false);
     setDraft(emptyDraft);
-    toast(`${draft.name.trim()} added`);
+    setEditing(null);
   };
 
   const handleRemove = () => {
@@ -135,7 +188,7 @@ export default function CarriersPage() {
           </p>
         </div>
         <button
-          onClick={() => setAddOpen(true)}
+          onClick={openAdd}
           className="flex items-center gap-2 px-4 py-2.5 bg-[#3B82F6] text-white rounded-lg text-[13px] font-medium hover:bg-[#3B82F6]/90 transition-colors"
         >
           <Plus className="w-4 h-4" />
@@ -158,7 +211,7 @@ export default function CarriersPage() {
             </tr>
           </thead>
           <tbody>
-            {carriers.map((c) => (
+            {pageRows.map((c) => (
               <tr key={c.name} className="border-b border-[#E2E8F0] last:border-0 hover:bg-[#F8FAFC]/50 transition-colors">
                 <td className="px-4 py-3.5 text-[13px] font-medium text-[#1E293B]">{c.name}</td>
                 <td className="px-4 py-3.5 text-[13px] text-[#475569]">{c.service}</td>
@@ -187,16 +240,13 @@ export default function CarriersPage() {
                     {menuFor === c.name && (
                       <div className="absolute right-0 top-9 z-20 w-44 bg-white border border-[#E2E8F0] rounded-lg shadow-lg py-1 text-left">
                         <button
-                          onClick={() => toggleStatus(c.name)}
+                          onClick={() => requestToggleStatus(c)}
                           className="block w-full text-left px-3 py-2 text-[13px] text-[#374151] hover:bg-[#F8FAFC]"
                         >
                           {c.defaultStatus === "Active" ? "Set Inactive" : "Set Active"}
                         </button>
                         <button
-                          onClick={() => {
-                            setMenuFor(null);
-                            toast(`Editing ${c.name}…`, "info");
-                          }}
+                          onClick={() => openEdit(c)}
                           className="block w-full text-left px-3 py-2 text-[13px] text-[#374151] hover:bg-[#F8FAFC]"
                         >
                           Edit Carrier
@@ -220,39 +270,63 @@ export default function CarriersPage() {
         </table>
       </div>
 
-      {/* Footer */}
+      {/* Footer / Pagination */}
       <div className="flex items-center justify-between mt-4">
-        <p className="text-[13px] text-[#64748B]">Showing 1 to {carriers.length} of {carriers.length} entries</p>
+        <p className="text-[13px] text-[#64748B]">
+          Showing {carriers.length === 0 ? 0 : start + 1} to {Math.min(start + PAGE_SIZE, carriers.length)} of {carriers.length} entries
+        </p>
         <div className="flex items-center gap-2">
-          <button disabled={true} className="flex items-center gap-1 px-3 py-1.5 border border-[#E2E8F0] rounded-md text-[13px] text-[#94A3B8] cursor-not-allowed">
+          <button
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={currentPage === 1}
+            className="flex items-center gap-1 px-3 py-1.5 border border-[#E2E8F0] rounded-md text-[13px] text-[#64748B] hover:bg-[#F8FAFC] disabled:text-[#94A3B8] disabled:cursor-not-allowed disabled:hover:bg-transparent"
+          >
             <ChevronLeft className="w-4 h-4" />
             Previous
           </button>
-          <button onClick={() => toast("Page 1 of 1", "info")} className="w-8 h-8 rounded-md bg-[#3B82F6] text-white text-[13px] font-medium">1</button>
-          <button disabled={true} className="flex items-center gap-1 px-3 py-1.5 border border-[#E2E8F0] rounded-md text-[13px] text-[#94A3B8] cursor-not-allowed">
+          {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+            <button
+              key={p}
+              onClick={() => setPage(p)}
+              className={`w-8 h-8 rounded-md text-[13px] font-medium ${
+                p === currentPage ? "bg-[#3B82F6] text-white" : "text-[#64748B] hover:bg-[#F1F5F9]"
+              }`}
+            >
+              {p}
+            </button>
+          ))}
+          <button
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={currentPage === totalPages}
+            className="flex items-center gap-1 px-3 py-1.5 border border-[#E2E8F0] rounded-md text-[13px] text-[#64748B] hover:bg-[#F8FAFC] disabled:text-[#94A3B8] disabled:cursor-not-allowed disabled:hover:bg-transparent"
+          >
             Next
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>
       </div>
 
-      {/* Add Carrier Modal */}
+      {/* Add / Edit Carrier Modal */}
       <Modal
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
-        title="Add Carrier"
-        description="Connect a new shipping carrier to your account."
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
+        title={editing ? `Edit ${editing}` : "Add Carrier"}
+        description={editing ? "Update this carrier's connection and service details." : "Connect a new shipping carrier to your account."}
         footer={
           <>
-            <SecondaryButton onClick={() => setAddOpen(false)}>Cancel</SecondaryButton>
-            <PrimaryButton onClick={handleAdd}>Add Carrier</PrimaryButton>
+            <SecondaryButton onClick={() => setFormOpen(false)}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={handleSave}>{editing ? "Save changes" : "Add Carrier"}</PrimaryButton>
           </>
         }
       >
         <div className="grid grid-cols-2 gap-4">
           <div className="col-span-2">
-            <Field label="Carrier name" required>
-              <TextInput value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="e.g. Aramex" />
+            <Field label="Carrier name" required error={nameError}>
+              <TextInput
+                value={draft.name}
+                onChange={(e) => { setDraft({ ...draft, name: e.target.value }); if (e.target.value.trim()) setNameError(""); }}
+                placeholder="e.g. Aramex"
+              />
             </Field>
           </div>
           <div className="col-span-2">
@@ -281,6 +355,20 @@ export default function CarriersPage() {
           </Field>
         </div>
       </Modal>
+
+      {/* Disable (set inactive) Confirm */}
+      <ConfirmDialog
+        open={disabling !== null}
+        onClose={() => setDisabling(null)}
+        onConfirm={() => {
+          if (disabling) setStatus(disabling.name, "Inactive");
+          setDisabling(null);
+        }}
+        title="Set carrier inactive"
+        message={`Set "${disabling?.name ?? ""}" to inactive? New shipments will no longer be assigned to this carrier by default.`}
+        confirmLabel="Set Inactive"
+        destructive
+      />
 
       {/* Remove Confirm */}
       <ConfirmDialog

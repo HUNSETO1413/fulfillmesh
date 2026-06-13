@@ -17,7 +17,6 @@ import {
   Trash2,
   Plus,
   Download,
-  Calendar,
   ChevronRight,
   ChevronLeft,
   Plus as PlusSmall,
@@ -26,7 +25,8 @@ import {
 } from "lucide-react";
 import type { Product, StockStatus } from "@/types";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
-import { formatCurrency, formatNumber } from "@/lib/format";
+import { formatCurrency, formatDate, formatNumber } from "@/lib/format";
+import { DateRangeMenu } from "@/components/dashboard/DateRangeMenu";
 import { Modal } from "@/components/dashboard/Modal";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { Field, TextInput, NumberInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
@@ -34,6 +34,51 @@ import { useToast } from "@/components/dashboard/Toast";
 import { api, exportToCsv } from "@/lib/client";
 
 const STOCK_STATUSES: StockStatus[] = ["In Stock", "Low Stock", "Out of Stock", "Backordered"];
+
+// The demo workspace anchors "today" to the end of the header range so date
+// filtering stays deterministic across renders.
+const REF_DATE = new Date("2025-05-18T12:00:00Z");
+const DATE_RANGES = ["All time", "Last 7 days", "Last 30 days", "This quarter", "Year to date"];
+
+function hashString(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+// Products have no created-at column, so derive a stable "added" date from the
+// id: the same product always lands on the same day within the last 120 days.
+function productAddedDate(id: string): string {
+  const daysAgo = hashString(id) % 120;
+  const d = new Date(REF_DATE);
+  d.setUTCDate(d.getUTCDate() - daysAgo);
+  return d.toISOString().slice(0, 10);
+}
+
+function rangeStart(range: string): Date | null {
+  const start = new Date(REF_DATE);
+  switch (range) {
+    case "Last 7 days":
+      start.setUTCDate(start.getUTCDate() - 7);
+      return start;
+    case "Last 30 days":
+      start.setUTCDate(start.getUTCDate() - 30);
+      return start;
+    case "This quarter":
+      return new Date("2025-04-01T00:00:00Z");
+    case "Year to date":
+      return new Date("2025-01-01T00:00:00Z");
+    default:
+      return null;
+  }
+}
+
+function inDateRange(iso: string, range: string): boolean {
+  const start = rangeStart(range);
+  if (!start) return true;
+  const d = new Date(`${iso}T12:00:00Z`);
+  return d >= start && d <= REF_DATE;
+}
 
 type Draft = {
   sku: string;
@@ -50,7 +95,7 @@ const emptyDraft: Draft = {
   sku: "", name: "", category: "", price: "", cost: "", stock: "0", status: "In Stock", supplier: "",
 };
 
-function ProductFields({ draft, set }: { draft: Draft; set: (d: Partial<Draft>) => void }) {
+function ProductFields({ draft, set, categories }: { draft: Draft; set: (d: Partial<Draft>) => void; categories: string[] }) {
   return (
     <div className="grid grid-cols-2 gap-4">
       <div className="col-span-2">
@@ -62,7 +107,7 @@ function ProductFields({ draft, set }: { draft: Draft; set: (d: Partial<Draft>) 
         <TextInput value={draft.sku} onChange={(e) => set({ sku: e.target.value })} placeholder="WB-750-SLV" />
       </Field>
       <Field label="Category" required>
-        <TextInput value={draft.category} onChange={(e) => set({ category: e.target.value })} placeholder="Home & Kitchen" />
+        <Select options={categories} value={draft.category} onChange={(e) => set({ category: e.target.value })} />
       </Field>
       <Field label="Selling price (USD)">
         <NumberInput value={draft.price} onChange={(e) => set({ price: e.target.value })} placeholder="0.00" step="0.01" min="0" />
@@ -129,11 +174,22 @@ export default function ProductsView({ items }: { items: Product[] }) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(8);
   const [pageSizeOpen, setPageSizeOpen] = useState(false);
-  const [dateOpen, setDateOpen] = useState(false);
+  const [dateRange, setDateRange] = useState("All time");
 
   // status filter dropdown
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [filterOpen, setFilterOpen] = useState(false);
+
+  // "More filters" panel (price range + supplier)
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [priceMin, setPriceMin] = useState("");
+  const [priceMax, setPriceMax] = useState("");
+  const [supplierFilter, setSupplierFilter] = useState("");
+
+  // user-added categories (kept locally; persisted ones come from the catalog)
+  const [customCategories, setCustomCategories] = useState<string[]>([]);
+  const [catModalOpen, setCatModalOpen] = useState(false);
+  const [newCategory, setNewCategory] = useState("");
 
   // sorting
   type SortKey = "name" | "sku" | "category" | "cost" | "price" | "stock" | "status";
@@ -170,23 +226,47 @@ export default function ProductsView({ items }: { items: Product[] }) {
     for (const [name, count] of [...counts.entries()].sort((a, b) => b[1] - a[1])) {
       pills.push({ name, count: formatNumber(count) });
     }
+    for (const name of customCategories) {
+      if (!counts.has(name)) pills.push({ name, count: "0" });
+    }
     return pills;
-  }, [items]);
+  }, [items, customCategories]);
+
+  // All known categories (catalog + locally added) feed the product form select.
+  const allCategories = useMemo(() => {
+    const seen = new Set(items.map((p) => p.category));
+    return [
+      ...[...seen].sort((a, b) => a.localeCompare(b)),
+      ...customCategories.filter((c) => !seen.has(c)),
+    ];
+  }, [items, customCategories]);
+
+  const supplierOptions = useMemo(
+    () => [...new Set(items.map((p) => p.supplier).filter((s): s is string => !!s))].sort((a, b) => a.localeCompare(b)),
+    [items],
+  );
+
+  const moreFiltersActive = priceMin.trim() !== "" || priceMax.trim() !== "" || supplierFilter !== "";
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const min = priceMin.trim() === "" ? null : Number(priceMin);
+    const max = priceMax.trim() === "" ? null : Number(priceMax);
     return items.filter((p) => {
       const matchesPill = activePill === "All" || p.category === activePill;
       const matchesStatus = !statusFilter || p.status === statusFilter;
+      const matchesDate = inDateRange(productAddedDate(p.id), dateRange);
+      const matchesPrice = (min == null || p.price >= min) && (max == null || p.price <= max);
+      const matchesSupplier = !supplierFilter || p.supplier === supplierFilter;
       const matchesQuery =
         !q ||
         p.id.toLowerCase().includes(q) ||
         p.name.toLowerCase().includes(q) ||
         p.sku.toLowerCase().includes(q) ||
         (p.supplier?.toLowerCase().includes(q) ?? false);
-      return matchesPill && matchesStatus && matchesQuery;
+      return matchesPill && matchesStatus && matchesDate && matchesPrice && matchesSupplier && matchesQuery;
     });
-  }, [items, activePill, statusFilter, query]);
+  }, [items, activePill, statusFilter, query, dateRange, priceMin, priceMax, supplierFilter]);
 
   const sorted = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
@@ -255,7 +335,7 @@ export default function ProductsView({ items }: { items: Product[] }) {
   }
 
   function exportSelected() {
-    exportToCsv("products-selected", selectedRows, [
+    exportToCsv("products-selected", selectedRows.map((p) => ({ ...p, addedDate: productAddedDate(p.id) })), [
       { key: "id", header: "Product ID" },
       { key: "sku", header: "SKU" },
       { key: "name", header: "Name" },
@@ -265,6 +345,7 @@ export default function ProductsView({ items }: { items: Product[] }) {
       { key: "price", header: "Selling Price" },
       { key: "stock", header: "Stock" },
       { key: "status", header: "Status" },
+      { key: "addedDate", header: "Added" },
     ]);
     toast(`Exported ${selectedRows.length} selected products to CSV`);
   }
@@ -279,9 +360,36 @@ export default function ProductsView({ items }: { items: Product[] }) {
     setPage(1);
   }
 
+  function clearAllFilters() {
+    setActivePill("All");
+    setStatusFilter("");
+    setQuery("");
+    setPriceMin("");
+    setPriceMax("");
+    setSupplierFilter("");
+    setDateRange("All time");
+    setPage(1);
+  }
+
+  function addCategory() {
+    const name = newCategory.trim();
+    if (!name) {
+      toast("Category name is required", "error");
+      return;
+    }
+    if (allCategories.some((c) => c.toLowerCase() === name.toLowerCase())) {
+      toast(`Category "${name}" already exists`, "error");
+      return;
+    }
+    setCustomCategories((prev) => [...prev, name]);
+    setCatModalOpen(false);
+    setNewCategory("");
+    toast(`Category "${name}" added`);
+  }
+
   function openCreate() {
     setEditing(null);
-    setDraft(emptyDraft);
+    setDraft({ ...emptyDraft, category: allCategories[0] ?? "" });
     setFormOpen(true);
   }
 
@@ -348,7 +456,7 @@ export default function ProductsView({ items }: { items: Product[] }) {
   }
 
   function handleExport() {
-    exportToCsv("products", filtered, [
+    exportToCsv("products", filtered.map((p) => ({ ...p, addedDate: productAddedDate(p.id) })), [
       { key: "id", header: "Product ID" },
       { key: "sku", header: "SKU" },
       { key: "name", header: "Name" },
@@ -358,6 +466,7 @@ export default function ProductsView({ items }: { items: Product[] }) {
       { key: "price", header: "Selling Price" },
       { key: "stock", header: "Stock" },
       { key: "status", header: "Status" },
+      { key: "addedDate", header: "Added" },
     ]);
     toast(`Exported ${filtered.length} products to CSV`);
   }
@@ -384,32 +493,11 @@ export default function ProductsView({ items }: { items: Product[] }) {
           <p className="text-[14px] text-[#4A5A73] mt-0.5">Manage your product catalog, pricing, and inventory across all channels.</p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="relative">
-            <button
-              onClick={() => setDateOpen((v) => !v)}
-              className="inline-flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E6EDF5] rounded-lg text-[13px] font-medium text-[#4A5A73] hover:bg-[#F7FAFC]"
-            >
-              <Calendar className="w-4 h-4" />
-              May 12 – May 18, 2025
-              <ChevronDown className="w-3.5 h-3.5" />
-            </button>
-            {dateOpen && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setDateOpen(false)} />
-                <div className="absolute right-0 mt-1 z-20 w-44 bg-white rounded-lg border border-[#E6EDF5] shadow-lg py-1">
-                  {["Last 7 days", "Last 30 days", "This quarter", "Year to date"].map((r) => (
-                    <button
-                      key={r}
-                      onClick={() => { setDateOpen(false); toast(`Date range: ${r}`); }}
-                      className="w-full text-left px-3 py-1.5 text-[13px] text-[#4A5A73] hover:bg-[#F7FAFC]"
-                    >
-                      {r}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
+          <DateRangeMenu
+            value={dateRange}
+            onSelect={(r) => { setDateRange(r); setPage(1); }}
+            presets={DATE_RANGES}
+          />
           <button
             onClick={handleExport}
             className="inline-flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E6EDF5] rounded-lg text-[13px] font-medium text-[#4A5A73] hover:bg-[#F7FAFC]"
@@ -467,12 +555,51 @@ export default function ProductsView({ items }: { items: Product[] }) {
                 className="w-full pl-9 pr-4 py-2 bg-white border border-[#E6EDF5] rounded-lg text-[13px] text-[#061A3D] placeholder:text-[#9AA8B8] focus:outline-none focus:ring-2 focus:ring-[#0057D8]/20 focus:border-[#0057D8]"
               />
             </div>
-            <button
-              onClick={() => toast("Filters")}
-              className="w-9 h-9 shrink-0 flex items-center justify-center border border-[#E6EDF5] rounded-lg text-[#66758C] hover:bg-[#F7FAFC]"
-            >
-              <SlidersHorizontal className="w-4 h-4" />
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => setMoreOpen((v) => !v)}
+                aria-label="More filters"
+                className={`w-9 h-9 shrink-0 flex items-center justify-center border rounded-lg transition-colors ${
+                  moreFiltersActive ? "bg-[#0057D8]/10 border-[#0057D8]/30 text-[#0057D8]" : "border-[#E6EDF5] text-[#66758C] hover:bg-[#F7FAFC]"
+                }`}
+              >
+                <SlidersHorizontal className="w-4 h-4" />
+              </button>
+              {moreOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setMoreOpen(false)} />
+                  <div className="absolute right-0 mt-1 z-20 w-72 bg-white rounded-lg border border-[#E6EDF5] shadow-lg p-4 space-y-3">
+                    <p className="text-[11px] font-semibold text-[#9AA8B8] uppercase">More filters</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <Field label="Min price (USD)">
+                        <NumberInput value={priceMin} onChange={(e) => { setPriceMin(e.target.value); setPage(1); }} placeholder="0.00" min="0" step="0.01" />
+                      </Field>
+                      <Field label="Max price (USD)">
+                        <NumberInput value={priceMax} onChange={(e) => { setPriceMax(e.target.value); setPage(1); }} placeholder="0.00" min="0" step="0.01" />
+                      </Field>
+                    </div>
+                    <Field label="Supplier">
+                      <Select
+                        options={["All suppliers", ...supplierOptions]}
+                        value={supplierFilter || "All suppliers"}
+                        onChange={(e) => { setSupplierFilter(e.target.value === "All suppliers" ? "" : e.target.value); setPage(1); }}
+                      />
+                    </Field>
+                    <div className="flex items-center justify-between pt-1">
+                      <button onClick={clearAllFilters} className="text-[12px] font-medium text-[#0057D8] hover:underline">
+                        Clear all
+                      </button>
+                      <button
+                        onClick={() => setMoreOpen(false)}
+                        className="px-3 py-1.5 bg-[#0057D8] hover:bg-[#003B7A] rounded-lg text-[12px] font-medium text-white"
+                      >
+                        Done
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-2 mt-3">
@@ -528,8 +655,9 @@ export default function ProductsView({ items }: { items: Product[] }) {
               </button>
             ))}
             <button
-              onClick={() => toast("Add a category")}
-              className="w-6 h-6 flex items-center justify-center rounded-md border border-[#E6EDF5] text-[#66758C]"
+              onClick={() => { setNewCategory(""); setCatModalOpen(true); }}
+              aria-label="Add a category"
+              className="w-6 h-6 flex items-center justify-center rounded-md border border-[#E6EDF5] text-[#66758C] hover:bg-[#F7FAFC]"
             >
               <PlusSmall className="w-3.5 h-3.5" />
             </button>
@@ -678,9 +806,12 @@ export default function ProductsView({ items }: { items: Product[] }) {
                   <td className="px-5 py-3">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#E6EDF5] to-[#F7FAFC] border border-[#E6EDF5] overflow-hidden shrink-0" />
-                      <Link href={`/dashboard/products/${p.id}`} className="text-[13px] font-medium text-[#061A3D] hover:text-[#0057D8] leading-tight max-w-[200px]">
-                        {p.name}
-                      </Link>
+                      <div>
+                        <Link href={`/dashboard/products/${p.id}`} className="text-[13px] font-medium text-[#061A3D] hover:text-[#0057D8] leading-tight max-w-[200px]">
+                          {p.name}
+                        </Link>
+                        <p className="text-[11px] text-[#9AA8B8]">Added {formatDate(productAddedDate(p.id))}</p>
+                      </div>
                     </div>
                   </td>
                   <td className="px-5 py-3 text-[13px] text-[#4A5A73] font-mono whitespace-nowrap">{p.sku}</td>
@@ -812,7 +943,31 @@ export default function ProductsView({ items }: { items: Product[] }) {
           </>
         }
       >
-        <ProductFields draft={draft} set={(d) => setDraft((prev) => ({ ...prev, ...d }))} />
+        <ProductFields draft={draft} set={(d) => setDraft((prev) => ({ ...prev, ...d }))} categories={allCategories} />
+      </Modal>
+
+      {/* Add category modal */}
+      <Modal
+        open={catModalOpen}
+        onClose={() => setCatModalOpen(false)}
+        title="Add a category"
+        description="New categories appear in the filter pills and the product form."
+        size="sm"
+        footer={
+          <>
+            <SecondaryButton onClick={() => setCatModalOpen(false)}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={addCategory}>Add category</PrimaryButton>
+          </>
+        }
+      >
+        <Field label="Category name" required>
+          <TextInput
+            value={newCategory}
+            onChange={(e) => setNewCategory(e.target.value)}
+            placeholder="Pet Supplies"
+            onKeyDown={(e) => { if (e.key === "Enter") addCategory(); }}
+          />
+        </Field>
       </Modal>
 
       {/* Delete confirm */}

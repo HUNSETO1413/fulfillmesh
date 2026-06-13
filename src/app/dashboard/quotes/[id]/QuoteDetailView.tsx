@@ -9,6 +9,7 @@ import {
 import type { Quote } from "@/types";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { Modal } from "@/components/dashboard/Modal";
+import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { Field as FormField, TextInput, TextArea, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
 import { exportToCsv } from "@/lib/client";
@@ -66,7 +67,10 @@ const files = [
   { name: "Product_Specs.pdf", meta: "PDF · 1.2 MB", icon: FileText, color: "text-[#EF4444]", bg: "bg-[#EF4444]/10" },
   { name: "Packaging_Design.ai", meta: "AI · 8.7 MB", icon: FileText, color: "text-[#F59E0B]", bg: "bg-[#F59E0B]/10" },
   { name: "Reference_Photo.jpg", meta: "JPG · 2.3 MB", icon: ImageIcon, color: "text-[#0057D8]", bg: "bg-[#0057D8]/10" },
+  { name: "Certification_FCC.pdf", meta: "PDF · 640 KB", icon: FileText, color: "text-[#EF4444]", bg: "bg-[#EF4444]/10" },
+  { name: "Label_Artwork.png", meta: "PNG · 3.1 MB", icon: ImageIcon, color: "text-[#0057D8]", bg: "bg-[#0057D8]/10" },
 ];
+const FILES_VISIBLE = 3;
 
 const initialNotes = [
   "Looking for best value with reliable quality.",
@@ -90,6 +94,12 @@ export default function QuoteDetailView({ quote }: { quote: Quote }) {
   const [reqDraft, setReqDraft] = useState(initialRequirements);
   const [notesOpen, setNotesOpen] = useState(false);
   const [notesDraft, setNotesDraft] = useState(initialNotes.join("\n"));
+  const [confirmDiscard, setConfirmDiscard] = useState<null | "req" | "notes">(null);
+  const [showAllFiles, setShowAllFiles] = useState(false);
+
+  const reqDirty = JSON.stringify(reqDraft) !== JSON.stringify(requirements);
+  const notesDirty = notesDraft !== notes.join("\n");
+  const visibleFiles = showAllFiles ? files : files.slice(0, FILES_VISIBLE);
 
   const infoFields = [
     { label: "Request ID", value: quote.id, sub: `Created: ${formatDate(quote.createdDate)}`, mono: true },
@@ -120,8 +130,40 @@ export default function QuoteDetailView({ quote }: { quote: Quote }) {
     toast("Quote notes updated");
   }
 
+  // Warn before closing an edit modal with unsaved changes.
+  function requestCloseReq() {
+    if (reqDirty) setConfirmDiscard("req");
+    else setReqOpen(false);
+  }
+  function requestCloseNotes() {
+    if (notesDirty) setConfirmDiscard("notes");
+    else setNotesOpen(false);
+  }
+  function discardChanges() {
+    if (confirmDiscard === "req") setReqOpen(false);
+    else if (confirmDiscard === "notes") setNotesOpen(false);
+    setConfirmDiscard(null);
+  }
+
   function downloadFile(name: string) {
-    toast(`Downloading ${name}…`);
+    const file = files.find((f) => f.name === name);
+    const blob = new Blob([
+      [
+        "FulfillMesh — RFQ File Export",
+        `File: ${name}`,
+        file ? `Details: ${file.meta}` : "",
+        `Quote: ${quote.id}`,
+        `Customer: ${quote.customer}`,
+      ].filter(Boolean).join("\n"),
+    ], { type: "text/plain;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `${name.replace(/\.[a-z0-9]+$/i, "")}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
+    toast(`${name} downloaded`);
   }
 
   function exportComparison() {
@@ -275,12 +317,12 @@ export default function QuoteDetailView({ quote }: { quote: Quote }) {
           {/* Uploaded Files */}
           <div className="bg-white rounded-xl border border-[#E6EDF5] shadow-[0_1px_3px_rgba(0,0,0,0.1)] overflow-hidden">
             <div className="flex items-center justify-between px-5 py-3 bg-[#F7FAFC] border-b border-[#E6EDF5]">
-              <h3 className="text-[14px] font-semibold text-[#061A3D]">Uploaded Files (3)</h3>
-              <button onClick={() => toast("Showing all 3 uploaded files")} className="text-[12px] font-medium text-[#0057D8] hover:underline">View all</button>
+              <h3 className="text-[14px] font-semibold text-[#061A3D]">Uploaded Files ({files.length})</h3>
+              <button onClick={() => setShowAllFiles((v) => !v)} className="text-[12px] font-medium text-[#0057D8] hover:underline">{showAllFiles ? "Show fewer" : `View all (${files.length})`}</button>
             </div>
             <div className="p-5">
               <div className="space-y-3">
-                {files.map((f) => {
+                {visibleFiles.map((f) => {
                   const Icon = f.icon;
                   return (
                     <button key={f.name} onClick={() => downloadFile(f.name)} className="w-full flex items-center gap-3 text-left hover:bg-[#F7FAFC] rounded-lg -mx-1 px-1 py-1 transition-colors">
@@ -398,14 +440,14 @@ export default function QuoteDetailView({ quote }: { quote: Quote }) {
       {/* Edit requirements modal */}
       <Modal
         open={reqOpen}
-        onClose={() => setReqOpen(false)}
+        onClose={requestCloseReq}
         title="Edit Product Requirements"
         description="Update the requirement values for this RFQ."
         size="md"
         footer={
           <>
-            <SecondaryButton onClick={() => setReqOpen(false)}>Cancel</SecondaryButton>
-            <PrimaryButton onClick={saveReq}>Save changes</PrimaryButton>
+            <SecondaryButton onClick={requestCloseReq}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={saveReq} disabled={!reqDirty}>{reqDirty ? "Save changes •" : "Save changes"}</PrimaryButton>
           </>
         }
       >
@@ -424,13 +466,13 @@ export default function QuoteDetailView({ quote }: { quote: Quote }) {
       {/* Edit notes modal */}
       <Modal
         open={notesOpen}
-        onClose={() => setNotesOpen(false)}
+        onClose={requestCloseNotes}
         title="Edit Quote Notes"
         description="One note per line."
         footer={
           <>
-            <SecondaryButton onClick={() => setNotesOpen(false)}>Cancel</SecondaryButton>
-            <PrimaryButton onClick={saveNotes}>Save changes</PrimaryButton>
+            <SecondaryButton onClick={requestCloseNotes}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={saveNotes} disabled={!notesDirty}>{notesDirty ? "Save changes •" : "Save changes"}</PrimaryButton>
           </>
         }
       >
@@ -438,6 +480,18 @@ export default function QuoteDetailView({ quote }: { quote: Quote }) {
           <TextArea value={notesDraft} onChange={(e) => setNotesDraft(e.target.value)} rows={6} />
         </FormField>
       </Modal>
+
+      {/* Unsaved changes warning */}
+      <ConfirmDialog
+        open={confirmDiscard !== null}
+        onClose={() => setConfirmDiscard(null)}
+        onConfirm={discardChanges}
+        title="Discard unsaved changes?"
+        message={`You have unsaved ${confirmDiscard === "req" ? "requirement" : "note"} changes. Closing will discard them.`}
+        confirmLabel="Discard changes"
+        cancelLabel="Keep editing"
+        destructive
+      />
     </div>
   );
 }

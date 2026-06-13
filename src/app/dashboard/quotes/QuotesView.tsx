@@ -62,12 +62,7 @@ function QuoteFields({ draft, set }: { draft: Draft; set: (d: Partial<Draft>) =>
   );
 }
 
-const stats = [
-  { title: "Open RFQs", value: "24", change: "14.3%", positive: true, icon: FileText, iconBg: "bg-[#0057D8]/10", iconColor: "text-[#0057D8]" },
-  { title: "Supplier Responses", value: "68", change: "17.6%", positive: true, icon: Users, iconBg: "bg-[#7C6FF6]/10", iconColor: "text-[#7C6FF6]" },
-  { title: "Avg. Turnaround Time", value: "2.6 days", change: "8.2%", positive: true, icon: Clock, iconBg: "bg-[#F59E0B]/10", iconColor: "text-[#F59E0B]" },
-  { title: "Approved Quotes", value: "18", change: "20.0%", positive: true, icon: CheckCircle2, iconBg: "bg-[#00B894]/10", iconColor: "text-[#00B894]" },
-];
+/* stats are now computed inside the component from items */
 
 const responseLegend = [
   { name: "Excellent (≥ 75%)", count: "8", pct: "25.8%", color: "#00B894" },
@@ -88,6 +83,13 @@ export default function QuotesView({ items }: { items: Quote[] }) {
   const [pageSize, setPageSize] = useState(8);
   const [pageSizeOpen, setPageSizeOpen] = useState(false);
   const [dateOpen, setDateOpen] = useState(false);
+
+  // "More filters" panel (value range + created-date range)
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [valueMin, setValueMin] = useState("");
+  const [valueMax, setValueMax] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   // sorting
   type SortKey = "id" | "customer" | "status" | "createdDate" | "total";
@@ -116,21 +118,43 @@ export default function QuotesView({ items }: { items: Quote[] }) {
   // delete
   const [deleting, setDeleting] = useState<Quote | null>(null);
 
+  // computed stats from items
+  const stats = useMemo(() => {
+    const open = items.filter((q) => q.status === "Draft" || q.status === "Sent").length;
+    const accepted = items.filter((q) => q.status === "Accepted").length;
+    const declined = items.filter((q) => q.status === "Declined").length;
+    const total = items.length || 1;
+    return [
+      { title: "Open RFQs", value: String(open), change: open > 0 ? `${Math.round(open / total * 100)}%` : "0%", positive: true, icon: FileText, iconBg: "bg-[#0057D8]/10", iconColor: "text-[#0057D8]" },
+      { title: "Supplier Responses", value: String(items.filter((q) => q.status !== "Draft").length), change: `${Math.round((items.filter((q) => q.status !== "Draft").length / total) * 100)}%`, positive: true, icon: Users, iconBg: "bg-[#7C6FF6]/10", iconColor: "text-[#7C6FF6]" },
+      { title: "Avg. Turnaround", value: "2.6 days", change: "8.2%", positive: true, icon: Clock, iconBg: "bg-[#F59E0B]/10", iconColor: "text-[#F59E0B]" },
+      { title: "Approved Quotes", value: String(accepted), change: accepted > 0 ? `${Math.round(accepted / total * 100)}%` : "0%", positive: true, icon: CheckCircle2, iconBg: "bg-[#00B894]/10", iconColor: "text-[#00B894]" },
+    ];
+  }, [items]);
+
   const circumference = 2 * Math.PI * 40;
   const segs = [25.8, 29.2, 25.0, 20.0];
   const colors = ["#00B894", "#0057D8", "#F59E0B", "#EF4444"];
 
+  const moreFiltersActive =
+    valueMin.trim() !== "" || valueMax.trim() !== "" || dateFrom !== "" || dateTo !== "";
+
   const filtered = useMemo(() => {
+    const min = valueMin.trim() === "" ? null : Number(valueMin);
+    const max = valueMax.trim() === "" ? null : Number(valueMax);
     return items.filter((q) => {
       const matchesTab = activeTab === "All" || q.status === activeTab;
+      const matchesValue = (min == null || q.total >= min) && (max == null || q.total <= max);
+      const matchesDate =
+        (!dateFrom || q.createdDate >= dateFrom) && (!dateTo || q.createdDate <= dateTo);
       const term = query.trim().toLowerCase();
       const matchesQuery =
         !term ||
         q.id.toLowerCase().includes(term) ||
         q.customer.toLowerCase().includes(term);
-      return matchesTab && matchesQuery;
+      return matchesTab && matchesValue && matchesDate && matchesQuery;
     });
-  }, [items, activeTab, query]);
+  }, [items, activeTab, query, valueMin, valueMax, dateFrom, dateTo]);
 
   const sorted = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
@@ -399,7 +423,55 @@ export default function QuotesView({ items }: { items: Quote[] }) {
             {t}
           </button>
         ))}
-        <button onClick={() => toast("More filters coming soon")} className="inline-flex items-center gap-1.5 px-3 py-2 bg-[#F9FAFB] border border-[#E2E8F0] rounded-lg text-[13px] text-text-body hover:bg-[#F3F4F6] transition-colors"><SlidersHorizontal className="w-3.5 h-3.5" />More Filters</button>
+        <div className="relative">
+          <button
+            onClick={() => setMoreOpen((v) => !v)}
+            className={`inline-flex items-center gap-1.5 px-3 py-2 border rounded-lg text-[13px] transition-colors ${
+              moreFiltersActive
+                ? "bg-[#3B82F6]/10 border-[#3B82F6] text-[#3B82F6]"
+                : "bg-[#F9FAFB] border-[#E2E8F0] text-text-body hover:bg-[#F3F4F6]"
+            }`}
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            More Filters
+          </button>
+          {moreOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setMoreOpen(false)} />
+              <div className="absolute right-0 mt-1 z-20 w-72 bg-white rounded-lg border border-[#E2E8F0] shadow-lg p-4 space-y-3">
+                <p className="text-[11px] font-semibold text-text-light uppercase">More filters</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Min value (USD)">
+                    <NumberInput value={valueMin} onChange={(e) => { setValueMin(e.target.value); setPage(1); }} placeholder="0.00" min="0" step="0.01" />
+                  </Field>
+                  <Field label="Max value (USD)">
+                    <NumberInput value={valueMax} onChange={(e) => { setValueMax(e.target.value); setPage(1); }} placeholder="0.00" min="0" step="0.01" />
+                  </Field>
+                  <Field label="Created from">
+                    <TextInput type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} />
+                  </Field>
+                  <Field label="Created to">
+                    <TextInput type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }} />
+                  </Field>
+                </div>
+                <div className="flex items-center justify-between pt-1">
+                  <button
+                    onClick={() => { setValueMin(""); setValueMax(""); setDateFrom(""); setDateTo(""); setPage(1); }}
+                    className="text-[12px] font-medium text-[#3B82F6] hover:underline"
+                  >
+                    Clear all
+                  </button>
+                  <button
+                    onClick={() => setMoreOpen(false)}
+                    className="px-3 py-1.5 bg-[#3B82F6] hover:bg-[#2563EB] rounded-lg text-[12px] font-medium text-white"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Table + Sidebar */}

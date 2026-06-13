@@ -12,7 +12,11 @@ import { api } from "@/lib/client";
 
 const STATUSES: Customer["status"][] = ["Active", "Inactive", "Lead"];
 
-export default function CustomerDetailActions({ customer }: { customer: Customer }) {
+export default function CustomerDetailActions({ customer, onChanged }: {
+  customer: Customer;
+  /** Called after a successful save so the parent view can log the change (e.g. timeline). */
+  onChanged?: (description: string) => void;
+}) {
   const router = useRouter();
   const { toast } = useToast();
   const [busy, setBusy] = useState(false);
@@ -48,6 +52,9 @@ export default function CustomerDetailActions({ customer }: { customer: Customer
         joinedDate: draft.joinedDate || undefined,
       });
       toast(`Customer ${customer.id} updated`);
+      onChanged?.(draft.status !== customer.status
+        ? `Status changed from ${customer.status} to ${draft.status}`
+        : "Customer details updated");
       setEditOpen(false);
       router.refresh();
     } catch (e) {

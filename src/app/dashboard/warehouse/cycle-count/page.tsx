@@ -4,21 +4,16 @@ import { useMemo, useRef, useState } from "react";
 import {
   ClipboardList, CheckCircle2, Activity, CalendarClock, XCircle,
   Search, Columns3, Plus, ChevronDown, MoreHorizontal,
-  ArrowUpRight, ArrowDownRight, Calendar, Eye, Play, Ban,
+  ArrowUpRight, ArrowDownRight, Calendar, Eye, Play, Ban, Pencil, Users,
 } from "lucide-react";
 import { Modal } from "@/components/dashboard/Modal";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
+import { Drawer, DrawerRow, DrawerSection } from "@/components/dashboard/Drawer";
 import { Field, TextInput, Select } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
 import { exportToCsv } from "@/lib/client";
 
-const stats = [
-  { title: "Total Cycle Counts", value: "124", change: "+16.3%", note: "vs last 30 days", positive: true, icon: ClipboardList, iconBg: "bg-action-blue/10", iconColor: "text-action-blue" },
-  { title: "Completed", value: "98", sub: "79.0%", change: "+12.7%", note: "vs last 30 days", positive: true, icon: CheckCircle2, iconBg: "bg-teal/10", iconColor: "text-teal" },
-  { title: "In Progress", value: "18", sub: "14.5%", change: "+5.9%", note: "vs last 30 days", positive: true, icon: Activity, iconBg: "bg-[#7C6FF6]/10", iconColor: "text-[#7C6FF6]" },
-  { title: "Scheduled", value: "6", sub: "4.8%", change: "-14.3%", note: "vs last 30 days", positive: false, icon: CalendarClock, iconBg: "bg-[#F59E0B]/10", iconColor: "text-[#F59E0B]" },
-  { title: "Cancelled", value: "2", sub: "1.6%", change: "-20.0%", note: "vs last 30 days", positive: false, icon: XCircle, iconBg: "bg-[#EF4444]/10", iconColor: "text-[#EF4444]" },
-];
+/* stats are now computed via useMemo from rows state */
 
 const tabs = ["All Cycle Counts", "In Progress", "Scheduled", "Completed", "Cancelled"];
 
@@ -136,7 +131,42 @@ export default function CycleCountPage() {
   const [busy, setBusy] = useState(false);
   const [cancelling, setCancelling] = useState<Row | null>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [editRow, setEditRow] = useState<Row | null>(null);
+  const [editDraft, setEditDraft] = useState<Draft>(emptyDraft);
+  const [editBusy, setEditBusy] = useState(false);
+  const [detailRow, setDetailRow] = useState<Row | null>(null);
   const seq = useRef(124);
+
+  /* ── Computed stats derived from rows ── */
+  const stats = useMemo(() => {
+    const total = rows.length;
+    const completed = rows.filter((r) => r.status === "Completed").length;
+    const inProgress = rows.filter((r) => r.status === "In Progress").length;
+    const scheduled = rows.filter((r) => r.status === "Scheduled").length;
+    const cancelled = rows.filter((r) => r.status === "Cancelled").length;
+    const pct = (n: number) => total ? ((n / total) * 100).toFixed(1) : "0.0";
+    return [
+      { title: "Total Cycle Counts", value: String(total), change: "+16.3%", note: "vs last 30 days", positive: true, icon: ClipboardList, iconBg: "bg-action-blue/10", iconColor: "text-action-blue" },
+      { title: "Completed", value: String(completed), sub: `${pct(completed)}%`, change: "+12.7%", note: "vs last 30 days", positive: true, icon: CheckCircle2, iconBg: "bg-teal/10", iconColor: "text-teal" },
+      { title: "In Progress", value: String(inProgress), sub: `${pct(inProgress)}%`, change: "+5.9%", note: "vs last 30 days", positive: true, icon: Activity, iconBg: "bg-[#7C6FF6]/10", iconColor: "text-[#7C6FF6]" },
+      { title: "Scheduled", value: String(scheduled), sub: `${pct(scheduled)}%`, change: "-14.3%", note: "vs last 30 days", positive: false, icon: CalendarClock, iconBg: "bg-[#F59E0B]/10", iconColor: "text-[#F59E0B]" },
+      { title: "Cancelled", value: String(cancelled), sub: `${pct(cancelled)}%`, change: "-20.0%", note: "vs last 30 days", positive: false, icon: XCircle, iconBg: "bg-[#EF4444]/10", iconColor: "text-[#EF4444]" },
+    ];
+  }, [rows]);
+
+  /* ── Donut data derived from rows ── */
+  const donutSegments = useMemo(() => {
+    const total = rows.length;
+    const counts: [string, string, number][] = [
+      ["Completed", "var(--color-teal)", rows.filter((r) => r.status === "Completed").length],
+      ["In Progress", "#7C6FF6", rows.filter((r) => r.status === "In Progress").length],
+      ["Scheduled", "#F59E0B", rows.filter((r) => r.status === "Scheduled").length],
+      ["Cancelled", "#EF4444", rows.filter((r) => r.status === "Cancelled").length],
+    ];
+    return counts.map(([label, color, count]) => ({
+      label, color, count, pct: total ? ((count / total) * 100).toFixed(1) : "0.0",
+    }));
+  }, [rows]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -188,6 +218,26 @@ export default function CycleCountPage() {
     setRows((prev) => prev.map((r) => (r.cc === cc ? { ...r, ...patch } : r)));
     setMenuFor(null);
     toast(msg);
+  }
+
+  function openEdit(r: Row) {
+    setEditRow(r);
+    setEditDraft({ name: r.name, type: r.sub, wh: r.wh, start: today, due: today });
+    setMenuFor(null);
+  }
+
+  function saveEdit() {
+    if (!editRow) return;
+    if (!editDraft.name.trim()) { toast("Count name is required", "error"); return; }
+    setEditBusy(true);
+    setRows((prev) => prev.map((r) =>
+      r.cc === editRow.cc
+        ? { ...r, name: editDraft.name.trim(), sub: editDraft.type, wh: editDraft.wh, whSub: WH_CITY[editDraft.wh], start: fmt(editDraft.start), due: fmt(editDraft.due) }
+        : r
+    ));
+    setEditBusy(false);
+    setEditRow(null);
+    toast(`Cycle count ${editRow.cc} updated`);
   }
 
   return (
@@ -290,7 +340,10 @@ export default function CycleCountPage() {
                           <>
                             <div className="fixed inset-0 z-10" onClick={() => setMenuFor(null)} />
                             <div className="absolute right-0 mt-1 z-20 w-44 bg-white rounded-lg border border-border-soft shadow-lg py-1 text-left">
-                              <button onClick={() => { setMenuFor(null); toast(`Viewing ${r.cc}`, "info"); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-[13px] text-text-primary hover:bg-soft-bg"><Eye className="w-3.5 h-3.5" /> View details</button>
+                              <button onClick={() => { setMenuFor(null); setDetailRow(r); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-[13px] text-text-primary hover:bg-soft-bg"><Eye className="w-3.5 h-3.5" /> View details</button>
+                              {r.status !== "Completed" && r.status !== "Cancelled" && (
+                                <button onClick={() => openEdit(r)} className="w-full flex items-center gap-2 px-3 py-1.5 text-[13px] text-text-primary hover:bg-soft-bg"><Pencil className="w-3.5 h-3.5" /> Edit</button>
+                              )}
                               {r.status === "Scheduled" && (
                                 <button onClick={() => update(r.cc, { status: "In Progress", progress: 10 }, `Started ${r.cc}`)} className="w-full flex items-center gap-2 px-3 py-1.5 text-[13px] text-action-blue hover:bg-soft-bg"><Play className="w-3.5 h-3.5" /> Start count</button>
                               )}
@@ -332,19 +385,22 @@ export default function CycleCountPage() {
               <div className="relative w-[110px] h-[110px] shrink-0">
                 <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
                   <circle cx="50" cy="50" r="40" fill="none" stroke="var(--color-border-blue)" strokeWidth="12" />
-                  {(() => { let off = 0; const segs = [["var(--color-teal)", 79.0], ["#7C6FF6", 14.5], ["#F59E0B", 4.8], ["#EF4444", 1.6]] as [string, number][]; return segs.map(([c, p], i) => {
+                  {(() => { let off = 0; return donutSegments.map((seg, i) => {
+                    const p = parseFloat(seg.pct);
                     const da = `${p * 2.51327} ${251.327 - p * 2.51327}`;
-                    const el = <circle key={i} cx="50" cy="50" r="40" fill="none" stroke={c} strokeWidth="12" strokeDasharray={da} strokeDashoffset={-off * 2.51327} />;
+                    const el = <circle key={i} cx="50" cy="50" r="40" fill="none" stroke={seg.color} strokeWidth="12" strokeDasharray={da} strokeDashoffset={-off * 2.51327} />;
                     off += p; return el;
                   }); })()}
                 </svg>
-                <div className="absolute inset-0 flex items-center justify-center"><div className="text-center"><p className="text-[17px] font-bold text-text-primary leading-none">124</p><p className="text-[10px] text-text-light mt-0.5">Total</p></div></div>
+                <div className="absolute inset-0 flex items-center justify-center"><div className="text-center"><p className="text-[17px] font-bold text-text-primary leading-none">{rows.length}</p><p className="text-[10px] text-text-light mt-0.5">Total</p></div></div>
               </div>
               <div className="flex-1 space-y-2">
-                <div className="flex items-center justify-between text-[12px]"><div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: "var(--color-teal)" }} /><span className="text-text-muted">Completed</span></div><span className="font-medium text-text-primary">98 (79.0%)</span></div>
-                <div className="flex items-center justify-between text-[12px]"><div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: "#7C6FF6" }} /><span className="text-text-muted">In Progress</span></div><span className="font-medium text-text-primary">18 (14.5%)</span></div>
-                <div className="flex items-center justify-between text-[12px]"><div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: "#F59E0B" }} /><span className="text-text-muted">Scheduled</span></div><span className="font-medium text-text-primary">6 (4.8%)</span></div>
-                <div className="flex items-center justify-between text-[12px]"><div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: "#EF4444" }} /><span className="text-text-muted">Cancelled</span></div><span className="font-medium text-text-primary">2 (1.6%)</span></div>
+                {donutSegments.map((seg) => (
+                  <div key={seg.label} className="flex items-center justify-between text-[12px]">
+                    <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: seg.color }} /><span className="text-text-muted">{seg.label}</span></div>
+                    <span className="font-medium text-text-primary">{seg.count} ({seg.pct}%)</span>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -429,6 +485,118 @@ export default function CycleCountPage() {
         cancelLabel="Keep"
         destructive
       />
+
+      {/* Edit Cycle Count modal */}
+      <Modal
+        open={!!editRow}
+        onClose={() => setEditRow(null)}
+        title="Edit Cycle Count"
+        description={`Update details for ${editRow?.cc ?? ""}.`}
+        footer={
+          <>
+            <button onClick={() => setEditRow(null)} className="px-4 py-2 text-[13px] font-medium text-text-primary bg-white border border-border-soft rounded-lg hover:bg-soft-bg">Cancel</button>
+            <button onClick={saveEdit} disabled={editBusy} className="px-4 py-2 text-[13px] font-medium text-white bg-action-blue rounded-lg hover:bg-[#004BBF] disabled:opacity-60">{editBusy ? "Saving…" : "Save changes"}</button>
+          </>
+        }
+      >
+        <div className="grid grid-cols-2 gap-4">
+          <div className="col-span-2"><Field label="Count name" required><TextInput value={editDraft.name} onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))} placeholder="Aisle A01 – A10" /></Field></div>
+          <Field label="Count type"><Select options={COUNT_TYPES} value={editDraft.type} onChange={(e) => setEditDraft((d) => ({ ...d, type: e.target.value }))} /></Field>
+          <Field label="Warehouse"><Select options={WAREHOUSES} value={editDraft.wh} onChange={(e) => setEditDraft((d) => ({ ...d, wh: e.target.value }))} /></Field>
+          <Field label="Start date"><TextInput type="date" value={editDraft.start} onChange={(e) => setEditDraft((d) => ({ ...d, start: e.target.value }))} /></Field>
+          <Field label="Due date"><TextInput type="date" value={editDraft.due} onChange={(e) => setEditDraft((d) => ({ ...d, due: e.target.value }))} /></Field>
+        </div>
+      </Modal>
+
+      {/* Detail drawer */}
+      <Drawer
+        open={!!detailRow}
+        onClose={() => setDetailRow(null)}
+        title={detailRow?.name ?? ""}
+        subtitle={detailRow?.cc ?? ""}
+        footer={
+          <>
+            {detailRow && detailRow.status !== "Completed" && detailRow.status !== "Cancelled" && (
+              <button onClick={() => { if (detailRow) { openEdit(detailRow); setDetailRow(null); } }} className="flex items-center gap-2 px-4 py-2 text-[13px] font-medium text-action-blue border border-action-blue rounded-lg hover:bg-action-blue/5"><Pencil className="w-3.5 h-3.5" /> Edit</button>
+            )}
+            <button onClick={() => setDetailRow(null)} className="px-4 py-2 text-[13px] font-medium text-text-primary bg-white border border-border-soft rounded-lg hover:bg-soft-bg">Close</button>
+          </>
+        }
+      >
+        {detailRow && (
+          <>
+            <DrawerSection title="Count Details">
+              <DrawerRow label="Count #"><span className="font-mono text-action-blue">{detailRow.cc}</span></DrawerRow>
+              <DrawerRow label="Name">{detailRow.name}</DrawerRow>
+              <DrawerRow label="Type">{detailRow.sub}</DrawerRow>
+              <DrawerRow label="Warehouse">{detailRow.wh} &mdash; {detailRow.whSub}</DrawerRow>
+              <DrawerRow label="Status"><Badge text={detailRow.status} /></DrawerRow>
+              <DrawerRow label="Progress"><ProgressBar value={detailRow.progress} status={detailRow.status} /></DrawerRow>
+              <DrawerRow label="Start date">{detailRow.start}</DrawerRow>
+              <DrawerRow label="Due date">{detailRow.due}</DrawerRow>
+            </DrawerSection>
+
+            <DrawerSection title="Count Items">
+              <div className="overflow-x-auto -mx-1">
+                <table className="w-full text-[12px]">
+                  <thead><tr className="text-left text-[10px] font-semibold text-text-light uppercase tracking-[0.04em]">
+                    <th className="pb-2 pr-3">SKU</th><th className="pb-2 pr-3">Location</th><th className="pb-2 pr-3 text-right">System Qty</th><th className="pb-2 pr-3 text-right">Counted Qty</th><th className="pb-2 text-right">Variance</th>
+                  </tr></thead>
+                  <tbody>
+                    {[
+                      { sku: "SKU-10234", loc: "A01-03-02", sys: 120, cnt: 118, var: -2 },
+                      { sku: "SKU-10567", loc: "A01-05-01", sys: 85, cnt: 85, var: 0 },
+                      { sku: "SKU-10891", loc: "A02-01-04", sys: 200, cnt: 203, var: 3 },
+                      { sku: "SKU-11024", loc: "A03-02-01", sys: 54, cnt: 52, var: -2 },
+                      { sku: "SKU-11358", loc: "A04-01-03", sys: 310, cnt: 310, var: 0 },
+                    ].map((item) => (
+                      <tr key={item.sku} className="border-t border-[#F3F4F6]">
+                        <td className="py-1.5 pr-3 font-medium text-text-primary font-mono">{item.sku}</td>
+                        <td className="py-1.5 pr-3 text-text-muted">{item.loc}</td>
+                        <td className="py-1.5 pr-3 text-right text-text-muted">{item.sys}</td>
+                        <td className="py-1.5 pr-3 text-right text-text-primary font-medium">{item.cnt}</td>
+                        <td className={`py-1.5 text-right font-medium ${item.var > 0 ? "text-teal" : item.var < 0 ? "text-[#EF4444]" : "text-text-light"}`}>{item.var > 0 ? `+${item.var}` : item.var}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </DrawerSection>
+
+            <DrawerSection title="Count Summary">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-soft-bg rounded-lg p-3 text-center">
+                  <p className="text-[18px] font-bold text-text-primary">769</p>
+                  <p className="text-[10px] text-text-light mt-0.5">Items Counted</p>
+                </div>
+                <div className="bg-soft-bg rounded-lg p-3 text-center">
+                  <p className="text-[18px] font-bold text-teal">98.7%</p>
+                  <p className="text-[10px] text-text-light mt-0.5">Accuracy</p>
+                </div>
+                <div className="bg-soft-bg rounded-lg p-3 text-center">
+                  <p className="text-[18px] font-bold text-[#EF4444]">2</p>
+                  <p className="text-[10px] text-text-light mt-0.5">Variances</p>
+                </div>
+              </div>
+            </DrawerSection>
+
+            <DrawerSection title="Assigned Team">
+              <div className="space-y-3">
+                {[
+                  { name: "Sarah Chen", role: "Team Lead", initials: "SC", color: "bg-action-blue/10 text-action-blue" },
+                  { name: "Marcus Johnson", role: "Counter", initials: "MJ", color: "bg-[#7C6FF6]/10 text-[#7C6FF6]" },
+                  { name: "Aisha Patel", role: "Counter", initials: "AP", color: "bg-teal/10 text-teal" },
+                ].map((m) => (
+                  <div key={m.name} className="flex items-center gap-3">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold ${m.color}`}>{m.initials}</div>
+                    <div><p className="text-[13px] font-medium text-text-primary">{m.name}</p><p className="text-[11px] text-text-light">{m.role}</p></div>
+                  </div>
+                ))}
+              </div>
+            </DrawerSection>
+          </>
+        )}
+      </Drawer>
     </div>
   );
 }

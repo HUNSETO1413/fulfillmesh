@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Search,
   SlidersHorizontal,
@@ -24,6 +24,8 @@ import {
   Plus,
   MessageSquare,
 } from "lucide-react";
+import { Modal } from "@/components/dashboard/Modal";
+import { Field, TextInput, TextArea, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
 
 interface Conversation {
@@ -114,6 +116,15 @@ const quickActions = [
   { label: "Mute Conversation", icon: BellOff },
 ];
 
+const SIMULATED_REPLIES = [
+  "Got it — thanks for the update.",
+  "Noted. I'll follow up on this shortly.",
+  "Thanks! That works on our end.",
+  "Understood, appreciate the quick response.",
+];
+
+type ComposeDraft = { recipient: string; subject: string; body: string };
+
 export default function MessagesPage() {
   const { toast } = useToast();
   const [selected, setSelected] = useState("c1");
@@ -125,6 +136,19 @@ export default function MessagesPage() {
   const [draft, setDraft] = useState("");
   const [page, setPage] = useState(1);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Compose modal
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [compose, setCompose] = useState<ComposeDraft>({ recipient: conversations[0].name, subject: "", body: "" });
+
+  // Track the active thread for simulated replies, and clean up pending timers.
+  const selectedRef = useRef(selected);
+  useEffect(() => { selectedRef.current = selected; }, [selected]);
+  const replyTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(() => {
+    const timers = replyTimersRef.current;
+    return () => { timers.forEach(clearTimeout); };
+  }, []);
 
   function goToPage(p: number) {
     if (p < 1 || p > 7) return;
@@ -146,22 +170,89 @@ export default function MessagesPage() {
   const activeConvo = convos.find((c) => c.id === selected) ?? convos[0];
   const activeMessages = threads[selected] ?? [];
 
+  // Auto-scroll to the latest message when a thread is opened or grows.
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ block: "end" });
+  }, [selected, activeMessages.length]);
+
   function selectConversation(id: string) {
     setSelected(id);
     setConvos((cur) => cur.map((c) => (c.id === id ? { ...c, unread: 0 } : c)));
   }
 
+  function nowStamp() {
+    return new Date().toLocaleString("en-US", { month: "short", day: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  }
+
+  function scheduleReply(threadId: string, senderName: string, replyIndex: number) {
+    const timer = setTimeout(() => {
+      const reply: Message = {
+        id: `m${Date.now()}-reply`,
+        sender: senderName,
+        isMe: false,
+        time: nowStamp(),
+        content: SIMULATED_REPLIES[replyIndex % SIMULATED_REPLIES.length],
+      };
+      setThreads((cur) => ({ ...cur, [threadId]: [...(cur[threadId] ?? []), reply] }));
+      setConvos((cur) =>
+        cur.map((c) =>
+          c.id === threadId
+            ? {
+                ...c,
+                preview: reply.content,
+                time: "Now",
+                unread: selectedRef.current === threadId ? 0 : c.unread + 1,
+              }
+            : c,
+        ),
+      );
+    }, 1500);
+    replyTimersRef.current.push(timer);
+  }
+
   function sendMessage() {
     const text = draft.trim();
     if (!text) return;
-    const now = new Date();
-    const time = now.toLocaleString("en-US", { month: "short", day: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
-    const msg: Message = { id: `m${Date.now()}`, sender: "You", isMe: true, time, content: text };
-    setThreads((cur) => ({ ...cur, [selected]: [...(cur[selected] ?? []), msg] }));
-    setConvos((cur) => cur.map((c) => (c.id === selected ? { ...c, preview: text, time: "Now" } : c)));
+    const msg: Message = { id: `m${Date.now()}`, sender: "You", isMe: true, time: nowStamp(), content: text };
+    const threadId = selected;
+    const messageCount = (threads[threadId] ?? []).length;
+    setThreads((cur) => ({ ...cur, [threadId]: [...(cur[threadId] ?? []), msg] }));
+    setConvos((cur) => cur.map((c) => (c.id === threadId ? { ...c, preview: text, time: "Now" } : c)));
     setDraft("");
     toast(composeTab === "Note" ? "Internal note added" : "Message sent");
-    requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }));
+    if (composeTab !== "Note") {
+      scheduleReply(threadId, activeConvo.name, messageCount);
+    }
+  }
+
+  function openCompose() {
+    setCompose({ recipient: convos[0]?.name ?? "", subject: "", body: "" });
+    setComposeOpen(true);
+  }
+
+  function createThread() {
+    if (!compose.recipient) { toast("Choose a recipient", "error"); return; }
+    if (!compose.subject.trim()) { toast("Subject is required", "error"); return; }
+    if (!compose.body.trim()) { toast("Message body is required", "error"); return; }
+    const existing = convos.find((c) => c.name === compose.recipient);
+    const id = `c${Date.now()}`;
+    const convo: Conversation = {
+      id,
+      name: compose.recipient,
+      avatar: existing?.avatar ?? compose.recipient.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase(),
+      color: existing?.color ?? "#0057D8",
+      subject: compose.subject.trim(),
+      preview: compose.body.trim(),
+      time: "Now",
+      unread: 0,
+    };
+    const msg: Message = { id: `m${Date.now()}`, sender: "You", isMe: true, time: nowStamp(), content: compose.body.trim() };
+    setConvos((cur) => [convo, ...cur]);
+    setThreads((cur) => ({ ...cur, [id]: [msg] }));
+    setSelected(id);
+    setComposeOpen(false);
+    toast(`Message sent to ${compose.recipient}`);
+    scheduleReply(id, compose.recipient, 0);
   }
 
   function handleComposerKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -194,7 +285,7 @@ export default function MessagesPage() {
           <button onClick={() => toast("Opening message settings…", "info")} className="flex items-center gap-2 px-3.5 py-2 bg-white border border-border-soft rounded-lg text-[13px] font-medium text-text-muted shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-soft-bg transition-colors">
             <Settings className="w-4 h-4" /> Settings
           </button>
-          <button onClick={() => toast("Compose a new message", "info")} className="flex items-center gap-2 px-4 py-2 bg-action-blue rounded-lg text-[13px] font-medium text-white hover:bg-[#0048B5] shadow-[0_1px_2px_rgba(0,0,0,0.05)] transition-colors">
+          <button onClick={openCompose} className="flex items-center gap-2 px-4 py-2 bg-action-blue rounded-lg text-[13px] font-medium text-white hover:bg-[#0048B5] shadow-[0_1px_2px_rgba(0,0,0,0.05)] transition-colors">
             <Edit className="w-4 h-4" /> Compose
           </button>
         </div>
@@ -433,6 +524,45 @@ export default function MessagesPage() {
           Manage Notifications
         </button>
       </div>
+
+      {/* Compose modal */}
+      <Modal
+        open={composeOpen}
+        onClose={() => setComposeOpen(false)}
+        title="New Message"
+        description="Start a new conversation with a teammate or partner."
+        footer={
+          <>
+            <SecondaryButton onClick={() => setComposeOpen(false)}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={createThread}>Send message</PrimaryButton>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Field label="To" required>
+            <Select
+              options={Array.from(new Set(convos.map((c) => c.name)))}
+              value={compose.recipient}
+              onChange={(e) => setCompose((d) => ({ ...d, recipient: e.target.value }))}
+            />
+          </Field>
+          <Field label="Subject" required>
+            <TextInput
+              value={compose.subject}
+              onChange={(e) => setCompose((d) => ({ ...d, subject: e.target.value }))}
+              placeholder="e.g. PO-102900 — Delivery window"
+            />
+          </Field>
+          <Field label="Message" required>
+            <TextArea
+              value={compose.body}
+              onChange={(e) => setCompose((d) => ({ ...d, body: e.target.value }))}
+              placeholder="Type your message..."
+              rows={4}
+            />
+          </Field>
+        </div>
+      </Modal>
     </div>
   );
 }

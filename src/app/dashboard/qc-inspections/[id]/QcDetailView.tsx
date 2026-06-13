@@ -1,21 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  ChevronRight, Download, Package,
+  ChevronRight, Download, Package, Plus,
   CheckCircle2, XCircle, MinusCircle, FileText, FileSpreadsheet, FileArchive,
   Clock, AlertTriangle, Send, RotateCcw, Ban, ArrowLeft, ArrowRight,
 } from "lucide-react";
 import type { QcInspection, QcStatus } from "@/types";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
+import { Modal } from "@/components/dashboard/Modal";
+import { Field as FormField, TextArea, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
 import { api, exportToCsv } from "@/lib/client";
 import { formatDate } from "@/lib/format";
 import QcDetailActions from "./QcDetailActions";
 
-const checklist = [
+interface CheckItem { item: string; result: "Passed" | "Failed" | "N/A" }
+
+const initialChecklist: CheckItem[] = [
   { item: "Product Appearance", result: "Passed" },
   { item: "Dimensions & Size", result: "Passed" },
   { item: "Material & Finish", result: "Passed" },
@@ -40,7 +44,7 @@ const topDefects = [
   { rank: 3, name: "Label incorrect placement", count: "4", pct: "18.2%" },
 ];
 
-const photos = [
+const photos_static: { label: string; gradient?: string }[] = [
   { label: "Overall appearance" },
   { label: "Logo misalignment" },
   { label: "Logo fading" },
@@ -49,7 +53,7 @@ const photos = [
   { label: "Outer carton" },
 ];
 
-const reports = [
+const reports_static = [
   { name: "QC_Report.pdf", size: "2.4 MB", icon: FileText, color: "text-[#EF4444]" },
   { name: "Inspection_Checklist.pdf", size: "1.12 MB", icon: FileText, color: "text-[#EF4444]" },
   { name: "Defect_Detail_Log.xlsx", size: "324 KB", icon: FileSpreadsheet, color: "text-[#10B981]" },
@@ -84,17 +88,131 @@ function resultBadge(r: string) {
   return { cls: "bg-[#9AA8B8]/10 text-[#66758C]", Icon: MinusCircle };
 }
 
+interface InspectorComment {
+  author: string;
+  role: string;
+  date: string;
+  text: string;
+}
+
 export default function QcDetailView({ inspection }: { inspection: QcInspection }) {
   const router = useRouter();
   const { toast } = useToast();
   const [busy, setBusy] = useState(false);
   const [supplierNote, setSupplierNote] = useState("");
+  const [supplierModalOpen, setSupplierModalOpen] = useState(false);
+  const [supplierModalDraft, setSupplierModalDraft] = useState("");
+
+  // Checklist state
+  const [checklist, setChecklist] = useState<CheckItem[]>(initialChecklist);
+
+  // Photos state (simulated uploads)
+  const [photos, setPhotos] = useState(photos_static.map((p) => ({ ...p })));
+
+  // Reports state (simulated uploads)
+  const [reports, setReports] = useState(reports_static.map((r) => ({ ...r })));
+
+  // Inspector comments — session-local; appended via the "Add comment" modal.
+  const [comments, setComments] = useState<InspectorComment[]>([{
+    author: inspection.inspector ?? "Unassigned",
+    role: "Lead Inspector",
+    date: formatDate(inspection.scheduledDate),
+    text: "Observed multiple printing defects around the logo area including misalignment and fading. Label placement is inconsistent. Product appearance passed all checks. Recommend corrective action before shipment.",
+  }]);
+  const [commentOpen, setCommentOpen] = useState(false);
+  const [commentDraft, setCommentDraft] = useState("");
+
+  function addComment() {
+    if (!commentDraft.trim()) { toast("Comment cannot be empty", "error"); return; }
+    const today = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    setComments((prev) => [...prev, { author: "You", role: "Reviewer", date: today, text: commentDraft.trim() }]);
+    setCommentDraft("");
+    setCommentOpen(false);
+    toast("Comment added");
+  }
+
+  // Derive defect summary from checklist items
+  const defects = useMemo(() => {
+    const passed = checklist.filter((c) => c.result === "Passed").length;
+    const failed = checklist.filter((c) => c.result === "Failed").length;
+    const na = checklist.filter((c) => c.result === "N/A").length;
+    const total = passed + failed + na;
+    return [
+      { name: "Passed", count: passed, pct: total > 0 ? ((passed / total) * 100).toFixed(1) + "%" : "0%", color: "#10B981" },
+      { name: "Failed", count: failed, pct: total > 0 ? ((failed / total) * 100).toFixed(1) + "%" : "0%", color: "#EF4444" },
+      { name: "N/A", count: na, pct: total > 0 ? ((na / total) * 100).toFixed(1) + "%" : "0%", color: "#9AA8B8" },
+    ];
+  }, [checklist]);
 
   const circumference = 2 * Math.PI * 32;
   const defectOffsets = defects.reduce<number[]>((acc, d, i) => {
     acc.push(i === 0 ? 0 : acc[i - 1] + parseFloat(defects[i - 1].pct));
     return acc;
   }, []);
+
+  // Toggle a checklist item result
+  function toggleCheckItem(idx: number) {
+    setChecklist((prev) => {
+      const next = [...prev];
+      const cur = next[idx].result;
+      next[idx] = { ...next[idx], result: cur === "Passed" ? "Failed" : cur === "Failed" ? "N/A" : "Passed" };
+      return next;
+    });
+  }
+
+  function saveChecklist() {
+    toast("Checklist saved");
+  }
+
+  function addPhoto() {
+    const colors = ["from-[#DBEAFE] to-[#E0E7FF]", "from-[#D1FAE5] to-[#CFFAFE]", "from-[#FEF3C7] to-[#FFEDD5]", "from-[#EDE9FE] to-[#FCE7F3]", "from-[#FEE2E2] to-[#FEF3C7]"];
+    const color = colors[photos.length % colors.length];
+    setPhotos((prev) => [...prev, { label: `Uploaded photo ${prev.length + 1}`, gradient: color }]);
+    toast("Photo uploaded");
+  }
+
+  function uploadReport() {
+    const names = ["Supplementary_Report.pdf", "Corrective_Action.xlsx", "Re_inspection_Notes.pdf", "Photo_Evidence.zip"];
+    const name = names[reports.length % names.length];
+    const ext = name.split(".").pop();
+    const icon = ext === "xlsx" ? FileSpreadsheet : ext === "zip" ? FileArchive : FileText;
+    const color = ext === "xlsx" ? "text-[#10B981]" : ext === "zip" ? "text-[#F59E0B]" : "text-[#EF4444]";
+    setReports((prev) => [...prev, { name, size: `${(Math.random() * 5 + 0.1).toFixed(1)} MB`, icon, color }]);
+    toast(`Report "${name}" uploaded`);
+  }
+
+  function downloadIndividualReport(reportName: string) {
+    const content = [
+      `Report: ${reportName}`,
+      `Inspection ID: ${inspection.id}`,
+      `Product: ${inspection.product}`,
+      `Supplier: ${inspection.supplier}`,
+      `Inspector: ${inspection.inspector ?? "Unassigned"}`,
+      `Date: ${formatDate(inspection.scheduledDate)}`,
+      `Status: ${inspection.status}`,
+      `Defect Rate: ${inspection.defectRate ?? "—"}%`,
+      "",
+      "Checklist Results:",
+      ...checklist.map((c) => `  ${c.item}: ${c.result}`),
+      "",
+      `Generated: ${new Date().toISOString()}`,
+    ].join("\n");
+    const blob = new Blob([content], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = reportName.replace(/\.\w+$/, ".txt");
+    a.click();
+    URL.revokeObjectURL(url);
+    toast(`Downloaded ${reportName}`);
+  }
+
+  function sendToSupplierModal() {
+    if (!supplierModalDraft.trim()) { toast("Enter a note before sending", "error"); return; }
+    toast(`Note sent to ${inspection.supplier}`);
+    setSupplierModalDraft("");
+    setSupplierModalOpen(false);
+  }
 
   const headerFields = [
     { label: "Inspection ID", value: inspection.id, mono: true },
@@ -138,11 +256,6 @@ export default function QcDetailView({ inspection }: { inspection: QcInspection 
     toast("Report manifest downloaded");
   }
 
-  function sendToSupplier() {
-    if (!supplierNote.trim()) { toast("Enter a note before sending", "error"); return; }
-    toast(`Note sent to ${inspection.supplier}`);
-    setSupplierNote("");
-  }
 
   return (
     <div className="space-y-5">
@@ -206,9 +319,9 @@ export default function QcDetailView({ inspection }: { inspection: QcInspection 
           <div className="flex items-center justify-between px-5 py-3 bg-soft-bg border-b border-border-soft flex-wrap gap-2">
             <h3 className="text-[15px] font-semibold text-text-primary">Inspection Checklist</h3>
             <div className="flex gap-1.5 text-[11px] font-medium">
-              <span className="px-1.5 py-0.5 rounded bg-[#10B981]/10 text-[#10B981]">7 Passed</span>
-              <span className="px-1.5 py-0.5 rounded bg-[#EF4444]/10 text-[#EF4444]">2 Failed</span>
-              <span className="px-1.5 py-0.5 rounded bg-[#9AA8B8]/10 text-[#66758C]">1 N/A</span>
+              <span className="px-1.5 py-0.5 rounded bg-[#10B981]/10 text-[#10B981]">{checklist.filter((c) => c.result === "Passed").length} Passed</span>
+              <span className="px-1.5 py-0.5 rounded bg-[#EF4444]/10 text-[#EF4444]">{checklist.filter((c) => c.result === "Failed").length} Failed</span>
+              <span className="px-1.5 py-0.5 rounded bg-[#9AA8B8]/10 text-[#66758C]">{checklist.filter((c) => c.result === "N/A").length} N/A</span>
             </div>
           </div>
           <div className="p-5">
@@ -216,16 +329,16 @@ export default function QcDetailView({ inspection }: { inspection: QcInspection 
               <span>Checkpoint</span>
               <span>Result</span>
             </div>
-            {checklist.map((c) => {
+            {checklist.map((c, idx) => {
               const { cls, Icon } = resultBadge(c.result);
               return (
-                <div key={c.item} className="flex items-center justify-between gap-2 py-2 border-b border-[#F1F5F9] last:border-b-0">
+                <div key={c.item} className="flex items-center justify-between gap-2 py-2 border-b border-[#F1F5F9] last:border-b-0 cursor-pointer hover:bg-[#F7FAFC]/50 -mx-1 px-1 rounded" onClick={() => toggleCheckItem(idx)}>
                   <span className="text-[12px] text-text-primary flex items-center gap-2 min-w-0"><Icon className={`w-3.5 h-3.5 shrink-0 ${c.result === "Passed" ? "text-[#10B981]" : c.result === "Failed" ? "text-[#EF4444]" : "text-[#9AA8B8]"}`} /><span className="truncate">{c.item}</span></span>
                   <span className={`inline-flex px-2 py-0.5 rounded text-[11px] font-medium shrink-0 ${cls}`}>{c.result}</span>
                 </div>
               );
             })}
-            <button onClick={() => toast("Showing full inspection checklist")} className="inline-flex items-center gap-1 text-[12px] font-medium text-action-blue mt-3">View Full Checklist <ArrowRight className="w-3 h-3" /></button>
+            <button onClick={saveChecklist} className="inline-flex items-center gap-1.5 text-[12px] font-medium text-action-blue mt-3">Save checklist <CheckCircle2 className="w-3 h-3" /></button>
           </div>
         </div>
 
@@ -244,7 +357,7 @@ export default function QcDetailView({ inspection }: { inspection: QcInspection 
                   })}
                 </svg>
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="text-center"><p className="text-[9px] text-text-light">Total Defects</p><p className="text-[22px] font-bold text-text-primary">22</p></div>
+                  <div className="text-center"><p className="text-[9px] text-text-light">Checkpoints</p><p className="text-[22px] font-bold text-text-primary">{checklist.length}</p></div>
                 </div>
               </div>
               <div className="flex-1 space-y-2">
@@ -255,7 +368,7 @@ export default function QcDetailView({ inspection }: { inspection: QcInspection 
                   </div>
                 ))}
                 <div className="flex items-center justify-between text-[11px] pt-2 border-t border-[#F1F5F9] font-semibold">
-                  <span className="text-text-primary">Total</span><span className="text-text-primary">22 (100%)</span>
+                  <span className="text-text-primary">Total</span><span className="text-text-primary">{checklist.length} (100%)</span>
                 </div>
               </div>
             </div>
@@ -278,13 +391,13 @@ export default function QcDetailView({ inspection }: { inspection: QcInspection 
         <div className="bg-white rounded-xl border border-border-soft shadow-[0_1px_3px_rgba(0,0,0,0.08)] overflow-hidden">
           <div className="flex items-center justify-between px-5 py-3 bg-soft-bg border-b border-border-soft">
             <h3 className="text-[15px] font-semibold text-text-primary">Inspection Photos</h3>
-            <button onClick={() => toast("Showing all 12 inspection photos")} className="text-[12px] font-medium text-action-blue">View All (12)</button>
+            <button onClick={addPhoto} className="text-[12px] font-medium text-action-blue inline-flex items-center gap-1 hover:underline"><Plus className="w-3 h-3" />Add photo</button>
           </div>
           <div className="p-5">
             <div className="grid grid-cols-3 gap-2">
               {photos.map((p) => (
                 <div key={p.label}>
-                  <div className="aspect-square rounded-lg bg-gradient-to-br from-[#E2E8F0] to-[#F1F5F9] border border-border-soft overflow-hidden" />
+                  <div className={`aspect-square rounded-lg ${p.gradient ? `bg-gradient-to-br ${p.gradient}` : "bg-gradient-to-br from-[#E2E8F0] to-[#F1F5F9]"} border border-border-soft overflow-hidden`} />
                   <p className="text-[9px] text-text-light mt-1 truncate text-center">{p.label}</p>
                 </div>
               ))}
@@ -297,20 +410,33 @@ export default function QcDetailView({ inspection }: { inspection: QcInspection 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-5">
         {/* Inspector Comments */}
         <div className="bg-white rounded-xl border border-border-soft shadow-[0_1px_3px_rgba(0,0,0,0.08)] overflow-hidden">
-          <h3 className="text-[15px] font-semibold text-text-primary px-5 py-3 bg-soft-bg border-b border-border-soft">Inspector Comments</h3>
+          <div className="flex items-center justify-between px-5 py-3 bg-soft-bg border-b border-border-soft">
+            <h3 className="text-[15px] font-semibold text-text-primary">Inspector Comments</h3>
+            <button onClick={() => { setCommentDraft(""); setCommentOpen(true); }} className="text-[12px] font-medium text-action-blue hover:underline">Add comment</button>
+          </div>
           <div className="p-5">
-            <p className="text-[12px] text-text-body leading-relaxed">Observed multiple printing defects around the logo area including misalignment and fading. Label placement is inconsistent. Product appearance passed all checks. Recommend corrective action before shipment.</p>
-            <div className="flex items-center gap-2 mt-4 pt-3 border-t border-[#F1F5F9]">
-              <div className="w-7 h-7 rounded-full bg-action-blue/10 flex items-center justify-center text-[10px] font-bold text-action-blue">JS</div>
-              <div className="flex-1"><p className="text-[12px] font-medium text-text-primary">{inspection.inspector ?? "Unassigned"}</p><p className="text-[10px] text-text-light">Lead Inspector</p></div>
-              <div className="text-right"><p className="text-[10px] text-text-light">{formatDate(inspection.scheduledDate)}</p><p className="text-[10px] text-[#10B981]">{inspection.status}</p></div>
-            </div>
+            {comments.map((c, i) => {
+              const initials = c.author.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+              return (
+                <div key={i} className={i > 0 ? "mt-4 pt-4 border-t border-[#F1F5F9]" : ""}>
+                  <p className="text-[12px] text-text-body leading-relaxed">{c.text}</p>
+                  <div className="flex items-center gap-2 mt-3">
+                    <div className="w-7 h-7 rounded-full bg-action-blue/10 flex items-center justify-center text-[10px] font-bold text-action-blue">{initials}</div>
+                    <div className="flex-1"><p className="text-[12px] font-medium text-text-primary">{c.author}</p><p className="text-[10px] text-text-light">{c.role}</p></div>
+                    <div className="text-right"><p className="text-[10px] text-text-light">{c.date}</p>{i === 0 && <p className="text-[10px] text-[#10B981]">{inspection.status}</p>}</div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
 
         {/* Attached Reports */}
         <div className="bg-white rounded-xl border border-border-soft shadow-[0_1px_3px_rgba(0,0,0,0.08)] overflow-hidden">
-          <h3 className="text-[15px] font-semibold text-text-primary px-5 py-3 bg-soft-bg border-b border-border-soft">Attached Reports</h3>
+          <div className="flex items-center justify-between px-5 py-3 bg-soft-bg border-b border-border-soft">
+            <h3 className="text-[15px] font-semibold text-text-primary">Attached Reports</h3>
+            <button onClick={uploadReport} className="text-[12px] font-medium text-action-blue inline-flex items-center gap-1 hover:underline"><Plus className="w-3 h-3" />Upload report</button>
+          </div>
           <div className="p-5">
             <div className="space-y-2.5">
               {reports.map((r) => {
@@ -319,7 +445,7 @@ export default function QcDetailView({ inspection }: { inspection: QcInspection 
                   <div key={r.name} className="flex items-center gap-2.5">
                     <div className="w-8 h-8 rounded-lg bg-[#EF4444]/10 flex items-center justify-center shrink-0"><Icon className={`w-4 h-4 ${r.color}`} /></div>
                     <div className="min-w-0 flex-1"><p className="text-[12px] font-medium text-text-primary truncate">{r.name}</p><p className="text-[10px] text-text-muted">{r.size}</p></div>
-                    <button onClick={() => toast(`Downloading ${r.name}…`)} className="text-text-muted hover:text-text-body shrink-0" aria-label={`Download ${r.name}`}><Download className="w-4 h-4" /></button>
+                    <button onClick={() => downloadIndividualReport(r.name)} className="text-text-muted hover:text-text-body shrink-0" aria-label={`Download ${r.name}`}><Download className="w-4 h-4" /></button>
                   </div>
                 );
               })}
@@ -394,10 +520,46 @@ export default function QcDetailView({ inspection }: { inspection: QcInspection 
           <h3 className="text-[15px] font-semibold text-text-primary px-5 py-3 bg-soft-bg border-b border-border-soft">Notes for Supplier</h3>
           <div className="p-5 flex flex-col flex-1">
             <textarea value={supplierNote} onChange={(e) => setSupplierNote(e.target.value)} placeholder="Add notes or instructions for the supplier..." className="flex-1 min-h-[80px] w-full border border-border-soft rounded-lg p-2.5 text-[12px] text-text-body placeholder:text-text-light focus:outline-none focus:ring-2 focus:ring-action-blue/30 resize-none" />
-            <button onClick={sendToSupplier} className="w-full mt-3 py-2 bg-action-blue hover:bg-[#003B7A] text-white rounded-lg text-[12px] font-medium inline-flex items-center justify-center gap-1.5 transition-colors"><Send className="w-3.5 h-3.5" />Send to Supplier</button>
+            <button onClick={() => { setSupplierModalDraft(supplierNote); setSupplierModalOpen(true); }} className="w-full mt-3 py-2 bg-action-blue hover:bg-[#003B7A] text-white rounded-lg text-[12px] font-medium inline-flex items-center justify-center gap-1.5 transition-colors"><Send className="w-3.5 h-3.5" />Send to Supplier</button>
           </div>
         </div>
       </div>
+
+      {/* Add comment modal */}
+      <Modal
+        open={commentOpen}
+        onClose={() => setCommentOpen(false)}
+        title="Add Comment"
+        description={`Add an inspector comment for ${inspection.id}.`}
+        footer={
+          <>
+            <SecondaryButton onClick={() => setCommentOpen(false)}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={addComment}>Add comment</PrimaryButton>
+          </>
+        }
+      >
+        <FormField label="Comment">
+          <TextArea value={commentDraft} onChange={(e) => setCommentDraft(e.target.value)} rows={4} placeholder="Write your comment…" />
+        </FormField>
+      </Modal>
+
+      {/* Send to Supplier modal */}
+      <Modal
+        open={supplierModalOpen}
+        onClose={() => setSupplierModalOpen(false)}
+        title="Send to Supplier"
+        description={`Send notes and instructions to ${inspection.supplier}.`}
+        footer={
+          <>
+            <SecondaryButton onClick={() => setSupplierModalOpen(false)}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={sendToSupplierModal}>Send</PrimaryButton>
+          </>
+        }
+      >
+        <FormField label="Notes">
+          <TextArea value={supplierModalDraft} onChange={(e) => setSupplierModalDraft(e.target.value)} rows={4} placeholder="Enter notes or instructions for the supplier…" />
+        </FormField>
+      </Modal>
     </div>
   );
 }

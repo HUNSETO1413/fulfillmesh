@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   CheckCircle2,
@@ -24,6 +24,8 @@ import {
   Wallet,
   ChevronUp,
   ArrowUpDown,
+  MoreVertical,
+  Eye,
 } from "lucide-react";
 import type { Invoice, InvoiceStatus } from "@/types";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
@@ -80,13 +82,7 @@ function InvoiceFields({ draft, set }: { draft: Draft; set: (d: Partial<Draft>) 
   );
 }
 
-const stats = [
-  { title: "Total Outstanding", value: "$24,568.75", sub: "14 invoices", color: "#3B82F6", icon: DollarSign },
-  { title: "Total Paid (This Year)", value: "$286,394.22", sub: "32 invoices", color: "#10B981", icon: CheckCircle2 },
-  { title: "Overdue Amount", value: "$6,420.00", sub: "2 invoices", color: "#EF4444", icon: AlertTriangle },
-  { title: "Due Soon", value: "$8,148.25", sub: "3 invoices", color: "#F59E0B", icon: Clock },
-  { title: "Credit Balance", value: "$1,250.00", sub: "Available Credit", color: "#8B5CF6", icon: Wallet },
-];
+/* stats computed inside component from items */
 
 const tabs: { label: string; status: string | null }[] = [
   { label: "All Invoices", status: null },
@@ -133,6 +129,18 @@ const quickActions = [
   { label: "Request Invoice", icon: Send },
 ];
 
+const PAYMENT_METHODS = ["Visa ending in 4242", "Mastercard ending in 5555"];
+
+const INVOICE_CSV_COLUMNS: { key: keyof Invoice; header: string }[] = [
+  { key: "id", header: "Invoice #" },
+  { key: "customer", header: "Customer" },
+  { key: "orderId", header: "PO / Reference" },
+  { key: "status", header: "Status" },
+  { key: "issuedDate", header: "Invoice Date" },
+  { key: "dueDate", header: "Due Date" },
+  { key: "amount", header: "Amount" },
+];
+
 export default function InvoicesView({ items }: { items: Invoice[] }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -171,6 +179,40 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
 
   // delete
   const [deleting, setDeleting] = useState<Invoice | null>(null);
+
+  // computed stats from items
+  const stats = useMemo(() => {
+    const outstanding = items.filter((i) => i.status === "Sent" || i.status === "Overdue");
+    const paid = items.filter((i) => i.status === "Paid");
+    const overdue = items.filter((i) => i.status === "Overdue");
+    const sent = items.filter((i) => i.status === "Sent");
+    const outTotal = outstanding.reduce((s, i) => s + i.amount, 0);
+    const paidTotal = paid.reduce((s, i) => s + i.amount, 0);
+    const overdueTotal = overdue.reduce((s, i) => s + i.amount, 0);
+    const fmt = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return [
+      { title: "Total Outstanding", value: fmt(outTotal), sub: `${outstanding.length} invoices`, color: "#3B82F6", icon: DollarSign },
+      { title: "Total Paid (This Year)", value: fmt(paidTotal), sub: `${paid.length} invoices`, color: "#10B981", icon: CheckCircle2 },
+      { title: "Overdue Amount", value: fmt(overdueTotal), sub: `${overdue.length} invoices`, color: "#EF4444", icon: AlertTriangle },
+      { title: "Due Soon", value: fmt(sent.reduce((s, i) => s + i.amount, 0)), sub: `${sent.length} invoices`, color: "#F59E0B", icon: Clock },
+      { title: "Credit Balance", value: "$1,250.00", sub: "Available Credit", color: "#8B5CF6", icon: Wallet },
+    ];
+  }, [items]);
+
+  // per-row action menu + read-only view
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<Invoice | null>(null);
+
+  // account statement modal
+  const [statementOpen, setStatementOpen] = useState(false);
+
+  // AutoPay
+  const [autoPayEnabled, setAutoPayEnabled] = useState(false);
+  const [autoPayMethod, setAutoPayMethod] = useState(PAYMENT_METHODS[0]);
+  const [autoPayOpen, setAutoPayOpen] = useState(false);
+  const [autoPayDraft, setAutoPayDraft] = useState(PAYMENT_METHODS[0]);
+
+  const tableRef = useRef<HTMLDivElement | null>(null);
 
   const circumference = 2 * Math.PI * 40;
 
@@ -259,15 +301,7 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
   }
 
   function exportSelected() {
-    exportToCsv("invoices-selected", selectedRows, [
-      { key: "id", header: "Invoice #" },
-      { key: "customer", header: "Customer" },
-      { key: "orderId", header: "PO / Reference" },
-      { key: "status", header: "Status" },
-      { key: "issuedDate", header: "Invoice Date" },
-      { key: "dueDate", header: "Due Date" },
-      { key: "amount", header: "Amount" },
-    ]);
+    exportToCsv("invoices-selected", selectedRows, INVOICE_CSV_COLUMNS);
     toast(`Exported ${selectedRows.length} selected invoices to CSV`);
   }
 
@@ -360,16 +394,83 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
   }
 
   function handleExport() {
-    exportToCsv("invoices", filtered, [
-      { key: "id", header: "Invoice #" },
-      { key: "customer", header: "Customer" },
-      { key: "orderId", header: "PO / Reference" },
-      { key: "status", header: "Status" },
-      { key: "issuedDate", header: "Invoice Date" },
-      { key: "dueDate", header: "Due Date" },
-      { key: "amount", header: "Amount" },
-    ]);
+    exportToCsv("invoices", filtered, INVOICE_CSV_COLUMNS);
     toast(`Exported ${filtered.length} invoices to CSV`);
+  }
+
+  function downloadInvoice(inv: Invoice) {
+    exportToCsv(`invoice-${inv.id}`, [inv], INVOICE_CSV_COLUMNS);
+    toast(`Invoice ${inv.id} downloaded`);
+  }
+
+  // ---- Account statement ----
+  const statementRows = useMemo(
+    () => [...items].sort((a, b) => a.issuedDate.localeCompare(b.issuedDate)),
+    [items],
+  );
+
+  const statementTotals = useMemo(() => {
+    const invoiced = items.reduce((sum, i) => sum + i.amount, 0);
+    const paid = items.filter((i) => i.status === "Paid").reduce((sum, i) => sum + i.amount, 0);
+    const outstanding = items
+      .filter((i) => i.status === "Sent" || i.status === "Overdue")
+      .reduce((sum, i) => sum + i.amount, 0);
+    return { invoiced, paid, outstanding };
+  }, [items]);
+
+  function exportStatement() {
+    exportToCsv("account-statement", statementRows, INVOICE_CSV_COLUMNS);
+    toast(`Exported statement of ${statementRows.length} invoices to CSV`);
+  }
+
+  // Switch the main table to a status tab and bring it into view.
+  function showStatusInTable(label: string) {
+    selectTab(label);
+    tableRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  // ---- AutoPay ----
+  function openAutoPay() {
+    setAutoPayDraft(autoPayMethod);
+    setAutoPayOpen(true);
+  }
+
+  function confirmAutoPay() {
+    setAutoPayMethod(autoPayDraft);
+    setAutoPayOpen(false);
+    if (autoPayEnabled) {
+      toast(`AutoPay updated — paying with ${autoPayDraft}`);
+    } else {
+      setAutoPayEnabled(true);
+      toast(`AutoPay enabled — invoices will be paid with ${autoPayDraft}`);
+    }
+  }
+
+  function disableAutoPay() {
+    setAutoPayEnabled(false);
+    setAutoPayOpen(false);
+    toast("AutoPay disabled");
+  }
+
+  function runQuickAction(label: string) {
+    switch (label) {
+      case "Make a Payment":
+        showStatusInTable("Overdue");
+        toast("Showing invoices awaiting payment");
+        break;
+      case "Download Statement":
+        exportStatement();
+        break;
+      case "View Credit Notes":
+        setStatementOpen(true);
+        break;
+      case "Billing Settings":
+        openAutoPay();
+        break;
+      case "Request Invoice":
+        openCreate();
+        break;
+    }
   }
 
   return (
@@ -486,7 +587,7 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
       {/* Main: table + right rail */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_290px] gap-4">
         {/* Table card */}
-        <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-[0_1px_3px_rgba(0,0,0,0.1)]">
+        <div ref={tableRef} className="bg-white rounded-xl border border-[#E2E8F0] shadow-[0_1px_3px_rgba(0,0,0,0.1)] scroll-mt-4">
           {/* Tabs */}
           <div className="flex items-center gap-1 px-4 border-b border-[#E2E8F0] overflow-x-auto">
             {tabs.map((t) => {
@@ -593,15 +694,6 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
                     <td className="px-4 py-3"><StatusBadge status={inv.status} /></td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
-                        {(inv.status === "Overdue" || inv.status === "Sent") && (
-                          <button
-                            onClick={() => markPaid(inv)}
-                            disabled={busy}
-                            className="px-3 py-1 bg-[#3B82F6] rounded-md text-[11px] font-medium text-white hover:bg-[#2563EB] disabled:opacity-50"
-                          >
-                            Mark Paid
-                          </button>
-                        )}
                         <button
                           onClick={() => openEdit(inv)}
                           className="w-8 h-8 flex items-center justify-center rounded-md text-[#94A3B8] hover:bg-[#EFF6FF] hover:text-[#3B82F6] transition-colors"
@@ -609,13 +701,49 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
                         >
                           <Pencil className="w-4 h-4" />
                         </button>
-                        <button
-                          onClick={() => setDeleting(inv)}
-                          className="w-8 h-8 flex items-center justify-center rounded-md text-[#94A3B8] hover:bg-[#FEF2F2] hover:text-[#EF4444] transition-colors"
-                          aria-label={`Delete ${inv.id}`}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <div className="relative">
+                          <button
+                            onClick={() => setMenuFor(menuFor === inv.id ? null : inv.id)}
+                            className="w-8 h-8 flex items-center justify-center rounded-md text-[#94A3B8] hover:bg-[#F1F5F9] hover:text-[#1E293B] transition-colors"
+                            aria-label={`Actions for ${inv.id}`}
+                          >
+                            <MoreVertical className="w-4 h-4" />
+                          </button>
+                          {menuFor === inv.id && (
+                            <>
+                              <div className="fixed inset-0 z-10" onClick={() => setMenuFor(null)} />
+                              <div className="absolute right-0 mt-1 z-20 w-40 bg-white rounded-lg border border-[#E2E8F0] shadow-lg py-1">
+                                <button
+                                  onClick={() => { setMenuFor(null); setViewing(inv); }}
+                                  className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-[13px] text-[#1E293B] hover:bg-[#F8FAFC]"
+                                >
+                                  <Eye className="w-3.5 h-3.5 text-[#94A3B8]" /> View
+                                </button>
+                                {(inv.status === "Overdue" || inv.status === "Sent") && (
+                                  <button
+                                    onClick={() => { setMenuFor(null); markPaid(inv); }}
+                                    disabled={busy}
+                                    className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-[13px] text-[#1E293B] hover:bg-[#F8FAFC] disabled:opacity-50"
+                                  >
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-[#10B981]" /> Mark Paid
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => { setMenuFor(null); downloadInvoice(inv); }}
+                                  className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-[13px] text-[#1E293B] hover:bg-[#F8FAFC]"
+                                >
+                                  <Download className="w-3.5 h-3.5 text-[#94A3B8]" /> Download
+                                </button>
+                                <button
+                                  onClick={() => { setMenuFor(null); setDeleting(inv); }}
+                                  className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-[13px] text-[#EF4444] hover:bg-[#FEF2F2]"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" /> Delete
+                                </button>
+                              </div>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </td>
                   </tr>
@@ -749,7 +877,7 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
           <div className="bg-white rounded-xl border border-[#E2E8F0] p-5 shadow-[0_1px_3px_rgba(0,0,0,0.1)]">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-[15px] font-semibold text-[#1E293B]">Recent Payments</h3>
-              <button onClick={() => toast("Opening all payments")} className="text-[12px] font-medium text-[#3B82F6] hover:underline">View all</button>
+              <button onClick={() => showStatusInTable("Paid")} className="text-[12px] font-medium text-[#3B82F6] hover:underline">View all</button>
             </div>
             <div className="space-y-3">
               {recentPayments.map((p) => (
@@ -838,7 +966,7 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
         <div className="bg-white rounded-xl border border-[#E2E8F0] p-5 shadow-[0_1px_3px_rgba(0,0,0,0.1)]">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-[15px] font-semibold text-[#1E293B]">Account Statement</h3>
-            <button onClick={() => toast("Opening full statement")} className="text-[12px] font-medium text-[#3B82F6] hover:underline">View full statement</button>
+            <button onClick={() => setStatementOpen(true)} className="text-[12px] font-medium text-[#3B82F6] hover:underline">View full statement</button>
           </div>
           <div className="space-y-2.5">
             {statement.map((s) => (
@@ -861,7 +989,7 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
             {quickActions.map((a) => {
               const Icon = a.icon;
               return (
-                <button key={a.label} onClick={() => toast(a.label)} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC] transition-colors">
+                <button key={a.label} onClick={() => runQuickAction(a.label)} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC] transition-colors">
                   <Icon className="w-4 h-4 text-[#94A3B8]" /> {a.label}
                 </button>
               );
@@ -870,19 +998,29 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
         </div>
       </div>
 
-      {/* AutoPay CTA band */}
+      {/* AutoPay band */}
       <div className="bg-[#061A3D] rounded-xl px-6 py-5 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <div className="w-11 h-11 rounded-lg bg-white/10 flex items-center justify-center shrink-0">
-            <CreditCard className="w-5 h-5 text-white" />
+          <div className={`w-11 h-11 rounded-lg flex items-center justify-center shrink-0 ${autoPayEnabled ? "bg-[#10B981]/20" : "bg-white/10"}`}>
+            {autoPayEnabled ? <CheckCircle2 className="w-5 h-5 text-[#10B981]" /> : <CreditCard className="w-5 h-5 text-white" />}
           </div>
           <div>
-            <h3 className="text-[15px] font-semibold text-white">Set up Autopay and never miss a payment</h3>
-            <p className="text-[12px] text-white/60 mt-0.5">Automatically pay your invoices on the due date using your default payment method.</p>
+            <h3 className="text-[15px] font-semibold text-white">
+              {autoPayEnabled ? "AutoPay is enabled" : "Set up Autopay and never miss a payment"}
+            </h3>
+            <p className="text-[12px] text-white/60 mt-0.5">
+              {autoPayEnabled
+                ? `Invoices are paid automatically on the due date using ${autoPayMethod}.`
+                : "Automatically pay your invoices on the due date using your default payment method."}
+            </p>
           </div>
         </div>
-        <button onClick={() => toast("AutoPay enabled")} className="flex items-center gap-2 px-5 py-2.5 bg-white rounded-lg text-[13px] font-semibold text-[#003B7A] hover:bg-white/90 shrink-0">
-          <CheckCircle2 className="w-4 h-4" /> Enable AutoPay
+        <button onClick={openAutoPay} className="flex items-center gap-2 px-5 py-2.5 bg-white rounded-lg text-[13px] font-semibold text-[#003B7A] hover:bg-white/90 shrink-0">
+          {autoPayEnabled ? (
+            <><SlidersHorizontal className="w-4 h-4" /> Manage</>
+          ) : (
+            <><CheckCircle2 className="w-4 h-4" /> Enable AutoPay</>
+          )}
         </button>
       </div>
 
@@ -902,6 +1040,138 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
         }
       >
         <InvoiceFields draft={draft} set={(d) => setDraft((prev) => ({ ...prev, ...d }))} />
+      </Modal>
+
+      {/* View invoice modal */}
+      <Modal
+        open={!!viewing}
+        onClose={() => setViewing(null)}
+        title={viewing?.id ?? ""}
+        description="Invoice details"
+        size="sm"
+        footer={
+          <>
+            <SecondaryButton onClick={() => setViewing(null)}>Close</SecondaryButton>
+            <PrimaryButton onClick={() => { if (viewing) downloadInvoice(viewing); }}>Download</PrimaryButton>
+          </>
+        }
+      >
+        {viewing && (
+          <div className="space-y-3">
+            {[
+              { label: "Customer", value: viewing.customer },
+              { label: "PO / Reference", value: viewing.orderId ?? "—" },
+              { label: "Invoice date", value: formatDate(viewing.issuedDate) },
+              { label: "Due date", value: formatDate(viewing.dueDate) },
+            ].map((row) => (
+              <div key={row.label} className="flex items-center justify-between text-[13px]">
+                <span className="text-[#64748B]">{row.label}</span>
+                <span className="font-medium text-[#1E293B]">{row.value}</span>
+              </div>
+            ))}
+            <div className="flex items-center justify-between text-[13px]">
+              <span className="text-[#64748B]">Status</span>
+              <StatusBadge status={viewing.status} />
+            </div>
+            <div className="flex items-center justify-between pt-3 border-t border-[#E2E8F0]">
+              <span className="text-[13px] font-semibold text-[#1E293B]">Amount</span>
+              <span className="text-[15px] font-bold text-[#1E293B]">{formatCurrency(viewing.amount)}</span>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Account statement modal */}
+      <Modal
+        open={statementOpen}
+        onClose={() => setStatementOpen(false)}
+        title="Account Statement"
+        description="All invoices on your account, including payments and credits."
+        size="lg"
+        footer={
+          <>
+            <SecondaryButton onClick={() => setStatementOpen(false)}>Close</SecondaryButton>
+            <PrimaryButton onClick={exportStatement}>Export statement</PrimaryButton>
+          </>
+        }
+      >
+        <div className="space-y-1">
+          {statementRows.map((inv) => (
+            <div key={inv.id} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg hover:bg-[#F8FAFC] transition-colors">
+              <div className="min-w-0">
+                <p className="text-[13px] font-medium text-[#3B82F6] font-mono">{inv.id}</p>
+                <p className="text-[11px] text-[#94A3B8]">
+                  {inv.customer} · issued {formatDate(inv.issuedDate)} · due {formatDate(inv.dueDate)}
+                </p>
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                <StatusBadge status={inv.status} />
+                <span className="text-[13px] font-semibold text-[#1E293B] w-24 text-right">{formatCurrency(inv.amount)}</span>
+              </div>
+            </div>
+          ))}
+          {statementRows.length === 0 && (
+            <p className="text-[13px] text-[#64748B] text-center py-6">No invoices on this statement.</p>
+          )}
+        </div>
+        <div className="mt-4 pt-3 border-t border-[#E2E8F0] space-y-2">
+          <div className="flex items-center justify-between text-[13px]">
+            <span className="text-[#64748B]">Total invoiced</span>
+            <span className="font-medium text-[#1E293B]">{formatCurrency(statementTotals.invoiced)}</span>
+          </div>
+          <div className="flex items-center justify-between text-[13px]">
+            <span className="text-[#64748B]">Payments received</span>
+            <span className="font-medium text-[#10B981]">−{formatCurrency(statementTotals.paid)}</span>
+          </div>
+          <div className="flex items-center justify-between text-[13px]">
+            <span className="font-semibold text-[#1E293B]">Outstanding balance</span>
+            <span className="font-bold text-[#EF4444]">{formatCurrency(statementTotals.outstanding)}</span>
+          </div>
+        </div>
+      </Modal>
+
+      {/* AutoPay modal */}
+      <Modal
+        open={autoPayOpen}
+        onClose={() => setAutoPayOpen(false)}
+        title={autoPayEnabled ? "Manage AutoPay" : "Enable AutoPay"}
+        description="Invoices will be paid automatically on their due date using the selected payment method."
+        size="sm"
+        footer={
+          <>
+            {autoPayEnabled ? (
+              <SecondaryButton onClick={disableAutoPay} className="text-[#EF4444] border-[#FECACA] hover:bg-[#FEF2F2]">
+                Turn off AutoPay
+              </SecondaryButton>
+            ) : (
+              <SecondaryButton onClick={() => setAutoPayOpen(false)}>Cancel</SecondaryButton>
+            )}
+            <PrimaryButton onClick={confirmAutoPay}>
+              {autoPayEnabled ? "Save changes" : "Enable AutoPay"}
+            </PrimaryButton>
+          </>
+        }
+      >
+        <div className="space-y-2">
+          {PAYMENT_METHODS.map((m) => (
+            <label
+              key={m}
+              className={`flex items-center gap-3 px-3 py-2.5 border rounded-lg cursor-pointer transition-colors ${
+                autoPayDraft === m ? "border-[#3B82F6] bg-[#EFF6FF]" : "border-[#E2E8F0] hover:bg-[#F8FAFC]"
+              }`}
+            >
+              <input
+                type="radio"
+                name="autopay-method"
+                checked={autoPayDraft === m}
+                onChange={() => setAutoPayDraft(m)}
+                className="w-4 h-4 border-[#D1D5DB] text-[#3B82F6] focus:ring-[#3B82F6]"
+              />
+              <CreditCard className="w-4 h-4 text-[#94A3B8]" />
+              <span className="text-[13px] font-medium text-[#1E293B]">{m}</span>
+            </label>
+          ))}
+        </div>
       </Modal>
 
       {/* Delete confirm */}

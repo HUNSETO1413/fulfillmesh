@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 const fieldBase =
   "w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-[13px] text-[#374151] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-1 focus:ring-[#3B82F6] focus:border-[#3B82F6] transition-colors";
 
-export function Field({ label, required, children, hint }: { label: string; required?: boolean; children: ReactNode; hint?: string }) {
+export function Field({ label, required, children, hint, error }: { label: string; required?: boolean; children: ReactNode; hint?: string; error?: string }) {
   return (
     <label className="block">
       <span className="block text-[13px] font-medium text-[#374151] mb-1.5">
@@ -13,7 +13,9 @@ export function Field({ label, required, children, hint }: { label: string; requ
         {required && <span className="text-[#EF4444]"> *</span>}
       </span>
       {children}
-      {hint && <span className="block mt-1 text-[11px] text-[#9CA3AF]">{hint}</span>}
+      {error
+        ? <span className="block mt-1 text-[12px] text-[#EF4444]">{error}</span>
+        : hint && <span className="block mt-1 text-[11px] text-[#9CA3AF]">{hint}</span>}
     </label>
   );
 }

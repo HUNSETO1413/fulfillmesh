@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useRef, useEffect } from "react";
-import { Plus, Search, ChevronDown, SlidersHorizontal, MapPin, Warehouse as WarehouseIcon, ArrowUpDown, MoreVertical, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Search, ChevronDown, SlidersHorizontal, MapPin, Warehouse as WarehouseIcon, ArrowUpDown, MoreVertical } from "lucide-react";
 import { Modal } from "@/components/dashboard/Modal";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { Field, TextInput, NumberInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
@@ -51,9 +51,11 @@ export default function WarehousesPage() {
 
   const [addOpen, setAddOpen] = useState(false);
   const [draft, setDraft] = useState(emptyDraft);
+  const [draftErrors, setDraftErrors] = useState<{ name?: string; code?: string; zip?: string; capacity?: string }>({});
 
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [removing, setRemoving] = useState<Warehouse | null>(null);
+  const [pausingDefault, setPausingDefault] = useState<Warehouse | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -78,8 +80,26 @@ export default function WarehousesPage() {
 
   const toggleStatus = (code: string) => {
     setWarehouses((ws) => ws.map((w) => (w.code === code ? { ...w, status: w.status === "Active" ? "Paused" : "Active" } : w)));
-    setMenuFor(null);
     toast("Warehouse status updated");
+  };
+
+  const requestToggleStatus = (w: Warehouse) => {
+    setMenuFor(null);
+    if (w.isDefault && w.status === "Active") {
+      // Pausing the default warehouse is disruptive — confirm first.
+      setPausingDefault(w);
+      return;
+    }
+    toggleStatus(w.code);
+  };
+
+  const requestRemove = (w: Warehouse) => {
+    setMenuFor(null);
+    if (w.isDefault) {
+      toast("This is your default warehouse. Set another warehouse as default before removing it.", "error");
+      return;
+    }
+    setRemoving(w);
   };
 
   const setDefault = (code: string) => {
@@ -89,8 +109,18 @@ export default function WarehousesPage() {
   };
 
   const handleAdd = () => {
-    if (!draft.name.trim() || !draft.code.trim()) {
-      toast("Name and code are required", "error");
+    const errors: { name?: string; code?: string; zip?: string; capacity?: string } = {};
+    if (!draft.name.trim()) errors.name = "Name is required";
+    if (!draft.code.trim()) errors.code = "Code is required";
+    else if (warehouses.some((w) => w.code.toLowerCase() === draft.code.trim().toLowerCase())) errors.code = "A warehouse with this code already exists";
+    if (!draft.zip.trim()) errors.zip = "Postal code is required";
+    else if (!/^[A-Za-z0-9][A-Za-z0-9\s,-]{2,}$/.test(draft.zip.trim())) errors.zip = "Enter a valid postal code";
+    const capacity = Number(draft.capacity);
+    if (draft.capacity.trim() === "" || Number.isNaN(capacity)) errors.capacity = "Capacity must be a number";
+    else if (capacity < 0 || capacity > 100) errors.capacity = "Capacity must be between 0 and 100";
+    setDraftErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      toast("Please fix the highlighted fields", "error");
       return;
     }
     setWarehouses((ws) => [
@@ -99,11 +129,11 @@ export default function WarehousesPage() {
         name: draft.name.trim(),
         code: draft.code.trim(),
         location: draft.location.trim() || "—",
-        zip: draft.zip.trim() || "—",
+        zip: draft.zip.trim(),
         type: draft.type,
         manager: draft.manager.trim() || "—",
         managerEmail: draft.managerEmail.trim() || "—",
-        capacity: Math.max(0, Math.min(100, Number(draft.capacity) || 0)),
+        capacity,
         isDefault: false,
         status: "Active",
       },
@@ -131,7 +161,7 @@ export default function WarehousesPage() {
           </p>
         </div>
         <button
-          onClick={() => setAddOpen(true)}
+          onClick={() => { setDraft(emptyDraft); setDraftErrors({}); setAddOpen(true); }}
           className="flex items-center gap-2 px-4 py-2.5 bg-[#3B82F6] text-white rounded-lg text-[13px] font-medium hover:bg-[#3B82F6]/90 transition-colors"
         >
           <Plus className="w-4 h-4" />
@@ -281,7 +311,7 @@ export default function WarehousesPage() {
                       {menuFor === w.code && (
                         <div className="absolute right-0 top-9 z-20 w-44 bg-white border border-[#E2E8F0] rounded-lg shadow-lg py-1 text-left">
                           <button
-                            onClick={() => toggleStatus(w.code)}
+                            onClick={() => requestToggleStatus(w)}
                             className="block w-full text-left px-3 py-2 text-[13px] text-[#374151] hover:bg-[#F8FAFC]"
                           >
                             {w.status === "Active" ? "Pause warehouse" : "Activate warehouse"}
@@ -295,10 +325,7 @@ export default function WarehousesPage() {
                             </button>
                           )}
                           <button
-                            onClick={() => {
-                              setMenuFor(null);
-                              setRemoving(w);
-                            }}
+                            onClick={() => requestRemove(w)}
                             className="block w-full text-left px-3 py-2 text-[13px] text-[#EF4444] hover:bg-[#FEF2F2]"
                           >
                             Remove
@@ -315,19 +342,8 @@ export default function WarehousesPage() {
       </div>
 
       {/* Footer */}
-      <div className="flex items-center justify-between mt-4">
-        <p className="text-[13px] text-[#64748B]">Showing 1 to {filtered.length} of {filtered.length} warehouses</p>
-        <div className="flex items-center gap-2">
-          <button disabled={true} className="flex items-center gap-1 px-3 py-1.5 border border-[#E2E8F0] rounded-md text-[13px] text-[#94A3B8] cursor-not-allowed">
-            <ChevronLeft className="w-4 h-4" />
-            Previous
-          </button>
-          <button onClick={() => toast("Page 1 of 1", "info")} className="w-8 h-8 rounded-md bg-[#3B82F6] text-white text-[13px] font-medium">1</button>
-          <button disabled={true} className="flex items-center gap-1 px-3 py-1.5 border border-[#E2E8F0] rounded-md text-[13px] text-[#94A3B8] cursor-not-allowed">
-            Next
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
+      <div className="mt-4">
+        <p className="text-[13px] text-[#64748B]">Showing {filtered.length} of {warehouses.length} warehouses</p>
       </div>
 
       {/* Add Warehouse Modal */}
@@ -345,23 +361,40 @@ export default function WarehousesPage() {
         }
       >
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Name" required>
-            <TextInput value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Singapore Warehouse" />
+          <Field label="Name" required error={draftErrors.name}>
+            <TextInput
+              value={draft.name}
+              onChange={(e) => { setDraft({ ...draft, name: e.target.value }); setDraftErrors((p) => ({ ...p, name: undefined })); }}
+              placeholder="Singapore Warehouse"
+            />
           </Field>
-          <Field label="Code" required>
-            <TextInput value={draft.code} onChange={(e) => setDraft({ ...draft, code: e.target.value })} placeholder="SIN-005" />
+          <Field label="Code" required error={draftErrors.code}>
+            <TextInput
+              value={draft.code}
+              onChange={(e) => { setDraft({ ...draft, code: e.target.value }); setDraftErrors((p) => ({ ...p, code: undefined })); }}
+              placeholder="SIN-005"
+            />
           </Field>
           <Field label="Location">
             <TextInput value={draft.location} onChange={(e) => setDraft({ ...draft, location: e.target.value })} placeholder="Singapore" />
           </Field>
-          <Field label="ZIP / Postal">
-            <TextInput value={draft.zip} onChange={(e) => setDraft({ ...draft, zip: e.target.value })} placeholder="486035, SG" />
+          <Field label="ZIP / Postal" required error={draftErrors.zip}>
+            <TextInput
+              value={draft.zip}
+              onChange={(e) => { setDraft({ ...draft, zip: e.target.value }); setDraftErrors((p) => ({ ...p, zip: undefined })); }}
+              placeholder="486035, SG"
+            />
           </Field>
           <Field label="Type">
             <Select options={["Regional", "Hub"]} value={draft.type} onChange={(e) => setDraft({ ...draft, type: e.target.value })} />
           </Field>
-          <Field label="Capacity (%)">
-            <NumberInput value={draft.capacity} onChange={(e) => setDraft({ ...draft, capacity: e.target.value })} min="0" max="100" />
+          <Field label="Capacity (%)" error={draftErrors.capacity}>
+            <NumberInput
+              value={draft.capacity}
+              onChange={(e) => { setDraft({ ...draft, capacity: e.target.value }); setDraftErrors((p) => ({ ...p, capacity: undefined })); }}
+              min="0"
+              max="100"
+            />
           </Field>
           <Field label="Manager">
             <TextInput value={draft.manager} onChange={(e) => setDraft({ ...draft, manager: e.target.value })} placeholder="Jane Tan" />
@@ -371,6 +404,20 @@ export default function WarehousesPage() {
           </Field>
         </div>
       </Modal>
+
+      {/* Pause Default Warehouse Confirm */}
+      <ConfirmDialog
+        open={pausingDefault !== null}
+        onClose={() => setPausingDefault(null)}
+        onConfirm={() => {
+          if (pausingDefault) toggleStatus(pausingDefault.code);
+          setPausingDefault(null);
+        }}
+        title="Pause default warehouse"
+        message={`"${pausingDefault?.name ?? ""}" is your default warehouse. Pausing it will stop new orders from being routed here until it is reactivated. Continue?`}
+        confirmLabel="Pause Warehouse"
+        destructive
+      />
 
       {/* Remove Confirm */}
       <ConfirmDialog

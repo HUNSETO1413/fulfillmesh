@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Plug, CheckCircle2, RefreshCw, AlertTriangle, Clock, Shield,
   Search, Plus, ScrollText, ArrowUpRight, ArrowDownRight,
@@ -9,7 +9,9 @@ import {
   Store, KeyRound, Webhook, GitMerge, Download,
   ChevronRight,
 } from "lucide-react";
+import { Modal } from "@/components/dashboard/Modal";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
+import { Field, TextInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
 
 /* ---------------- data ---------------- */
@@ -76,6 +78,20 @@ const quickActions = [
 
 const CATEGORIES = ["Sales Channel", "Marketplace", "Shipping", "Accounting", "ERP", "Communication", "Productivity", "Automation", "Custom"];
 
+const SYNC_FREQUENCIES = ["Every 5 minutes", "Every 15 minutes", "Every 30 minutes", "Hourly", "Daily"];
+
+interface IntegrationConfig { apiKey: string; webhookUrl: string; frequency: string }
+const emptyConfig: IntegrationConfig = { apiKey: "", webhookUrl: "", frequency: "Every 15 minutes" };
+
+function isValidUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export default function IntegrationsPage() {
   const { toast } = useToast();
   const [rows, setRows] = useState<IntegrationRow[]>(initialRows);
@@ -84,6 +100,20 @@ export default function IntegrationsPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState<IntegrationRow | null>(null);
+
+  // Configure modal + per-integration saved configs
+  const [configs, setConfigs] = useState<Record<string, IntegrationConfig>>({});
+  const [configuring, setConfiguring] = useState<string | null>(null);
+  const [configDraft, setConfigDraft] = useState<IntegrationConfig>(emptyConfig);
+
+  // Sync-in-progress indicator
+  const [syncing, setSyncing] = useState<Set<string>>(new Set());
+  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  useEffect(() => {
+    const timers = timersRef.current;
+    return () => { timers.forEach(clearTimeout); };
+  }, []);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -99,10 +129,47 @@ export default function IntegrationsPage() {
     setRows((cur) => cur.map((r) => (r.name === name ? { ...r, status, sync: status === "Connected" ? "Just now" : "—" } : r)));
   }
 
-  function connect(name: string) {
-    setStatus(name, "Connected");
+  function openConfigure(name: string) {
     setOpenMenu(null);
-    toast(`${name} connected`);
+    setConfigDraft(configs[name] ?? emptyConfig);
+    setConfiguring(name);
+  }
+
+  function saveConfiguration() {
+    if (!configuring) return;
+    if (!configDraft.apiKey.trim()) { toast("API key is required", "error"); return; }
+    if (configDraft.webhookUrl.trim() && !isValidUrl(configDraft.webhookUrl.trim())) {
+      toast("Webhook URL must be a valid http(s) URL", "error");
+      return;
+    }
+    const name = configuring;
+    const wasDisconnected = rows.find((r) => r.name === name)?.status === "Disconnected";
+    setConfigs((cur) => ({ ...cur, [name]: { ...configDraft, apiKey: configDraft.apiKey.trim(), webhookUrl: configDraft.webhookUrl.trim() } }));
+    if (wasDisconnected) setStatus(name, "Connected");
+    setConfiguring(null);
+    toast(wasDisconnected ? `${name} connected` : `${name} configuration saved`);
+  }
+
+  // Connect opens the configure modal; the integration is marked connected on save.
+  function connect(name: string) {
+    setOpenMenu(null);
+    openConfigure(name);
+  }
+
+  function syncNow(name: string) {
+    setOpenMenu(null);
+    if (syncing.has(name)) return;
+    setSyncing((cur) => new Set(cur).add(name));
+    const timer = setTimeout(() => {
+      setSyncing((cur) => {
+        const next = new Set(cur);
+        next.delete(name);
+        return next;
+      });
+      setRows((cur) => cur.map((r) => (r.name === name ? { ...r, sync: "Just now" } : r)));
+      toast(`${name} synced`);
+    }, 1000);
+    timersRef.current.push(timer);
   }
 
   function confirmDisconnect() {
@@ -217,16 +284,20 @@ export default function IntegrationsPage() {
                     </td>
                     <td className="px-5 py-3.5"><span className={`inline-flex px-2 py-0.5 text-[11px] font-medium rounded ${catStyle[r.cat]} whitespace-nowrap`}>{r.cat}</span></td>
                     <td className="px-5 py-3.5">
-                      <span className={`inline-flex items-center gap-1.5 text-[12px] font-medium ${connected ? "text-teal" : "text-text-light"}`}><span className={`w-1.5 h-1.5 rounded-full ${connected ? "bg-teal" : "bg-[#9AA8B8]"}`} />{r.status}</span>
+                      {syncing.has(r.name) ? (
+                        <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-action-blue"><RefreshCw className="w-3 h-3 animate-spin" />Syncing…</span>
+                      ) : (
+                        <span className={`inline-flex items-center gap-1.5 text-[12px] font-medium ${connected ? "text-teal" : "text-text-light"}`}><span className={`w-1.5 h-1.5 rounded-full ${connected ? "bg-teal" : "bg-[#9AA8B8]"}`} />{r.status}</span>
+                      )}
                     </td>
-                    <td className="px-5 py-3.5 text-[12px] text-text-muted whitespace-nowrap">{r.sync}</td>
+                    <td className="px-5 py-3.5 text-[12px] text-text-muted whitespace-nowrap">{syncing.has(r.name) ? "Syncing…" : r.sync}</td>
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-1 text-text-light"><ArrowLeft className="w-3.5 h-3.5" /><ArrowRight className="w-3.5 h-3.5" /></div>
                     </td>
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-1">
                         {connected ? (
-                          <button onClick={() => toast(`Configuring ${r.name}…`, "info")} className="text-[12px] font-medium text-action-blue hover:underline">Configure</button>
+                          <button onClick={() => openConfigure(r.name)} className="text-[12px] font-medium text-action-blue hover:underline">Configure</button>
                         ) : (
                           <button onClick={() => connect(r.name)} className="text-[12px] font-medium text-action-blue hover:underline">Connect</button>
                         )}
@@ -236,8 +307,8 @@ export default function IntegrationsPage() {
                             <>
                               <div className="fixed inset-0 z-10" onClick={() => setOpenMenu(null)} />
                               <div className="absolute right-0 mt-1 z-20 w-44 bg-white rounded-lg border border-border-soft shadow-lg py-1 text-left">
-                                <button onClick={() => { setOpenMenu(null); toast(`Syncing ${r.name}…`); }} className="w-full text-left px-3 py-1.5 text-[13px] text-text-primary hover:bg-soft-bg flex items-center gap-2"><RefreshCw className="w-3.5 h-3.5" /> Sync now</button>
-                                <button onClick={() => { setOpenMenu(null); toast(`Configuring ${r.name}…`, "info"); }} className="w-full text-left px-3 py-1.5 text-[13px] text-text-primary hover:bg-soft-bg flex items-center gap-2"><Plug className="w-3.5 h-3.5" /> Configure</button>
+                                <button onClick={() => syncNow(r.name)} disabled={!connected || syncing.has(r.name)} className="w-full text-left px-3 py-1.5 text-[13px] text-text-primary hover:bg-soft-bg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"><RefreshCw className={`w-3.5 h-3.5 ${syncing.has(r.name) ? "animate-spin" : ""}`} /> {syncing.has(r.name) ? "Syncing…" : "Sync now"}</button>
+                                <button onClick={() => openConfigure(r.name)} className="w-full text-left px-3 py-1.5 text-[13px] text-text-primary hover:bg-soft-bg flex items-center gap-2"><Plug className="w-3.5 h-3.5" /> Configure</button>
                                 {connected ? (
                                   <button onClick={() => { setOpenMenu(null); setDisconnecting(r); }} className="w-full text-left px-3 py-1.5 text-[13px] text-[#EF4444] hover:bg-[#FEF2F2] flex items-center gap-2"><AlertTriangle className="w-3.5 h-3.5" /> Disconnect</button>
                                 ) : (
@@ -304,7 +375,7 @@ export default function IntegrationsPage() {
                     <p className="text-[12px] font-medium text-text-primary truncate">{p.name}</p>
                     <p className="text-[10px] text-text-light truncate">{p.desc}</p>
                   </div>
-                  <button onClick={() => { if (p.action === "Connect") connect(p.name); else toast(`Managing ${p.name}…`, "info"); }} className="text-[12px] font-medium text-action-blue hover:underline shrink-0">{p.action}</button>
+                  <button onClick={() => { if (p.action === "Connect") connect(p.name); else openConfigure(p.name); }} className="text-[12px] font-medium text-action-blue hover:underline shrink-0">{p.action}</button>
                 </div>
                 );
               })}
@@ -355,7 +426,7 @@ export default function IntegrationsPage() {
               <div><span className="text-text-light">Connection since</span><div>May 15, 2026 10:00 AM</div></div>
               <div><span className="text-text-light">Connected by</span><div>admin@fulfillmesh.com</div></div>
             </div>
-            <button onClick={() => toast("Configuring Shopify…", "info")} className="w-full px-3 py-2 text-[13px] font-medium text-text-body border border-border-soft rounded-lg hover:bg-soft-bg transition-colors">Configure</button>
+            <button onClick={() => openConfigure("Shopify")} className="w-full px-3 py-2 text-[13px] font-medium text-text-body border border-border-soft rounded-lg hover:bg-soft-bg transition-colors">Configure</button>
             <button onClick={() => setDisconnecting(rows.find((r) => r.name === "Shopify") ?? null)} className="w-full mt-2 px-3 py-2 text-[13px] font-medium text-[#EF4444] border border-border-soft rounded-lg hover:bg-[#FEF2F2] transition-colors">Disconnect</button>
           </div>
 
@@ -449,6 +520,50 @@ export default function IntegrationsPage() {
           </button>
         </div>
       </div>
+
+      {/* Configure / Connect modal */}
+      <Modal
+        open={!!configuring}
+        onClose={() => setConfiguring(null)}
+        title={`Configure ${configuring ?? ""}`}
+        description={
+          rows.find((r) => r.name === configuring)?.status === "Disconnected"
+            ? "Enter your credentials to connect this integration."
+            : "Update credentials and sync settings for this integration."
+        }
+        footer={
+          <>
+            <SecondaryButton onClick={() => setConfiguring(null)}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={saveConfiguration}>
+              {rows.find((r) => r.name === configuring)?.status === "Disconnected" ? "Save & connect" : "Save configuration"}
+            </PrimaryButton>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Field label="API key" required>
+            <TextInput
+              value={configDraft.apiKey}
+              onChange={(e) => setConfigDraft((d) => ({ ...d, apiKey: e.target.value }))}
+              placeholder="sk_live_…"
+            />
+          </Field>
+          <Field label="Webhook URL" hint="Optional. Must be a valid http(s) URL.">
+            <TextInput
+              value={configDraft.webhookUrl}
+              onChange={(e) => setConfigDraft((d) => ({ ...d, webhookUrl: e.target.value }))}
+              placeholder="https://example.com/webhooks/fulfillmesh"
+            />
+          </Field>
+          <Field label="Sync frequency">
+            <Select
+              options={SYNC_FREQUENCIES}
+              value={configDraft.frequency}
+              onChange={(e) => setConfigDraft((d) => ({ ...d, frequency: e.target.value }))}
+            />
+          </Field>
+        </div>
+      </Modal>
 
       {/* Disconnect confirm */}
       <ConfirmDialog

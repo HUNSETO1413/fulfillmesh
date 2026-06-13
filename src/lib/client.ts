@@ -22,6 +22,26 @@ export const api = {
   del: <T>(url: string) => request<T>("DELETE", url),
 };
 
+// ---- file downloads ----
+function downloadBlob(filename: string, content: string, mime: string): void {
+  const blob = new Blob([content], { type: mime });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(link.href);
+}
+
+export function exportToJson(filename: string, data: unknown): void {
+  downloadBlob(
+    filename.endsWith(".json") ? filename : `${filename}.json`,
+    JSON.stringify(data, null, 2),
+    "application/json;charset=utf-8;",
+  );
+}
+
 // ---- CSV export ----
 function escapeCell(value: unknown): string {
   const s = value == null ? "" : String(value);
@@ -37,13 +57,9 @@ export function exportToCsv<T>(
   const body = rows
     .map((r) => columns.map((c) => escapeCell((r as Record<string, unknown>)[c.key as string])).join(","))
     .join("\n");
-  const csv = `${head}\n${body}`;
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(blob);
-  link.download = filename.endsWith(".csv") ? filename : `${filename}.csv`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(link.href);
+  downloadBlob(
+    filename.endsWith(".csv") ? filename : `${filename}.csv`,
+    `${head}\n${body}`,
+    "text/csv;charset=utf-8;",
+  );
 }

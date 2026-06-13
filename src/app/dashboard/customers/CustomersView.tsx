@@ -7,7 +7,6 @@ import {
   Search,
   ChevronDown,
   Calendar,
-  Bell,
   Plus,
   Download,
   Pencil,
@@ -36,6 +35,34 @@ const tabs = ["All Customers", "Active", "Inactive", "Lead"];
 const accentColor = "#0057D8";
 
 const STATUSES: Customer["status"][] = ["Active", "Inactive", "Lead"];
+
+// The demo workspace anchors "today" to the end of the header range so the
+// joined-date filter stays deterministic.
+const REF_DATE = new Date("2025-05-18T12:00:00Z");
+const JOIN_RANGES = ["All Time", "This year", "Last 12 months", "Last 24 months"];
+
+function joinRangeStart(range: string): Date | null {
+  const start = new Date(REF_DATE);
+  switch (range) {
+    case "This year":
+      return new Date("2025-01-01T00:00:00Z");
+    case "Last 12 months":
+      start.setUTCFullYear(start.getUTCFullYear() - 1);
+      return start;
+    case "Last 24 months":
+      start.setUTCFullYear(start.getUTCFullYear() - 2);
+      return start;
+    default:
+      return null;
+  }
+}
+
+function joinedInRange(joined: string | undefined, range: string): boolean {
+  const start = joinRangeStart(range);
+  if (!start) return true;
+  if (!joined) return false;
+  return new Date(`${joined}T12:00:00Z`) >= start;
+}
 
 type Draft = {
   name: string;
@@ -102,6 +129,7 @@ export default function CustomersView({ items }: { items: Customer[] }) {
   const [pageSizeOpen, setPageSizeOpen] = useState(false);
   const [dateOpen, setDateOpen] = useState(false);
   const [rangeOpen, setRangeOpen] = useState(false);
+  const [joinRange, setJoinRange] = useState("All Time");
 
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -158,6 +186,7 @@ export default function CustomersView({ items }: { items: Customer[] }) {
     return items.filter((c) => {
       if (activeTab !== "All Customers" && c.status !== activeTab) return false;
       if (statusFilter && c.status !== statusFilter) return false;
+      if (!joinedInRange(c.joinedDate, joinRange)) return false;
       if (!q) return true;
       return (
         c.id.toLowerCase().includes(q) ||
@@ -166,7 +195,7 @@ export default function CustomersView({ items }: { items: Customer[] }) {
         (c.company ?? "").toLowerCase().includes(q)
       );
     });
-  }, [items, search, activeTab, statusFilter]);
+  }, [items, search, activeTab, statusFilter, joinRange]);
 
   const sorted = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
@@ -372,12 +401,6 @@ export default function CustomersView({ items }: { items: Customer[] }) {
               </>
             )}
           </div>
-          <button
-            onClick={() => toast("No new notifications")}
-            className="w-9 h-9 flex items-center justify-center bg-white border border-border-soft rounded-lg text-text-muted hover:bg-soft-bg"
-          >
-            <Bell className="w-4 h-4" />
-          </button>
         </div>
       </div>
 
@@ -491,20 +514,23 @@ export default function CustomersView({ items }: { items: Customer[] }) {
           <div className="relative">
             <button
               onClick={() => setRangeOpen((v) => !v)}
-              className="inline-flex items-center gap-1.5 px-3 py-2 border border-border-soft rounded-lg text-[13px] text-text-muted hover:bg-soft-bg"
+              className={`inline-flex items-center gap-1.5 px-3 py-2 border rounded-lg text-[13px] transition-colors ${
+                joinRange !== "All Time" ? "bg-action-blue/10 border-action-blue text-action-blue" : "border-border-soft text-text-muted hover:bg-soft-bg"
+              }`}
             >
-              All Time
+              {joinRange}
               <ChevronDown className="w-3.5 h-3.5" />
             </button>
             {rangeOpen && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setRangeOpen(false)} />
                 <div className="absolute right-0 mt-1 z-20 w-44 bg-white rounded-lg border border-border-soft shadow-lg py-1">
-                  {["All Time", "This year", "This quarter", "This month"].map((r) => (
+                  <p className="px-3 py-1.5 text-[11px] font-semibold text-text-light uppercase">Joined</p>
+                  {JOIN_RANGES.map((r) => (
                     <button
                       key={r}
-                      onClick={() => { setRangeOpen(false); toast(`Range: ${r}`); }}
-                      className="w-full text-left px-3 py-1.5 text-[13px] text-text-body hover:bg-soft-bg"
+                      onClick={() => { setJoinRange(r); setRangeOpen(false); setPage(1); }}
+                      className={`w-full text-left px-3 py-1.5 text-[13px] hover:bg-soft-bg ${joinRange === r ? "text-action-blue font-medium" : "text-text-body"}`}
                     >
                       {r}
                     </button>

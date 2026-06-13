@@ -4,11 +4,20 @@ import { useState } from "react";
 import {
   BarChart3, Package, Truck, RotateCcw, Users, FileText,
   Download, ChevronDown, Bell, MoreHorizontal,
-  ChevronRight,
+  ChevronRight, CalendarClock, Copy, Loader2,
 } from "lucide-react";
 import { DateRangeMenu } from "@/components/dashboard/DateRangeMenu";
+import { Modal } from "@/components/dashboard/Modal";
+import { Field, TextInput, Select as FormSelect, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
 import { exportToCsv } from "@/lib/client";
+
+type Schedule = {
+  frequency: "Daily" | "Weekly" | "Monthly";
+  day: string;
+  time: string;
+  recipients: string;
+};
 
 type ReportRow = {
   icon: typeof BarChart3;
@@ -16,6 +25,8 @@ type ReportRow = {
   desc: string;
   generated: string;
   action: "download" | "generate";
+  generating?: boolean;
+  schedule?: Schedule;
 };
 
 const initialReports: ReportRow[] = [
@@ -29,6 +40,24 @@ const initialReports: ReportRow[] = [
 const REPORT_TYPES = ["Sales Report", "Inventory Report", "Shipment Report", "Return Report", "Customer Report"];
 const GROUP_BY = ["Select an option", "Product", "Channel", "Warehouse", "Customer", "Date"];
 const FORMATS = ["PDF", "CSV", "XLSX"];
+
+const FREQUENCIES = ["Daily", "Weekly", "Monthly"] as const;
+const WEEK_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const MONTH_DAYS = ["1st of the month", "15th of the month", "Last day of the month"];
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Deterministic share link derived from the report title.
+function shareLinkFor(title: string): string {
+  const slug = title.toLowerCase().replace(/\s+/g, "-");
+  let h = 2166136261;
+  for (let i = 0; i < title.length; i++) {
+    h ^= title.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  const hash = (h >>> 0).toString(16).padStart(8, "0");
+  return `https://app.fulfillmesh.io/share/reports/${slug}-${hash}`;
+}
 
 function Select({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (v: string) => void }) {
   return (
@@ -56,28 +85,82 @@ export default function ReportsPage() {
   const [type, setType] = useState("Sales Report");
   const [groupBy, setGroupBy] = useState("Select an option");
   const [format, setFormat] = useState("PDF");
+  const [customBusy, setCustomBusy] = useState(false);
 
-  function downloadReport(r: ReportRow) {
-    exportToCsv(r.title.toLowerCase().replace(/\s+/g, "-"), [
-      { report: r.title, range, generated: r.generated, status: "Ready" },
+  // schedule modal
+  const [scheduling, setScheduling] = useState<string | null>(null);
+  const [schedDraft, setSchedDraft] = useState<Schedule>({ frequency: "Weekly", day: "Monday", time: "08:00", recipients: "" });
+
+  // share modal
+  const [sharing, setSharing] = useState<string | null>(null);
+
+  function downloadReport(title: string, generated: string) {
+    exportToCsv(title.toLowerCase().replace(/\s+/g, "-"), [
+      { report: title, range, generated, status: "Ready" },
     ], [
       { key: "report", header: "Report" },
       { key: "range", header: "Date Range" },
       { key: "generated", header: "Last Generated" },
       { key: "status", header: "Status" },
     ]);
-    toast(`${r.title} downloaded`);
   }
 
   function generateReport(title: string) {
-    const stamp = nowStamp();
-    setReports((prev) => prev.map((r) => r.title === title ? { ...r, action: "download", generated: stamp } : r));
-    toast(`${title} generated`);
+    setReports((prev) => prev.map((r) => r.title === title ? { ...r, generating: true } : r));
+    window.setTimeout(() => {
+      const stamp = nowStamp();
+      setReports((prev) => prev.map((r) => r.title === title ? { ...r, action: "download", generated: stamp, generating: false } : r));
+      downloadReport(title, stamp);
+      toast(`${title} is ready — download started`);
+    }, 1200);
   }
 
   function buildCustom() {
-    toast(`${type} (${format}) generated${groupBy !== "Select an option" ? `, grouped by ${groupBy}` : ""}`);
+    setCustomBusy(true);
+    window.setTimeout(() => {
+      setCustomBusy(false);
+      exportToCsv(`custom-${type.toLowerCase().replace(/\s+/g, "-")}`, [
+        { report: type, range, groupBy: groupBy === "Select an option" ? "—" : groupBy, format, generated: nowStamp() },
+      ], [
+        { key: "report", header: "Report" },
+        { key: "range", header: "Date Range" },
+        { key: "groupBy", header: "Grouped By" },
+        { key: "format", header: "Format" },
+        { key: "generated", header: "Generated" },
+      ]);
+      toast(`${type} (${format}) generated${groupBy !== "Select an option" ? `, grouped by ${groupBy}` : ""}`);
+    }, 1200);
   }
+
+  function openSchedule(title: string) {
+    const existing = reports.find((r) => r.title === title)?.schedule;
+    setSchedDraft(existing ?? { frequency: "Weekly", day: "Monday", time: "08:00", recipients: "" });
+    setScheduling(title);
+  }
+
+  function saveSchedule() {
+    if (!scheduling) return;
+    const recipients = schedDraft.recipients.split(",").map((s) => s.trim()).filter(Boolean);
+    if (recipients.length === 0 || recipients.some((r) => !EMAIL_RE.test(r))) {
+      toast("Enter one or more valid recipient email addresses", "error");
+      return;
+    }
+    setReports((prev) => prev.map((r) => r.title === scheduling ? { ...r, schedule: { ...schedDraft } } : r));
+    toast(`${scheduling} scheduled ${schedDraft.frequency.toLowerCase()} for ${recipients.length} recipient${recipients.length === 1 ? "" : "s"}`);
+    setScheduling(null);
+  }
+
+  async function copyShareLink(title: string) {
+    const link = shareLinkFor(title);
+    try {
+      await navigator.clipboard.writeText(link);
+      toast("Share link copied to clipboard");
+    } catch {
+      toast("Could not copy link — copy it manually", "error");
+    }
+  }
+
+  const sharingReport = sharing ? reports.find((r) => r.title === sharing) ?? null : null;
 
   return (
     <div className="space-y-6">
@@ -132,15 +215,28 @@ export default function ReportsPage() {
                         <div className="w-8 h-8 rounded-lg bg-action-blue/10 flex items-center justify-center shrink-0">
                           <Icon className="w-4 h-4 text-action-blue" />
                         </div>
-                        <span className="text-[13px] font-medium text-text-primary">{r.title}</span>
+                        <div>
+                          <span className="text-[13px] font-medium text-text-primary">{r.title}</span>
+                          {r.schedule && (
+                            <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#ECFDF5] text-[#065F46] text-[11px] font-medium">
+                              <CalendarClock className="w-3 h-3" />
+                              Scheduled · {r.schedule.frequency}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </td>
                     <td className="px-5 py-3.5 text-[13px] text-text-muted max-w-[300px]">{r.desc}</td>
                     <td className="px-5 py-3.5 text-[13px] text-text-muted whitespace-nowrap">{r.generated}</td>
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-2">
-                        {r.action === "download" ? (
-                          <button onClick={() => downloadReport(r)} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-action-blue hover:underline">
+                        {r.generating ? (
+                          <span className="inline-flex items-center gap-1.5 text-[13px] font-medium text-text-muted">
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            Generating…
+                          </span>
+                        ) : r.action === "download" ? (
+                          <button onClick={() => { downloadReport(r.title, r.generated); toast(`${r.title} downloaded`); }} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-action-blue hover:underline">
                             <Download className="w-3.5 h-3.5" />
                             Download
                           </button>
@@ -158,8 +254,8 @@ export default function ReportsPage() {
                               <div className="fixed inset-0 z-30" onClick={() => setRowMenu(null)} />
                               <div className="absolute right-0 mt-1 z-40 w-40 bg-white rounded-lg border border-border-soft shadow-[0_10px_30px_rgba(0,0,0,0.12)] py-1 text-left">
                                 <button onClick={() => { setRowMenu(null); generateReport(r.title); }} className="w-full text-left px-3 py-2 text-[13px] text-text-primary hover:bg-soft-bg">Regenerate</button>
-                                <button onClick={() => { setRowMenu(null); toast(`${r.title} scheduled weekly`); }} className="w-full text-left px-3 py-2 text-[13px] text-text-primary hover:bg-soft-bg">Schedule</button>
-                                <button onClick={() => { setRowMenu(null); toast(`Share link for ${r.title} copied`); }} className="w-full text-left px-3 py-2 text-[13px] text-text-primary hover:bg-soft-bg">Share</button>
+                                <button onClick={() => { setRowMenu(null); openSchedule(r.title); }} className="w-full text-left px-3 py-2 text-[13px] text-text-primary hover:bg-soft-bg">Schedule</button>
+                                <button onClick={() => { setRowMenu(null); setSharing(r.title); }} className="w-full text-left px-3 py-2 text-[13px] text-text-primary hover:bg-soft-bg">Share</button>
                               </div>
                             </>
                           )}
@@ -184,11 +280,95 @@ export default function ReportsPage() {
           <Select label="Group By (Optional)" value={groupBy} options={GROUP_BY} onChange={setGroupBy} />
           <Select label="Format" value={format} options={FORMATS} onChange={setFormat} />
         </div>
-        <button onClick={buildCustom} className="inline-flex items-center gap-2 px-4 py-2.5 bg-action-blue text-white text-[13px] font-medium rounded-lg hover:bg-[#0047B3] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-          <FileText className="w-4 h-4" />
-          Generate Report
+        <button onClick={buildCustom} disabled={customBusy} className="inline-flex items-center gap-2 px-4 py-2.5 bg-action-blue text-white text-[13px] font-medium rounded-lg hover:bg-[#0047B3] shadow-[0_1px_2px_rgba(0,0,0,0.05)] disabled:opacity-60">
+          {customBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+          {customBusy ? "Generating…" : "Generate Report"}
         </button>
       </div>
+
+      {/* Schedule modal */}
+      <Modal
+        open={!!scheduling}
+        onClose={() => setScheduling(null)}
+        title={`Schedule ${scheduling ?? "report"}`}
+        description="Deliver this report automatically to your team."
+        size="sm"
+        footer={
+          <>
+            <SecondaryButton onClick={() => setScheduling(null)}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={saveSchedule}>Save schedule</PrimaryButton>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Field label="Frequency">
+            <FormSelect
+              options={[...FREQUENCIES]}
+              value={schedDraft.frequency}
+              onChange={(e) => {
+                const frequency = e.target.value as Schedule["frequency"];
+                setSchedDraft((d) => ({
+                  ...d,
+                  frequency,
+                  day: frequency === "Weekly" ? WEEK_DAYS[0] : frequency === "Monthly" ? MONTH_DAYS[0] : "",
+                }));
+              }}
+            />
+          </Field>
+          {schedDraft.frequency !== "Daily" && (
+            <Field label={schedDraft.frequency === "Weekly" ? "Day of week" : "Day of month"}>
+              <FormSelect
+                options={schedDraft.frequency === "Weekly" ? WEEK_DAYS : MONTH_DAYS}
+                value={schedDraft.day}
+                onChange={(e) => setSchedDraft((d) => ({ ...d, day: e.target.value }))}
+              />
+            </Field>
+          )}
+          <Field label="Send at">
+            <TextInput type="time" value={schedDraft.time} onChange={(e) => setSchedDraft((d) => ({ ...d, time: e.target.value }))} />
+          </Field>
+          <Field label="Recipients" required hint="Comma-separated email addresses">
+            <TextInput
+              value={schedDraft.recipients}
+              onChange={(e) => setSchedDraft((d) => ({ ...d, recipients: e.target.value }))}
+              placeholder="ops@company.com, finance@company.com"
+            />
+          </Field>
+        </div>
+      </Modal>
+
+      {/* Share modal */}
+      <Modal
+        open={!!sharing}
+        onClose={() => setSharing(null)}
+        title={`Share ${sharing ?? "report"}`}
+        description="Anyone with this link can view the latest generated version."
+        size="sm"
+        footer={<SecondaryButton onClick={() => setSharing(null)}>Done</SecondaryButton>}
+      >
+        {sharingReport && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <input
+                readOnly
+                value={shareLinkFor(sharingReport.title)}
+                onFocus={(e) => e.target.select()}
+                className="flex-1 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2 text-[13px] text-[#374151] font-mono focus:outline-none"
+              />
+              <button
+                onClick={() => copyShareLink(sharingReport.title)}
+                className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 bg-[#3B82F6] hover:bg-[#2563EB] rounded-lg text-[13px] font-medium text-white transition-colors"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                Copy
+              </button>
+            </div>
+            <p className="text-[12px] text-[#9CA3AF]">
+              Last generated: {sharingReport.generated}
+            </p>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

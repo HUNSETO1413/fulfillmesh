@@ -18,6 +18,7 @@ import {
   ArrowDownRight,
   Check,
   Trash2,
+  Pencil,
 } from "lucide-react";
 import { Modal } from "@/components/dashboard/Modal";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
@@ -144,13 +145,43 @@ function StatusBadge({ s }: { s: string }) {
     Pending: "bg-[#F59E0B]/10 text-[#F59E0B]",
     Completed: "bg-[#10B981]/10 text-[#10B981]",
     Delayed: "bg-[#EF4444]/10 text-[#EF4444]",
+    Cancelled: "bg-[#64748B]/10 text-[#64748B]",
   };
-  return <span className={`inline-flex items-center px-2.5 py-0.5 text-[12px] font-medium rounded-full ${styles[s]}`}>{s}</span>;
+  return <span className={`inline-flex items-center px-2.5 py-0.5 text-[12px] font-medium rounded-full ${styles[s] ?? "bg-[#64748B]/10 text-[#64748B]"}`}>{s}</span>;
 }
 
-type Draft = { type: string; ref: string; warehouse: string; assignee: string; priority: string; due: string };
+type Draft = { type: string; ref: string; warehouse: string; assignee: string; priority: string; status: string; due: string };
 
-const emptyDraft: Draft = { type: "Pick", ref: "", warehouse: "ATL-1", assignee: "", priority: "Medium", due: new Date().toISOString().slice(0, 10) };
+const emptyDraft: Draft = { type: "Pick", ref: "", warehouse: "ATL-1", assignee: "", priority: "Medium", status: "Pending", due: new Date().toISOString().slice(0, 10) };
+
+// The checkbox walks the main lifecycle; Delayed/Cancelled resume at In Progress.
+const STATUS_CYCLE = ["Pending", "In Progress", "Completed"];
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+function toInputDate(display: string): string {
+  const d = new Date(display);
+  if (isNaN(d.getTime())) return new Date().toISOString().slice(0, 10);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+function toDisplayDate(input: string): string {
+  const [y, m, d] = input.split("-").map(Number);
+  const date = new Date(y, (m ?? 1) - 1, d ?? 1);
+  if (isNaN(date.getTime())) return input;
+  return date.toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" });
+}
+
+function isOverdue(t: Task): boolean {
+  if (t.status === "Completed" || t.status === "Cancelled") return false;
+  const due = new Date(t.due);
+  if (isNaN(due.getTime())) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return due.getTime() < today.getTime();
+}
 
 export default function TasksPage() {
   const { toast } = useToast();
@@ -160,9 +191,11 @@ export default function TasksPage() {
   const [whFilter, setWhFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [prioFilter, setPrioFilter] = useState("");
+  const [assigneeFilter, setAssigneeFilter] = useState("");
   const [openMenu, setOpenMenu] = useState<string | null>(null);
 
   const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<Task | null>(null);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState<Task | null>(null);
@@ -177,25 +210,35 @@ export default function TasksPage() {
   // donut math
   const C = 2 * Math.PI * 40;
 
+  const assignees = useMemo(
+    () => Array.from(new Set(items.map((t) => t.assignee))).sort(),
+    [items],
+  );
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return items.filter((t) => {
+    const list = items.filter((t) => {
       const matchesTab = activeTab === "All Tasks" || t.status === activeTab;
       const matchesQuery = !q || t.id.toLowerCase().includes(q) || t.ref.toLowerCase().includes(q) || t.assignee.toLowerCase().includes(q);
       const matchesWh = !whFilter || t.warehouse === whFilter;
       const matchesType = !typeFilter || t.type === typeFilter;
       const matchesPrio = !prioFilter || t.priority === prioFilter;
-      return matchesTab && matchesQuery && matchesWh && matchesType && matchesPrio;
+      const matchesAssignee = !assigneeFilter || t.assignee === assigneeFilter;
+      return matchesTab && matchesQuery && matchesWh && matchesType && matchesPrio && matchesAssignee;
     });
-  }, [items, activeTab, query, whFilter, typeFilter, prioFilter]);
+    // Overdue tasks surface to the top.
+    return [...list].sort((a, b) => Number(isOverdue(b)) - Number(isOverdue(a)));
+  }, [items, activeTab, query, whFilter, typeFilter, prioFilter, assigneeFilter]);
+
+  const overdueCount = useMemo(() => items.filter(isOverdue).length, [items]);
 
   function cycleStatus(id: string) {
-    setItems((cur) => cur.map((t) => {
-      if (t.id !== id) return t;
-      const next = t.status === "Completed" ? "In Progress" : "Completed";
-      toast(`${t.id} marked ${next}`);
-      return { ...t, status: next };
-    }));
+    const task = items.find((t) => t.id === id);
+    if (!task) return;
+    const idx = STATUS_CYCLE.indexOf(task.status);
+    const next = idx === -1 ? "In Progress" : STATUS_CYCLE[(idx + 1) % STATUS_CYCLE.length];
+    setItems((cur) => cur.map((t) => (t.id === id ? { ...t, status: next } : t)));
+    toast(`${id} marked ${next}`);
   }
 
   function setStatus(id: string, status: string) {
@@ -205,7 +248,18 @@ export default function TasksPage() {
   }
 
   function openCreate() {
+    setEditing(null);
     setDraft(emptyDraft);
+    setFormOpen(true);
+  }
+
+  function openEdit(t: Task) {
+    setEditing(t);
+    setDraft({
+      type: t.type, ref: t.ref, warehouse: t.warehouse, assignee: t.assignee,
+      priority: t.priority, status: t.status, due: toInputDate(t.due),
+    });
+    setOpenMenu(null);
     setFormOpen(true);
   }
 
@@ -213,12 +267,23 @@ export default function TasksPage() {
     if (!draft.ref.trim()) { toast("Reference is required", "error"); return; }
     if (!draft.assignee.trim()) { toast("Assignee is required", "error"); return; }
     setBusy(true);
+    if (editing) {
+      setItems((cur) => cur.map((t) => (t.id === editing.id ? {
+        ...t, type: draft.type, ref: draft.ref.trim(), warehouse: draft.warehouse,
+        assignee: draft.assignee.trim(), priority: draft.priority, status: draft.status,
+        due: toDisplayDate(draft.due),
+      } : t)));
+      setBusy(false);
+      setFormOpen(false);
+      toast(`Task ${editing.id} updated`);
+      return;
+    }
     const id = `TSK-${String(taskSeq++).padStart(6, "0")}`;
     const created: Task = {
       id, type: draft.type, ref: draft.ref.trim(), warehouse: draft.warehouse,
       assignee: draft.assignee.trim(), priority: draft.priority, status: "Pending",
       created: new Date().toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }),
-      due: draft.due,
+      due: toDisplayDate(draft.due),
     };
     setItems((prev) => [created, ...prev]);
     setBusy(false);
@@ -248,7 +313,7 @@ export default function TasksPage() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={() => { setWhFilter(""); setTypeFilter(""); setPrioFilter(""); setActiveTab("All Tasks"); setQuery(""); toast("Filters cleared", "info"); }} className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] font-medium text-[#64748B] shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-[#F8FAFC]">
+          <button onClick={() => { setWhFilter(""); setTypeFilter(""); setPrioFilter(""); setAssigneeFilter(""); setActiveTab("All Tasks"); setQuery(""); toast("Filters cleared", "info"); }} className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] font-medium text-[#64748B] shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-[#F8FAFC]">
             <SlidersHorizontal className="w-4 h-4" /> Filters
           </button>
           <button onClick={() => toast("Column settings", "info")} className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] font-medium text-[#64748B] shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-[#F8FAFC]">
@@ -331,6 +396,15 @@ export default function TasksPage() {
               <option value="">All Priorities</option>
               {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
+            <select value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)} className="px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/30">
+              <option value="">All Assignees</option>
+              {assignees.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+            {overdueCount > 0 && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#EF4444]/10 text-[#EF4444] text-[12px] font-medium rounded-full whitespace-nowrap">
+                <AlertTriangle className="w-3.5 h-3.5" /> {overdueCount} overdue — shown first
+              </span>
+            )}
           </div>
 
           <div className="overflow-x-auto">
@@ -343,16 +417,26 @@ export default function TasksPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((t) => (
+                {filtered.map((t) => {
+                  const overdue = isOverdue(t);
+                  return (
                   <tr key={t.id} className="border-b border-[#E2E8F0] last:border-b-0 hover:bg-[#F8FAFC]/60 transition-colors">
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-2.5">
                         <button
                           onClick={() => cycleStatus(t.id)}
-                          className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${t.status === "Completed" ? "bg-[#10B981] border-[#10B981]" : "border-[#CBD5E1] hover:border-[#3B82F6]"}`}
-                          aria-label={t.status === "Completed" ? "Mark incomplete" : "Mark complete"}
+                          className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                            t.status === "Completed"
+                              ? "bg-[#10B981] border-[#10B981]"
+                              : t.status === "In Progress"
+                                ? "border-[#3B82F6] bg-[#3B82F6]/10"
+                                : "border-[#CBD5E1] hover:border-[#3B82F6]"
+                          }`}
+                          aria-label={`Status: ${t.status}. Click to advance.`}
+                          title={`${t.status} — click to advance`}
                         >
                           {t.status === "Completed" && <Check className="w-3 h-3 text-white" />}
+                          {t.status === "In Progress" && <span className="w-1.5 h-1.5 rounded-full bg-[#3B82F6]" />}
                         </button>
                         <span className="text-[13px] font-medium text-[#3B82F6] font-mono">{t.id}</span>
                       </div>
@@ -364,7 +448,14 @@ export default function TasksPage() {
                     <td className="px-5 py-3.5"><PriorityBadge p={t.priority} /></td>
                     <td className="px-5 py-3.5"><StatusBadge s={t.status} /></td>
                     <td className="px-5 py-3.5 text-[13px] text-[#64748B]">{t.created}</td>
-                    <td className="px-5 py-3.5 text-[13px] text-[#64748B]">{t.due}</td>
+                    <td className="px-5 py-3.5">
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[13px] ${overdue ? "text-[#EF4444] font-medium" : "text-[#64748B]"}`}>{t.due}</span>
+                        {overdue && (
+                          <span className="inline-flex items-center px-2 py-0.5 text-[11px] font-semibold rounded-full bg-[#EF4444]/10 text-[#EF4444]">Overdue</span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-5 py-3.5 text-right">
                       <div className="relative inline-block">
                         <button onClick={() => setOpenMenu(openMenu === t.id ? null : t.id)} className="text-[#94A3B8] hover:text-[#64748B]" aria-label="Task actions"><MoreVertical className="w-4 h-4 inline-block" /></button>
@@ -372,6 +463,8 @@ export default function TasksPage() {
                           <>
                             <div className="fixed inset-0 z-10" onClick={() => setOpenMenu(null)} />
                             <div className="absolute right-0 mt-1 z-20 w-44 bg-white rounded-lg border border-[#E2E8F0] shadow-lg py-1 text-left">
+                              <button onClick={() => openEdit(t)} className="w-full text-left px-3 py-1.5 text-[13px] text-[#374151] hover:bg-[#F8FAFC] flex items-center gap-2"><Pencil className="w-3.5 h-3.5" /> Edit task</button>
+                              <div className="my-1 border-t border-[#E2E8F0]" />
                               <p className="px-3 py-1.5 text-[11px] font-semibold text-[#9CA3AF] uppercase">Set status</p>
                               {STATUSES.map((s) => (
                                 <button key={s} onClick={() => setStatus(t.id, s)} className={`w-full text-left px-3 py-1.5 text-[13px] hover:bg-[#F8FAFC] ${t.status === s ? "text-[#3B82F6] font-medium" : "text-[#374151]"}`}>{s}</button>
@@ -384,7 +477,8 @@ export default function TasksPage() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
                 {filtered.length === 0 && (
                   <tr>
                     <td colSpan={10} className="px-5 py-12 text-center">
@@ -511,16 +605,18 @@ export default function TasksPage() {
         </div>
       </div>
 
-      {/* Create Task modal */}
+      {/* Create / Edit Task modal */}
       <Modal
         open={formOpen}
         onClose={() => setFormOpen(false)}
-        title="Create Task"
-        description="Add a new warehouse task to the queue."
+        title={editing ? `Edit ${editing.id}` : "Create Task"}
+        description={editing ? "Update the task details below." : "Add a new warehouse task to the queue."}
         footer={
           <>
             <SecondaryButton onClick={() => setFormOpen(false)}>Cancel</SecondaryButton>
-            <PrimaryButton onClick={saveTask} disabled={busy}>{busy ? "Creating…" : "Create task"}</PrimaryButton>
+            <PrimaryButton onClick={saveTask} disabled={busy}>
+              {busy ? "Saving…" : editing ? "Save changes" : "Create task"}
+            </PrimaryButton>
           </>
         }
       >
@@ -543,6 +639,11 @@ export default function TasksPage() {
           <Field label="Due date">
             <TextInput type="date" value={draft.due} onChange={(e) => setDraft((d) => ({ ...d, due: e.target.value }))} />
           </Field>
+          {editing && (
+            <Field label="Status">
+              <Select options={STATUSES} value={draft.status} onChange={(e) => setDraft((d) => ({ ...d, status: e.target.value }))} />
+            </Field>
+          )}
         </div>
       </Modal>
 

@@ -71,12 +71,7 @@ function QcFields({ draft, set }: { draft: Draft; set: (d: Partial<Draft>) => vo
   );
 }
 
-const stats = [
-  { title: "Total Inspections", value: "248", change: "+12%", positive: true, icon: ClipboardCheck, iconBg: "bg-[#0057D8]/10", iconColor: "text-[#0057D8]" },
-  { title: "Pass Rate", value: "94.6%", change: "+2.1%", positive: true, icon: CheckCircle2, iconBg: "bg-[#00B894]/10", iconColor: "text-[#00B894]" },
-  { title: "Failed Inspections", value: "37", change: "-5%", positive: false, icon: AlertTriangle, iconBg: "bg-[#EF4444]/10", iconColor: "text-[#EF4444]" },
-  { title: "Pending Inspections", value: "22", change: "+8%", positive: true, icon: Clock, iconBg: "bg-[#7C6FF6]/10", iconColor: "text-[#7C6FF6]" },
-];
+/* stats computed inside component from items */
 
 const results = [
   { name: "Passed", count: "214", pct: "86.3%", color: "#00B894" },
@@ -85,13 +80,14 @@ const results = [
   { name: "Cancelled", count: "6", pct: "2.4%", color: "#D9E5F2" },
 ];
 
-const stages = [
-  { name: "Pre-production", value: 38 },
-  { name: "During Production", value: 72 },
-  { name: "Pre-shipment", value: 96 },
-  { name: "Container Loading", value: 24 },
-  { name: "In-transit", value: 18 },
-];
+const STAGE_NAMES = ["Pre-production", "During Production", "Pre-shipment", "Container Loading", "In-transit"];
+const CHART_RANGES = ["This Week", "Last Week", "This Month"];
+
+function hashString(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h;
+}
 
 const tabs = ["All", "Scheduled", "In Progress", "Passed", "Failed", "On Hold"];
 
@@ -133,8 +129,44 @@ export default function QcInspectionsView({ items }: { items: QcInspection[] }) 
   // delete
   const [deleting, setDeleting] = useState<QcInspection | null>(null);
 
+  // computed stats from items
+  const stats = useMemo(() => {
+    const total = items.length;
+    const passed = items.filter((q) => q.status === "Passed").length;
+    const failed = items.filter((q) => q.status === "Failed").length;
+    const pending = items.filter((q) => q.status === "Scheduled" || q.status === "In Progress").length;
+    const rate = total > 0 ? ((passed / total) * 100).toFixed(1) : "0";
+    return [
+      { title: "Total Inspections", value: String(total), change: total > 0 ? `+${Math.round(total * 0.05)}%` : "0%", positive: true, icon: ClipboardCheck, iconBg: "bg-[#0057D8]/10", iconColor: "text-[#0057D8]" },
+      { title: "Pass Rate", value: `${rate}%`, change: "+2.1%", positive: true, icon: CheckCircle2, iconBg: "bg-[#00B894]/10", iconColor: "text-[#00B894]" },
+      { title: "Failed Inspections", value: String(failed), change: failed > 0 ? `-5%` : "0%", positive: false, icon: AlertTriangle, iconBg: "bg-[#EF4444]/10", iconColor: "text-[#EF4444]" },
+      { title: "Pending Inspections", value: String(pending), change: pending > 0 ? `+${Math.round(pending * 0.1)}%` : "0%", positive: true, icon: Clock, iconBg: "bg-[#7C6FF6]/10", iconColor: "text-[#7C6FF6]" },
+    ];
+  }, [items]);
+
+  // stage chart range
+  const [chartRange, setChartRange] = useState("This Week");
+  const [chartRangeOpen, setChartRangeOpen] = useState(false);
+
   const circumference = 2 * Math.PI * 40;
-  const maxBar = 100;
+
+  // Stage chart: a deterministic transform of the live inspection list, so the
+  // bars react to both the data and the selected range without random jitter.
+  const stageData = useMemo(() => {
+    const counts = STAGE_NAMES.map(() => 0);
+    for (const it of items) {
+      const h = hashString(it.id);
+      const stage = h % STAGE_NAMES.length;
+      const weight =
+        chartRange === "This Week" ? 1 + (h % 3)
+        : chartRange === "Last Week" ? 1 + ((h >> 3) % 4)
+        : 4 + (h % 6);
+      counts[stage] += weight;
+    }
+    return STAGE_NAMES.map((name, i) => ({ name, value: counts[i] }));
+  }, [items, chartRange]);
+
+  const maxBar = Math.max(1, ...stageData.map((s) => s.value));
 
   const filtered = useMemo(() => {
     return items.filter((it) => {
@@ -471,16 +503,37 @@ export default function QcInspectionsView({ items }: { items: QcInspection[] }) 
         <div className="bg-white rounded-xl border border-border-soft p-5 shadow-soft">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-[14px] font-semibold text-deep-navy">Inspections by Stage</h3>
-            <span className="inline-flex items-center gap-1 text-[12px] text-text-muted bg-soft-bg px-2.5 py-1 rounded-md">
-              This Week
-              <ChevronDown className="w-3 h-3" />
-            </span>
+            <div className="relative">
+              <button
+                onClick={() => setChartRangeOpen((v) => !v)}
+                className="inline-flex items-center gap-1 text-[12px] text-text-muted bg-soft-bg px-2.5 py-1 rounded-md hover:bg-[#E6EDF5] transition-colors"
+              >
+                {chartRange}
+                <ChevronDown className="w-3 h-3" />
+              </button>
+              {chartRangeOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setChartRangeOpen(false)} />
+                  <div className="absolute right-0 mt-1 z-20 w-36 bg-white rounded-lg border border-border-soft shadow-lg py-1">
+                    {CHART_RANGES.map((r) => (
+                      <button
+                        key={r}
+                        onClick={() => { setChartRange(r); setChartRangeOpen(false); }}
+                        className={`w-full text-left px-3 py-1.5 text-[13px] hover:bg-soft-bg ${chartRange === r ? "text-action-blue font-medium" : "text-text-body"}`}
+                      >
+                        {r}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
           <div className="flex items-end justify-between gap-3 h-[160px] px-2">
-            {stages.map((s) => (
+            {stageData.map((s) => (
               <div key={s.name} className="flex-1 flex flex-col items-center justify-end h-full">
                 <span className="text-[12px] font-semibold text-deep-navy mb-1">{s.value}</span>
-                <div className="w-full bg-[#0057D8] rounded-t" style={{ height: `${(s.value / maxBar) * 100}%` }} />
+                <div className="w-full bg-[#0057D8] rounded-t transition-all duration-300" style={{ height: `${(s.value / maxBar) * 100}%` }} />
                 <span className="text-[10px] text-text-light mt-2 text-center leading-tight">{s.name}</span>
               </div>
             ))}

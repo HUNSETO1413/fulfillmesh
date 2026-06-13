@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Bell,
   Settings,
@@ -21,6 +22,8 @@ import {
   Archive,
   Check,
   X,
+  MoreHorizontal,
+  MailOpen,
 } from "lucide-react";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { useToast } from "@/components/dashboard/Toast";
@@ -78,13 +81,27 @@ const preferences = [
   { label: "Billing Reminders", on: true },
 ];
 
+const PAGE_SIZE = 10;
+
+// Where clicking a notification of a given category takes you.
+const CATEGORY_ROUTES: Record<string, string> = {
+  Orders: "/dashboard/orders",
+  Inventory: "/dashboard/inventory",
+  Shipments: "/dashboard/shipments",
+  Billing: "/dashboard/invoices",
+  System: "/dashboard/system-settings",
+};
+
 export default function NotificationsPage() {
+  const router = useRouter();
   const { toast } = useToast();
   const [active, setActive] = useState("All");
   const [prefs, setPrefs] = useState(preferences);
   const [items, setItems] = useState<Notification[]>(initialNotifications);
   const [query, setQuery] = useState("");
   const [clearOpen, setClearOpen] = useState(false);
+  const [openMenu, setOpenMenu] = useState<number | null>(null);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   const C = 2 * Math.PI * 40;
 
@@ -116,6 +133,19 @@ export default function NotificationsPage() {
     if (!target || !target.unread) return;
     setItems((cur) => cur.map((n) => (n.id === id ? { ...n, unread: false } : n)));
     toast("Notification marked as read");
+  }
+
+  function markUnread(id: number) {
+    setItems((cur) => cur.map((n) => (n.id === id ? { ...n, unread: true } : n)));
+    setOpenMenu(null);
+    toast("Notification marked as unread");
+  }
+
+  // Mark read, then navigate to the page the notification relates to.
+  function openNotification(n: Notification) {
+    markRead(n.id);
+    const route = CATEGORY_ROUTES[n.category];
+    if (route) router.push(route);
   }
 
   function markAllRead() {
@@ -150,10 +180,12 @@ export default function NotificationsPage() {
 
   const quickActions: { label: string; icon: typeof CheckCheck; onClick: () => void }[] = [
     { label: "Mark all as read", icon: CheckCheck, onClick: markAllRead },
-    { label: "Email digest settings", icon: Mail, onClick: () => toast("Opening email digest settings…", "info") },
+    { label: "Email digest settings", icon: Mail, onClick: () => router.push("/dashboard/settings/notifications") },
     { label: "Archive all read", icon: Archive, onClick: archiveAllRead },
     { label: "Clear notifications", icon: Trash2, onClick: () => setClearOpen(true) },
   ];
+
+  const shown = visible.slice(0, visibleCount);
 
   return (
     <div className="space-y-6">
@@ -175,7 +207,7 @@ export default function NotificationsPage() {
           <button onClick={markAllRead} className="flex items-center gap-2 px-3.5 py-2 bg-white border border-border-soft rounded-lg text-[13px] font-medium text-text-muted shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-soft-bg transition-colors">
             <CheckCheck className="w-4 h-4" /> Mark all as read
           </button>
-          <button onClick={() => toast("Opening notification settings…", "info")} className="flex items-center gap-2 px-3.5 py-2 bg-white border border-border-soft rounded-lg text-[13px] font-medium text-text-muted shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-soft-bg transition-colors">
+          <button onClick={() => router.push("/dashboard/settings/notifications")} className="flex items-center gap-2 px-3.5 py-2 bg-white border border-border-soft rounded-lg text-[13px] font-medium text-text-muted shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-soft-bg transition-colors">
             <Settings className="w-4 h-4" /> Notification Settings
           </button>
         </div>
@@ -187,7 +219,7 @@ export default function NotificationsPage() {
           {tabs.map((t) => (
             <button
               key={t.label}
-              onClick={() => setActive(t.label)}
+              onClick={() => { setActive(t.label); setVisibleCount(PAGE_SIZE); }}
               className={`relative flex items-center gap-1.5 pb-3 text-[14px] font-medium transition-colors whitespace-nowrap ${
                 active === t.label
                   ? "text-action-blue"
@@ -223,12 +255,12 @@ export default function NotificationsPage() {
               <input
                 type="text"
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => { setQuery(e.target.value); setVisibleCount(PAGE_SIZE); }}
                 placeholder="Search notifications..."
                 className="w-full pl-9 pr-3 py-2 bg-white border border-border-soft rounded-lg text-[13px] text-text-primary placeholder:text-text-light focus:outline-none focus:ring-2 focus:ring-action-blue/20 focus:border-action-blue transition-colors"
               />
             </div>
-            <button onClick={() => setActive("Unread")} className="flex items-center gap-2 px-3 py-2 bg-white border border-border-soft rounded-lg text-[13px] text-text-muted hover:bg-soft-bg transition-colors">
+            <button onClick={() => { setActive("Unread"); setVisibleCount(PAGE_SIZE); }} className="flex items-center gap-2 px-3 py-2 bg-white border border-border-soft rounded-lg text-[13px] text-text-muted hover:bg-soft-bg transition-colors">
               <SlidersHorizontal className="w-4 h-4" /> Unread only
             </button>
             <button onClick={markAllRead} className="flex items-center gap-2 px-3 py-2 bg-white border border-border-soft rounded-lg text-[13px] text-text-muted hover:bg-soft-bg transition-colors">
@@ -238,12 +270,12 @@ export default function NotificationsPage() {
 
           {/* Notification rows */}
           <div>
-            {visible.map((n) => {
+            {shown.map((n) => {
               const Icon = n.icon;
               return (
                 <div
                   key={n.id}
-                  onClick={() => markRead(n.id)}
+                  onClick={() => openNotification(n)}
                   className={`group flex items-start gap-4 px-5 py-4 border-b border-border-soft/50 last:border-b-0 hover:bg-soft-bg/60 transition-colors cursor-pointer ${
                     n.unread ? "bg-[#EFF6FF]" : ""
                   }`}
@@ -277,13 +309,34 @@ export default function NotificationsPage() {
                         <Check className="w-3.5 h-3.5" />
                       </button>
                     )}
-                    <button
-                      onClick={(e) => { e.stopPropagation(); removeOne(n.id); }}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-text-light hover:text-[#EF4444] hover:bg-soft-bg"
-                      aria-label="Remove notification"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="relative">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setOpenMenu(openMenu === n.id ? null : n.id); }}
+                        className="p-1 rounded text-text-light hover:text-text-muted hover:bg-soft-bg"
+                        aria-label="Notification actions"
+                      >
+                        <MoreHorizontal className="w-3.5 h-3.5" />
+                      </button>
+                      {openMenu === n.id && (
+                        <>
+                          <div className="fixed inset-0 z-10" onClick={(e) => { e.stopPropagation(); setOpenMenu(null); }} />
+                          <div className="absolute right-0 mt-1 z-20 w-40 bg-white rounded-lg border border-border-soft shadow-lg py-1 text-left" onClick={(e) => e.stopPropagation()}>
+                            {n.unread ? (
+                              <button onClick={() => { markRead(n.id); setOpenMenu(null); }} className="w-full text-left px-3 py-1.5 text-[13px] text-text-primary hover:bg-soft-bg flex items-center gap-2">
+                                <MailOpen className="w-3.5 h-3.5" /> Mark read
+                              </button>
+                            ) : (
+                              <button onClick={() => markUnread(n.id)} className="w-full text-left px-3 py-1.5 text-[13px] text-text-primary hover:bg-soft-bg flex items-center gap-2">
+                                <Mail className="w-3.5 h-3.5" /> Mark unread
+                              </button>
+                            )}
+                            <button onClick={() => { setOpenMenu(null); removeOne(n.id); }} className="w-full text-left px-3 py-1.5 text-[13px] text-[#EF4444] hover:bg-[#FEF2F2] flex items-center gap-2">
+                              <X className="w-3.5 h-3.5" /> Remove
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
@@ -295,12 +348,17 @@ export default function NotificationsPage() {
             )}
           </div>
 
-          {/* Pagination */}
+          {/* Footer: count + Load more */}
           <div className="flex items-center justify-between px-5 py-4 border-t border-border-soft">
-            <p className="text-[13px] text-text-muted">Showing {visible.length} of {items.length} notifications</p>
-            <div className="flex items-center gap-1.5">
-              <button onClick={() => toast("Page 1 of 1", "info")} className="w-8 h-8 flex items-center justify-center rounded-lg bg-action-blue text-white text-[13px] font-medium">1</button>
-            </div>
+            <p className="text-[13px] text-text-muted">Showing {shown.length} of {visible.length} notifications</p>
+            {visible.length > visibleCount && (
+              <button
+                onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
+                className="px-3.5 py-2 bg-white border border-border-soft rounded-lg text-[13px] font-medium text-action-blue hover:bg-soft-bg transition-colors"
+              >
+                Load more ({visible.length - visibleCount} remaining)
+              </button>
+            )}
           </div>
         </div>
 
@@ -438,7 +496,7 @@ export default function NotificationsPage() {
             Customize your notification preferences and stay on top of every alert across your operations.
           </p>
         </div>
-        <button onClick={() => toast("Opening notification preferences…", "info")} className="flex items-center gap-2 px-5 py-2.5 bg-white rounded-lg text-[14px] font-semibold text-teal hover:bg-white/90 whitespace-nowrap shrink-0 shadow-button transition-colors">
+        <button onClick={() => router.push("/dashboard/settings/notifications")} className="flex items-center gap-2 px-5 py-2.5 bg-white rounded-lg text-[14px] font-semibold text-teal hover:bg-white/90 whitespace-nowrap shrink-0 shadow-button transition-colors">
           <Settings className="w-4 h-4" /> Manage Preferences
         </button>
       </div>

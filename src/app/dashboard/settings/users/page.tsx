@@ -1,10 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search, ChevronDown, SlidersHorizontal, UserPlus, Edit2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, ChevronDown, SlidersHorizontal, UserPlus, Edit2, ChevronLeft, ChevronRight, Send, X } from "lucide-react";
 import { Modal } from "@/components/dashboard/Modal";
+import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { Field, TextInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
+import { isEmail } from "@/lib/validate";
 
 type Member = {
   name: string;
@@ -14,6 +16,7 @@ type Member = {
   status: "Active" | "Pending Invite" | "Suspended";
   lastActive: string;
   avatar: string;
+  sentAt?: string;
 };
 
 const face = (id: string) => `/images/${id}.jpg`;
@@ -24,7 +27,7 @@ const initialMembers: Member[] = [
   { name: "James Lee", email: "james.lee@fulfillmesh.com", role: "Warehouse Lead", department: "Warehouse", status: "Active", lastActive: "30 mins ago", avatar: face("photo-1506794778202-cad84cf45f1d") },
   { name: "Priya Patel", email: "priya.patel@fulfillmesh.com", role: "Finance", department: "Finance", status: "Active", lastActive: "5 hours ago", avatar: face("photo-1438761681033-6461ffad8d80") },
   { name: "Daniel Kim", email: "daniel.kim@fulfillmesh.com", role: "Support Specialist", department: "Customer Support", status: "Active", lastActive: "1 hour ago", avatar: face("photo-1507003211169-0a1dd7228f2d") },
-  { name: "Sarah Johnson", email: "sarah.johnson@fulfillmesh.com", role: "Operations Associate", department: "Operations", status: "Pending Invite", lastActive: "—", avatar: face("photo-1544005313-94ddf0286df2") },
+  { name: "Sarah Johnson", email: "sarah.johnson@fulfillmesh.com", role: "Operations Associate", department: "Operations", status: "Pending Invite", lastActive: "—", avatar: face("photo-1544005313-94ddf0286df2"), sentAt: "Sent 3 days ago" },
   { name: "Michael Brown", email: "michael.brown@fulfillmesh.com", role: "Operations Associate", department: "Operations", status: "Suspended", lastActive: "2 days ago", avatar: face("photo-1472099645785-5658abf4ff4e") },
 ];
 
@@ -54,9 +57,18 @@ export default function UsersPage() {
 
   const [inviteOpen, setInviteOpen] = useState(false);
   const [invite, setInvite] = useState(emptyInvite);
+  const [inviteErrors, setInviteErrors] = useState<{ name?: string; email?: string }>({});
 
   const [editing, setEditing] = useState<Member | null>(null);
   const [editDraft, setEditDraft] = useState({ role: "", department: "", status: "Active" as Member["status"] });
+  const [cancelling, setCancelling] = useState<Member | null>(null);
+
+  const editDirty =
+    !!editing &&
+    (editDraft.role !== editing.role || editDraft.department !== editing.department || editDraft.status !== editing.status);
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -68,11 +80,20 @@ export default function UsersPage() {
     });
   }, [members, query, roleFilter, statusFilter]);
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = (currentPage - 1) * pageSize;
+  const pageRows = filtered.slice(pageStart, pageStart + pageSize);
+
   const handleInvite = () => {
-    if (!invite.name.trim() || !invite.email.trim()) {
-      toast("Name and email are required", "error");
-      return;
-    }
+    const email = invite.email.trim().toLowerCase();
+    const errors: { name?: string; email?: string } = {};
+    if (!invite.name.trim()) errors.name = "Name is required";
+    if (!email) errors.email = "Email is required";
+    else if (!isEmail(email)) errors.email = "Enter a valid email address";
+    else if (members.some((m) => m.email.toLowerCase() === email)) errors.email = "A user with this email already exists";
+    setInviteErrors(errors);
+    if (Object.keys(errors).length > 0) return;
     setMembers((m) => [
       ...m,
       {
@@ -83,11 +104,26 @@ export default function UsersPage() {
         status: "Pending Invite",
         lastActive: "—",
         avatar: "/images/photo-1544005313-94ddf0286df2.jpg",
+        sentAt: "Sent just now",
       },
     ]);
     setInviteOpen(false);
     setInvite(emptyInvite);
     toast(`Invite sent to ${invite.email.trim()}`);
+  };
+
+  const resendInvite = (m: Member) => {
+    setMembers((list) =>
+      list.map((x) => (x.email === m.email ? { ...x, sentAt: "Sent just now" } : x)),
+    );
+    toast(`Invite re-sent to ${m.email}`);
+  };
+
+  const handleCancelInvite = () => {
+    if (!cancelling) return;
+    setMembers((list) => list.filter((m) => m.email !== cancelling.email));
+    toast(`Invite for ${cancelling.email} cancelled`);
+    setCancelling(null);
   };
 
   const openEdit = (m: Member) => {
@@ -117,7 +153,7 @@ export default function UsersPage() {
           <p className="text-[14px] text-[#6B7280] mt-1">Manage users, roles, and permissions.</p>
         </div>
         <button
-          onClick={() => setInviteOpen(true)}
+          onClick={() => { setInvite(emptyInvite); setInviteErrors({}); setInviteOpen(true); }}
           className="flex items-center gap-2 px-4 py-2 bg-[#3B82F6] text-white rounded-md text-[14px] font-medium hover:bg-[#2563EB] transition-colors"
         >
           <UserPlus className="w-4 h-4" />
@@ -197,7 +233,7 @@ export default function UsersPage() {
                 </td>
               </tr>
             ) : (
-              filtered.map((m) => (
+              pageRows.map((m) => (
                 <tr key={m.email} className="border-b border-[#F3F4F6] last:border-0 hover:bg-[#F9FAFB] transition-colors">
                   <td className="px-4 py-4">
                     <div className="flex items-center gap-3">
@@ -220,16 +256,39 @@ export default function UsersPage() {
                       <span className={`w-1.5 h-1.5 rounded-full ${statusDot[m.status]}`} />
                       {m.status}
                     </span>
+                    {m.status === "Pending Invite" && m.sentAt && (
+                      <p className="text-[11px] text-[#9CA3AF] mt-1">{m.sentAt}</p>
+                    )}
                   </td>
                   <td className="px-4 py-4 text-[12px] text-[#6B7280]">{m.lastActive}</td>
                   <td className="px-4 py-4 text-right">
-                    <button
-                      onClick={() => openEdit(m)}
-                      className="inline-flex items-center gap-1 px-2 py-1 text-[12px] font-medium text-[#3B82F6] bg-[#EFF6FF] rounded hover:bg-[#DBEAFE] transition-colors"
-                    >
-                      <Edit2 className="w-3 h-3" />
-                      Edit
-                    </button>
+                    <div className="inline-flex items-center gap-1.5">
+                      {m.status === "Pending Invite" && (
+                        <>
+                          <button
+                            onClick={() => resendInvite(m)}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-[12px] font-medium text-[#10B981] bg-[#ECFDF5] rounded hover:bg-[#D1FAE5] transition-colors"
+                          >
+                            <Send className="w-3 h-3" />
+                            Resend
+                          </button>
+                          <button
+                            onClick={() => setCancelling(m)}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-[12px] font-medium text-[#EF4444] bg-[#FEF2F2] rounded hover:bg-[#FEE2E2] transition-colors"
+                          >
+                            <X className="w-3 h-3" />
+                            Cancel
+                          </button>
+                        </>
+                      )}
+                      <button
+                        onClick={() => openEdit(m)}
+                        className="inline-flex items-center gap-1 px-2 py-1 text-[12px] font-medium text-[#3B82F6] bg-[#EFF6FF] rounded hover:bg-[#DBEAFE] transition-colors"
+                      >
+                        <Edit2 className="w-3 h-3" />
+                        Edit
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))
@@ -239,19 +298,46 @@ export default function UsersPage() {
 
         {/* Pagination Footer */}
         <div className="flex items-center justify-between px-5 py-3 border-t border-[#E5E7EB]">
-          <p className="text-[12px] text-[#6B7280]">Showing 1 to {filtered.length} of {filtered.length} users</p>
+          <p className="text-[12px] text-[#6B7280]">
+            {filtered.length === 0
+              ? "Showing 0 users"
+              : `Showing ${pageStart + 1} to ${Math.min(pageStart + pageSize, filtered.length)} of ${filtered.length} users`}
+          </p>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1">
-              <button disabled={true} className="w-8 h-8 flex items-center justify-center rounded-md border border-[#D1D5DB] text-[#9CA3AF] cursor-not-allowed">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="w-8 h-8 flex items-center justify-center rounded-md border border-[#D1D5DB] text-[#6B7280] hover:bg-[#F9FAFB] disabled:text-[#9CA3AF] disabled:cursor-not-allowed disabled:hover:bg-transparent"
+              >
                 <ChevronLeft className="w-4 h-4" />
               </button>
-              <button onClick={() => toast("Page 1 of 1", "info")} className="w-8 h-8 flex items-center justify-center rounded-md bg-[#3B82F6] text-white text-[12px] font-medium">1</button>
-              <button disabled={true} className="w-8 h-8 flex items-center justify-center rounded-md border border-[#D1D5DB] text-[#9CA3AF] cursor-not-allowed">
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setPage(p)}
+                  className={`w-8 h-8 flex items-center justify-center rounded-md text-[12px] font-medium ${
+                    p === currentPage ? "bg-[#3B82F6] text-white" : "text-[#6B7280] hover:bg-[#F9FAFB]"
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="w-8 h-8 flex items-center justify-center rounded-md border border-[#D1D5DB] text-[#6B7280] hover:bg-[#F9FAFB] disabled:text-[#9CA3AF] disabled:cursor-not-allowed disabled:hover:bg-transparent"
+              >
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
             <div className="relative ml-2">
-              <select className="appearance-none pl-3 pr-8 py-1.5 bg-white border border-[#D1D5DB] rounded-md text-[12px] text-[#6B7280] focus:outline-none">
+              <select
+                value={`${pageSize} / page`}
+                onChange={(e) => { setPageSize(Number(e.target.value.split(" ")[0])); setPage(1); }}
+                className="appearance-none pl-3 pr-8 py-1.5 bg-white border border-[#D1D5DB] rounded-md text-[12px] text-[#6B7280] focus:outline-none"
+              >
+                <option>5 / page</option>
                 <option>10 / page</option>
                 <option>25 / page</option>
                 <option>50 / page</option>
@@ -277,13 +363,22 @@ export default function UsersPage() {
       >
         <div className="grid grid-cols-2 gap-4">
           <div className="col-span-2">
-            <Field label="Full name" required>
-              <TextInput value={invite.name} onChange={(e) => setInvite({ ...invite, name: e.target.value })} placeholder="Jordan Avery" />
+            <Field label="Full name" required error={inviteErrors.name}>
+              <TextInput
+                value={invite.name}
+                onChange={(e) => { setInvite({ ...invite, name: e.target.value }); setInviteErrors((p) => ({ ...p, name: undefined })); }}
+                placeholder="Jordan Avery"
+              />
             </Field>
           </div>
           <div className="col-span-2">
-            <Field label="Email" required>
-              <TextInput type="email" value={invite.email} onChange={(e) => setInvite({ ...invite, email: e.target.value })} placeholder="jordan@fulfillmesh.com" />
+            <Field label="Email" required error={inviteErrors.email}>
+              <TextInput
+                type="email"
+                value={invite.email}
+                onChange={(e) => { setInvite({ ...invite, email: e.target.value }); setInviteErrors((p) => ({ ...p, email: undefined })); }}
+                placeholder="jordan@fulfillmesh.com"
+              />
             </Field>
           </div>
           <Field label="Role">
@@ -304,7 +399,7 @@ export default function UsersPage() {
         footer={
           <>
             <SecondaryButton onClick={() => setEditing(null)}>Cancel</SecondaryButton>
-            <PrimaryButton onClick={handleSaveEdit}>Save Changes</PrimaryButton>
+            <PrimaryButton onClick={handleSaveEdit} disabled={!editDirty}>Save Changes</PrimaryButton>
           </>
         }
       >
@@ -326,6 +421,17 @@ export default function UsersPage() {
           </div>
         </div>
       </Modal>
+
+      {/* Cancel Invite Confirm */}
+      <ConfirmDialog
+        open={cancelling !== null}
+        onClose={() => setCancelling(null)}
+        onConfirm={handleCancelInvite}
+        title="Cancel invite"
+        message={`Cancel the pending invite for ${cancelling?.email ?? ""}? They will no longer be able to join with this invitation.`}
+        confirmLabel="Cancel Invite"
+        destructive
+      />
     </div>
   );
 }

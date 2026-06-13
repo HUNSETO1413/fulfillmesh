@@ -1,12 +1,20 @@
 "use client";
 
-import { useState } from "react";
-import { Filter, Download, ChevronDown, ChevronRight, Users, CheckSquare, Activity, Target, Zap, ArrowUpRight } from "lucide-react";
+import { useState, useMemo } from "react";
+import { Filter, Download, ChevronDown, ChevronRight, Users, CheckSquare, Activity, Target, Zap, ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { DateRangeMenu } from "@/components/dashboard/DateRangeMenu";
 import { useToast } from "@/components/dashboard/Toast";
 import { exportToCsv } from "@/lib/client";
 
-const stats = [
+/* ── deterministic series ── */
+function seeded(seed: number, n: number, lo: number, hi: number): number[] {
+  const out: number[] = [];
+  let s = seed;
+  for (let i = 0; i < n; i++) { s = (s * 16807 + 7) % 2147483647; out.push(lo + (s % 1000) / 1000 * (hi - lo)); }
+  return out;
+}
+
+const statsConfig = [
   { title: "Total Active Users", value: "128", change: "+12.5%", note: "vs Apr 30", icon: Users, iconBg: "bg-[#3B82F6]/10", iconColor: "text-[#3B82F6]", sparkColor: "#3B82F6" },
   { title: "Tasks Completed", value: "24,568", change: "+8.3%", note: "vs Apr 30", icon: CheckSquare, iconBg: "bg-[#10B981]/10", iconColor: "text-[#10B981]", sparkColor: "#10B981" },
   { title: "Avg. Task / User / Day", value: "19.18", change: "+3.2%", note: "vs Apr 30", icon: Activity, iconBg: "bg-[#F59E0B]/10", iconColor: "text-[#F59E0B]", sparkColor: "#F59E0B" },
@@ -14,20 +22,20 @@ const stats = [
   { title: "Labor Efficiency", value: "1.28", change: "+5.1%", note: "vs Apr 30", icon: Zap, iconBg: "bg-[#10B981]/10", iconColor: "text-[#10B981]", sparkColor: "#10B981" },
 ];
 
-const activitySeries = [
-  { name: "Picking", color: "#3B82F6", pts: [50, 60, 55, 70, 65, 80, 75, 85, 80, 90] },
-  { name: "Packing", color: "#10B981", pts: [40, 45, 50, 48, 55, 52, 60, 58, 62, 65] },
-  { name: "Receiving", color: "#F59E0B", pts: [30, 35, 32, 40, 38, 42, 40, 45, 43, 48] },
-  { name: "Putaway", color: "#8B5CF6", pts: [22, 26, 24, 30, 28, 32, 30, 34, 33, 36] },
-  { name: "Cycle Count", color: "#EF4444", pts: [12, 15, 13, 18, 16, 20, 18, 22, 20, 24] },
+const activityColors = [
+  { name: "Picking", color: "#3B82F6", seed: 10, lo: 40, hi: 90 },
+  { name: "Packing", color: "#10B981", seed: 20, lo: 30, hi: 70 },
+  { name: "Receiving", color: "#F59E0B", seed: 30, lo: 20, hi: 50 },
+  { name: "Putaway", color: "#8B5CF6", seed: 40, lo: 15, hi: 40 },
+  { name: "Cycle Count", color: "#EF4444", seed: 50, lo: 8, hi: 28 },
 ];
 
 const overview = [
-  { name: "Picking", value: "10,256", pct: "41.7%", color: "#3B82F6" },
-  { name: "Packing", value: "6,742", pct: "27.4%", color: "#10B981" },
-  { name: "Receiving", value: "4,152", pct: "16.9%", color: "#F59E0B" },
-  { name: "Putaway", value: "2,456", pct: "10.0%", color: "#8B5CF6" },
-  { name: "Cycle Count", value: "962", pct: "3.9%", color: "#EF4444" },
+  { name: "Picking", value: "10,256", pct: 41.7, color: "#3B82F6" },
+  { name: "Packing", value: "6,742", pct: 27.4, color: "#10B981" },
+  { name: "Receiving", value: "4,152", pct: 16.9, color: "#F59E0B" },
+  { name: "Putaway", value: "2,456", pct: 10.0, color: "#8B5CF6" },
+  { name: "Cycle Count", value: "962", pct: 3.9, color: "#EF4444" },
 ];
 
 const byActivity = [
@@ -61,12 +69,11 @@ const performers = [
   { name: "Daniel Wilson", role: "Cycle Count", tasks: "510", avatar: "#EF4444" },
 ];
 
-function Sparkline({ color }: { color: string }) {
-  const pts = [14, 10, 16, 8, 12, 6, 13, 7, 10, 4];
+function Sparkline({ pts }: { pts: number[] }) {
   const poly = pts.map((y, i) => `${i * 11},${y}`).join(" ");
   return (
-    <svg viewBox="0 0 100 20" className="w-full h-6" preserveAspectRatio="none">
-      <polyline fill="none" stroke={color} strokeWidth="1.5" points={poly} />
+    <svg viewBox={`0 0 ${pts.length * 11} 20`} className="w-full h-6" preserveAspectRatio="none">
+      <polyline fill="none" stroke="currentColor" strokeWidth="1.5" points={poly} />
     </svg>
   );
 }
@@ -74,42 +81,53 @@ function Sparkline({ color }: { color: string }) {
 export default function ProductivityPage() {
   const { toast } = useToast();
   const [range, setRange] = useState("May 1 – May 31, 2025");
-  const [gran, setGran] = useState("Daily");
+  const [gran, setGran] = useState<"Daily" | "Weekly" | "Monthly">("Daily");
+
+  /* derive chart data from granularity */
+  const n = gran === "Daily" ? 10 : gran === "Weekly" ? 5 : 4;
+  const labels = gran === "Daily"
+    ? ["May 1", "May 5", "May 8", "May 12", "May 16", "May 19", "May 23", "May 26", "May 29", "May 31"]
+    : gran === "Weekly"
+    ? ["Week 1", "Week 2", "Week 3", "Week 4", "Week 5"]
+    : ["Jan", "Feb", "Mar", "Apr"];
+
+  const chartSeries = useMemo(() =>
+    activityColors.map((a) => ({ name: a.name, color: a.color, pts: seeded(a.seed, n, a.lo, a.hi) })),
+    [n]
+  );
+
+  const maxVal = useMemo(() => Math.ceil(Math.max(...chartSeries.flatMap((s) => s.pts)) * 1.15), [chartSeries]);
 
   function cycleGran() {
-    const opts = ["Daily", "Weekly", "Monthly"];
-    const next = opts[(opts.indexOf(gran) + 1) % opts.length];
-    setGran(next);
-    toast(`Tasks completed grouped by ${next.toLowerCase()}`, "info");
+    const opts: ("Daily" | "Weekly" | "Monthly")[] = ["Daily", "Weekly", "Monthly"];
+    setGran(opts[(opts.indexOf(gran) + 1) % opts.length]);
   }
 
   function exportActivities() {
     exportToCsv("productivity-by-activity", byActivity, [
-      { key: "name", header: "Activity" },
-      { key: "tasks", header: "Tasks Completed" },
-      { key: "pct", header: "% of Total" },
-      { key: "time", header: "Avg Time / Task" },
-      { key: "acc", header: "Accuracy Rate" },
+      { key: "name", header: "Activity" }, { key: "tasks", header: "Tasks Completed" },
+      { key: "pct", header: "% of Total" }, { key: "time", header: "Avg Time / Task" }, { key: "acc", header: "Accuracy Rate" },
     ]);
     toast(`Exported ${byActivity.length} activities to CSV`);
   }
 
   function exportWarehouses() {
     exportToCsv("productivity-by-warehouse", byWarehouse, [
-      { key: "name", header: "Warehouse" },
-      { key: "tasks", header: "Tasks Completed" },
-      { key: "perUser", header: "Tasks / User / Day" },
-      { key: "acc", header: "Accuracy Rate" },
-      { key: "eff", header: "Labor Efficiency" },
+      { key: "name", header: "Warehouse" }, { key: "tasks", header: "Tasks Completed" },
+      { key: "perUser", header: "Tasks / User / Day" }, { key: "acc", header: "Accuracy Rate" }, { key: "eff", header: "Labor Efficiency" },
     ]);
     toast(`Exported ${byWarehouse.length} warehouses to CSV`);
   }
 
-  // multi-line chart geometry
+  // chart geometry
   const W = 760, H = 220, padL = 30, padB = 24, padT = 10;
-  const max = 95;
-  const x = (i: number) => padL + (i * (W - padL - 10)) / 9;
-  const y = (v: number) => padT + (1 - v / max) * (H - padT - padB);
+  const x = (i: number) => padL + (i * (W - padL - 10)) / (n - 1);
+  const y = (v: number) => padT + (1 - v / maxVal) * (H - padT - padB);
+  const yStep = Math.round(maxVal / 4);
+  const yLabels = Array.from({ length: 5 }, (_, i) => String(maxVal - i * yStep));
+  const xLabels = gran === "Daily"
+    ? ["May 1", "May 5", "May 11", "May 16", "May 20", "May 26", "May 31"].slice(0, n)
+    : labels;
 
   return (
     <div className="space-y-6">
@@ -131,19 +149,17 @@ export default function ProductivityPage() {
             presets={["May 1 – May 31, 2025", "Last 7 days", "Last 30 days", "This quarter", "Year to date"]}
           />
           <button onClick={() => toast("Filter panel opened", "info")} className="inline-flex items-center gap-2 bg-white border border-[#E2E8F0] rounded-lg px-3.5 py-2 text-[13px] font-medium text-[#1E293B] shadow-[0_1px_2px_rgba(0,0,0,0.05)] shrink-0 hover:bg-[#F8FAFC] transition-colors">
-            <Filter className="w-4 h-4 text-[#64748B]" />
-            Filters
+            <Filter className="w-4 h-4 text-[#64748B]" />Filters
           </button>
           <button onClick={exportActivities} className="inline-flex items-center gap-2 bg-[#1E293B] text-white rounded-lg px-4 py-2 text-[13px] font-medium hover:bg-[#334155] shadow-[0_1px_2px_rgba(0,0,0,0.05)] shrink-0 transition-colors">
-            <Download className="w-4 h-4" />
-            Export
+            <Download className="w-4 h-4" />Export
           </button>
         </div>
       </div>
 
-      {/* Stats Row (5) */}
+      {/* Stats Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        {stats.map((s) => {
+        {statsConfig.map((s) => {
           const Icon = s.icon;
           return (
             <div key={s.title} className="bg-white rounded-xl border border-[#E2E8F0] p-5 shadow-[0_1px_3px_0_rgba(0,0,0,0.1),0_1px_2px_0_rgba(0,0,0,0.06)]">
@@ -156,13 +172,12 @@ export default function ProductivityPage() {
               <p className="text-[28px] leading-none font-bold text-[#1E293B]">{s.value}</p>
               <div className="flex items-center gap-2 mt-3">
                 <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[12px] font-semibold bg-[#D1FAE5] text-[#065F46]">
-                  <ArrowUpRight className="w-3 h-3" />
-                  {s.change}
+                  <ArrowUpRight className="w-3 h-3" />{s.change}
                 </span>
                 <span className="text-[12px] text-[#94A3B8]">{s.note}</span>
               </div>
-              <div className="mt-3">
-                <Sparkline color={s.sparkColor} />
+              <div className="mt-3" style={{ color: s.sparkColor }}>
+                <Sparkline pts={seeded(statsConfig.indexOf(s) + 1, 10, 4, 16)} />
               </div>
             </div>
           );
@@ -171,7 +186,7 @@ export default function ProductivityPage() {
 
       {/* Chart + Overview */}
       <div className="grid lg:grid-cols-[1.9fr_1fr] gap-4">
-        {/* Multi-line chart */}
+        {/* Multi-line chart - data now responds to granularity */}
         <div className="bg-white rounded-xl border border-[#E2E8F0] p-5 shadow-[0_1px_3px_0_rgba(0,0,0,0.1),0_1px_2px_0_rgba(0,0,0,0.06)]">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-[16px] font-semibold text-[#1E293B]">Tasks Completed Over Time</h3>
@@ -180,7 +195,7 @@ export default function ProductivityPage() {
             </button>
           </div>
           <div className="flex items-center gap-4 mb-4">
-            {activitySeries.map((s) => (
+            {chartSeries.map((s) => (
               <div key={s.name} className="flex items-center gap-1.5">
                 <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.color }} />
                 <span className="text-[12px] text-[#64748B]">{s.name}</span>
@@ -192,10 +207,10 @@ export default function ProductivityPage() {
               {[0, 1, 2, 3, 4].map((i) => (
                 <line key={i} x1={padL} y1={padT + i * ((H - padT - padB) / 4)} x2={W - 10} y2={padT + i * ((H - padT - padB) / 4)} stroke="#F1F5F9" strokeWidth="1" />
               ))}
-              {[95, 71, 48, 24, 0].map((v, i) => (
-                <text key={i} x={padL - 6} y={padT + i * ((H - padT - padB) / 4) + 3} textAnchor="end" fontSize="9" fill="#94A3B8">{v}</text>
+              {yLabels.map((l, i) => (
+                <text key={i} x={padL - 6} y={padT + i * ((H - padT - padB) / 4) + 3} textAnchor="end" fontSize="9" fill="#94A3B8">{l}</text>
               ))}
-              {activitySeries.map((s) => (
+              {chartSeries.map((s) => (
                 <g key={s.name}>
                   <polyline fill="none" stroke={s.color} strokeWidth="2" strokeLinejoin="round" points={s.pts.map((v, i) => `${x(i)},${y(v)}`).join(" ")} />
                   {s.pts.map((v, i) => (
@@ -203,11 +218,13 @@ export default function ProductivityPage() {
                   ))}
                 </g>
               ))}
-              {["May 1", "May 5", "May 11", "May 16", "May 20", "May 26", "May 31"].map((l, i) => (
-                <text key={i} x={padL + i * ((W - padL - 10) / 6)} y={H - 6} textAnchor="middle" fontSize="9" fill="#94A3B8">{l}</text>
-              ))}
+              {xLabels.map((l, i) => {
+                const xPos = padL + (i * (W - padL - 10)) / (xLabels.length - 1);
+                return <text key={i} x={xPos} y={H - 6} textAnchor="middle" fontSize="9" fill="#94A3B8">{l}</text>;
+              })}
             </svg>
           </div>
+          <p className="text-[12px] text-[#94A3B8] mt-2 text-center">Grouped by {gran.toLowerCase()}</p>
         </div>
 
         {/* Productivity Overview donut */}
@@ -218,8 +235,8 @@ export default function ProductivityPage() {
               <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
                 <circle cx="50" cy="50" r="40" fill="none" stroke="#F1F5F9" strokeWidth="12" />
                 {overview.map((o, i) => {
-                  const p = parseFloat(o.pct);
-                  const off = overview.slice(0, i).reduce((s, x) => s + parseFloat(x.pct), 0);
+                  const p = o.pct;
+                  const off = overview.slice(0, i).reduce((s, x) => s + x.pct, 0);
                   const dash = `${p * 2.51327} ${251.327 - p * 2.51327}`;
                   return <circle key={i} cx="50" cy="50" r="40" fill="none" stroke={o.color} strokeWidth="12" strokeDasharray={dash} strokeDashoffset={-off * 2.51327} />;
                 })}
@@ -238,7 +255,7 @@ export default function ProductivityPage() {
                     <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: o.color }} />
                     <span className="text-[#475569] truncate">{o.name}</span>
                   </div>
-                  <span className="font-medium text-[#1E293B] shrink-0 ml-2">{o.pct}</span>
+                  <span className="font-medium text-[#1E293B] shrink-0 ml-2">{o.pct}%</span>
                 </div>
               ))}
             </div>
@@ -248,11 +265,8 @@ export default function ProductivityPage() {
 
       {/* Activity table + sidebar */}
       <div className="grid lg:grid-cols-[1.9fr_1fr] gap-4">
-        {/* Productivity by Activity */}
         <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-[0_1px_3px_0_rgba(0,0,0,0.1),0_1px_2px_0_rgba(0,0,0,0.06)]">
-          <div className="px-5 py-4 border-b border-[#E2E8F0]">
-            <h3 className="text-[16px] font-semibold text-[#1E293B]">Productivity by Activity</h3>
-          </div>
+          <div className="px-5 py-4 border-b border-[#E2E8F0]"><h3 className="text-[16px] font-semibold text-[#1E293B]">Productivity by Activity</h3></div>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
@@ -287,7 +301,6 @@ export default function ProductivityPage() {
           </div>
         </div>
 
-        {/* Right column */}
         <div className="space-y-4">
           {/* Performance vs Goal */}
           <div className="bg-white rounded-xl border border-[#E2E8F0] p-5 shadow-[0_1px_3px_0_rgba(0,0,0,0.1),0_1px_2px_0_rgba(0,0,0,0.06)]">
@@ -337,9 +350,7 @@ export default function ProductivityPage() {
       {/* Warehouse table + insights */}
       <div className="grid lg:grid-cols-[1.9fr_1fr] gap-4">
         <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-[0_1px_3px_0_rgba(0,0,0,0.1),0_1px_2px_0_rgba(0,0,0,0.06)]">
-          <div className="px-5 py-4 border-b border-[#E2E8F0]">
-            <h3 className="text-[16px] font-semibold text-[#1E293B]">Productivity by Warehouse</h3>
-          </div>
+          <div className="px-5 py-4 border-b border-[#E2E8F0]"><h3 className="text-[16px] font-semibold text-[#1E293B]">Productivity by Warehouse</h3></div>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
@@ -402,8 +413,7 @@ export default function ProductivityPage() {
           </div>
         </div>
         <button onClick={() => toast("Productivity report scheduled weekly", "success")} className="inline-flex items-center gap-2 gradient-cta text-white rounded-lg px-4 py-2 text-[13px] font-medium hover:brightness-110 shrink-0 shadow-[0_1px_2px_rgba(0,0,0,0.1)] transition-all">
-          <Activity className="w-4 h-4" />
-          Schedule Report
+          <Activity className="w-4 h-4" />Schedule Report
         </button>
       </div>
     </div>

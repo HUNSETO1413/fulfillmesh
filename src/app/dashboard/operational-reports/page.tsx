@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { CalendarClock, Download, Plus, ChevronDown, ChevronRight, ShoppingBag, Truck, CheckCircle2, Clock, DollarSign, ArrowUpRight, ArrowDownRight, BarChart3, Package, Ship, Warehouse, RotateCcw, Users, FileText, LineChart } from "lucide-react";
 import { DateRangeMenu } from "@/components/dashboard/DateRangeMenu";
+import { Modal } from "@/components/dashboard/Modal";
+import { Field, TextInput, Select as FormSelect, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
 import { exportToCsv } from "@/lib/client";
 
@@ -31,12 +33,12 @@ const FILTER_OPTIONS: Record<string, string[]> = {
   "Order Type": ["All Order Types", "Standard", "Express", "Backorder", "Pre-order"],
 };
 
-const channels = [
-  { name: "Shopify", orders: "5,678", shipped: "5,352", delivered: "5,102", onTime: "94.1%", cycle: "1.64 days", color: "#3B82F6" },
-  { name: "Amazon", orders: "3,245", shipped: "3,062", delivered: "2,896", onTime: "92.8%", cycle: "1.88 days", color: "#10B981" },
-  { name: "Walmart", orders: "1,876", shipped: "1,761", delivered: "1,672", onTime: "91.7%", cycle: "1.94 days", color: "#F59E0B" },
-  { name: "eBay", orders: "987", shipped: "911", delivered: "856", onTime: "89.6%", cycle: "2.04 days", color: "#8B5CF6" },
-  { name: "Other", orders: "670", shipped: "601", delivered: "546", onTime: "90.1%", cycle: "2.12 days", color: "#94A3B8" },
+const CHANNEL_NAMES = [
+  { name: "Shopify", color: "#3B82F6" },
+  { name: "Amazon", color: "#10B981" },
+  { name: "Walmart", color: "#F59E0B" },
+  { name: "eBay", color: "#8B5CF6" },
+  { name: "Other", color: "#94A3B8" },
 ];
 
 const topWarehouses = [
@@ -54,6 +56,91 @@ const whSummary = [
   { name: "MIA-1 · Miami", orders: "1,876", shipped: "1,721", onTime: "91.4%", cycle: "2.04 days", perDay: "63" },
   { name: "ORD-1 · Chicago", orders: "1,892", shipped: "1,822", onTime: "92.0%", cycle: "1.78 days", perDay: "63" },
 ];
+
+/* ---- deterministic datasets per category + granularity ---- */
+
+type Gran = "Daily" | "Weekly" | "Monthly";
+const GRANS: Gran[] = ["Daily", "Weekly", "Monthly"];
+
+const GRAN_POINTS: Record<Gran, number> = { Daily: 12, Weekly: 5, Monthly: 3 };
+const GRAN_XLABELS: Record<Gran, string[]> = {
+  Daily: ["May 1", "May 8", "May 16", "May 24", "May 31"],
+  Weekly: ["Week 1", "Week 2", "Week 3", "Week 4", "Week 5"],
+  Monthly: ["Mar", "Apr", "May"],
+};
+const GRAN_YLABELS: Record<Gran, string[]> = {
+  Daily: ["1.2K", "0.9K", "0.6K", "0.3K", "0"],
+  Weekly: ["8K", "6K", "4K", "2K", "0"],
+  Monthly: ["32K", "24K", "16K", "8K", "0"],
+};
+
+const CATEGORY_SERIES: Record<string, string[]> = {
+  "Order Performance": ["Orders", "Shipped", "Delivered"],
+  "Inventory Performance": ["Received", "Picked", "Adjusted"],
+  "Shipping Performance": ["Shipments", "On Time", "Delayed"],
+  "Warehouse Performance": ["Tasks", "Completed", "Backlog"],
+  "Returns Performance": ["Returns", "Processed", "Refunded"],
+  "Financial Performance": ["Revenue", "Costs", "Margin"],
+  "Customer Performance": ["New", "Returning", "Churned"],
+  "Custom Reports": ["Metric A", "Metric B", "Metric C"],
+};
+const SERIES_COLORS = ["#3B82F6", "#10B981", "#8B5CF6"];
+
+// Deterministic pseudo-random series: same key always yields the same values.
+function seededSeries(key: string, n: number, min: number, max: number): number[] {
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i++) {
+    h ^= key.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return Array.from({ length: n }, () => {
+    h ^= h << 13; h ^= h >>> 17; h ^= h << 5; h |= 0;
+    const u = ((h >>> 0) % 1000) / 1000;
+    return Math.round(min + u * (max - min));
+  });
+}
+
+type ChannelRow = { name: string; color: string; orders: string; shipped: string; delivered: string; onTime: string; cycle: string };
+
+const ORDER_PERFORMANCE_ROWS: ChannelRow[] = [
+  { name: "Shopify", orders: "5,678", shipped: "5,352", delivered: "5,102", onTime: "94.1%", cycle: "1.64 days", color: "#3B82F6" },
+  { name: "Amazon", orders: "3,245", shipped: "3,062", delivered: "2,896", onTime: "92.8%", cycle: "1.88 days", color: "#10B981" },
+  { name: "Walmart", orders: "1,876", shipped: "1,761", delivered: "1,672", onTime: "91.7%", cycle: "1.94 days", color: "#F59E0B" },
+  { name: "eBay", orders: "987", shipped: "911", delivered: "856", onTime: "89.6%", cycle: "2.04 days", color: "#8B5CF6" },
+  { name: "Other", orders: "670", shipped: "601", delivered: "546", onTime: "90.1%", cycle: "2.12 days", color: "#94A3B8" },
+];
+
+// Deterministic channel breakdown for every report category.
+function rowsForCategory(cat: string): ChannelRow[] {
+  if (cat === "Order Performance") return ORDER_PERFORMANCE_ROWS;
+  return CHANNEL_NAMES.map((ch) => {
+    const [a, b, c, d, e] = seededSeries(`op-table-${cat}-${ch.name}`, 5, 0, 999);
+    const orders = 620 + a * 5;
+    const shipped = Math.round(orders * (0.9 + (b / 999) * 0.08));
+    const delivered = Math.round(shipped * (0.92 + (c / 999) * 0.06));
+    const onTime = (88 + (d / 999) * 8).toFixed(1);
+    const cycle = (1.5 + (e / 999) * 0.7).toFixed(2);
+    return {
+      name: ch.name,
+      color: ch.color,
+      orders: orders.toLocaleString("en-US"),
+      shipped: shipped.toLocaleString("en-US"),
+      delivered: delivered.toLocaleString("en-US"),
+      onTime: `${onTime}%`,
+      cycle: `${cycle} days`,
+    };
+  });
+}
+
+function slugify(s: string): string {
+  return s.toLowerCase().replace(/\s+/g, "-");
+}
+
+type Schedule = { frequency: "Daily" | "Weekly" | "Monthly"; day: string; time: string; recipients: string };
+const FREQUENCIES = ["Daily", "Weekly", "Monthly"] as const;
+const WEEK_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const MONTH_DAYS = ["1st of the month", "15th of the month", "Last day of the month"];
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function Sparkline({ color }: { color: string }) {
   const pts = [12, 9, 14, 7, 11, 6, 12, 8, 10, 5];
@@ -85,20 +172,40 @@ export default function OperationalReportsPage() {
   const { toast } = useToast();
   const [range, setRange] = useState("May 1 – May 31, 2025");
   const [activeCat, setActiveCat] = useState("Order Performance");
-  const [gran, setGran] = useState("Daily");
+  const [gran, setGran] = useState<Gran>("Daily");
   const [whFilter, setWhFilter] = useState("All Warehouses");
   const [chFilter, setChFilter] = useState("All Channels");
   const [otFilter, setOtFilter] = useState("All Order Types");
 
+  // schedule modal
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [schedule, setSchedule] = useState<Schedule | null>(null);
+  const [schedDraft, setSchedDraft] = useState<Schedule>({ frequency: "Weekly", day: "Monday", time: "08:00", recipients: "" });
+
   function cycleGran() {
-    const opts = ["Daily", "Weekly", "Monthly"];
-    const next = opts[(opts.indexOf(gran) + 1) % opts.length];
-    setGran(next);
-    toast(`Order volume grouped by ${next.toLowerCase()}`, "info");
+    setGran(GRANS[(GRANS.indexOf(gran) + 1) % GRANS.length]);
   }
 
-  function exportChannels() {
-    exportToCsv("order-performance-by-channel", channels, [
+  const W = 760, H = 230, padL = 30, padB = 24, padT = 10, yMax = 120;
+
+  // Current chart dataset, deterministically derived from category + granularity.
+  const series = useMemo(() => {
+    const n = GRAN_POINTS[gran];
+    return CATEGORY_SERIES[activeCat].map((name, i) => ({
+      name,
+      color: SERIES_COLORS[i],
+      pts: seededSeries(`op-chart-${activeCat}-${gran}-${name}`, n, 30 - i * 8, 110 - i * 12),
+    }));
+  }, [activeCat, gran]);
+
+  const tableRows = useMemo(() => rowsForCategory(activeCat), [activeCat]);
+
+  const nPts = GRAN_POINTS[gran];
+  const x = (i: number) => padL + (i * (W - padL - 10)) / Math.max(1, nPts - 1);
+  const y = (v: number) => padT + (1 - v / yMax) * (H - padT - padB);
+
+  function exportCurrent() {
+    exportToCsv(`${slugify(activeCat)}-by-channel`, tableRows, [
       { key: "name", header: "Channel" },
       { key: "orders", header: "Orders" },
       { key: "shipped", header: "Shipped" },
@@ -106,17 +213,39 @@ export default function OperationalReportsPage() {
       { key: "onTime", header: "On-Time Delivery" },
       { key: "cycle", header: "Avg Cycle Time" },
     ]);
-    toast(`Exported ${channels.length} channels to CSV`);
+    toast(`Exported ${activeCat} (${tableRows.length} channels) to CSV`);
   }
 
-  const W = 760, H = 230, padL = 30, padB = 24, padT = 10, yMax = 120;
-  const series = [
-    { name: "Orders", color: "#3B82F6", pts: [60, 80, 70, 95, 78, 88, 72, 90, 76, 85, 70, 92] },
-    { name: "Shipped", color: "#10B981", pts: [52, 72, 62, 86, 70, 80, 64, 82, 68, 78, 62, 84] },
-    { name: "Delivered", color: "#8B5CF6", pts: [44, 64, 54, 76, 60, 70, 56, 72, 60, 68, 54, 74] },
-  ];
-  const x = (i: number) => padL + (i * (W - padL - 10)) / 11;
-  const y = (v: number) => padT + (1 - v / yMax) * (H - padT - padB);
+  function exportSeries() {
+    const rows = Array.from({ length: nPts }, (_, i) => {
+      const row: Record<string, string | number> = { point: `${gran} ${i + 1}` };
+      for (const s of series) row[s.name] = s.pts[i];
+      return row;
+    });
+    exportToCsv(`${slugify(activeCat)}-${gran.toLowerCase()}-series`, rows, [
+      { key: "point", header: "Period" },
+      ...series.map((s) => ({ key: s.name, header: s.name })),
+    ]);
+    toast(`Exported displayed ${gran.toLowerCase()} series for ${activeCat}`);
+  }
+
+  function openSchedule() {
+    setSchedDraft(schedule ?? { frequency: "Weekly", day: "Monday", time: "08:00", recipients: "" });
+    setScheduleOpen(true);
+  }
+
+  function saveSchedule() {
+    const recipients = schedDraft.recipients.split(",").map((s) => s.trim()).filter(Boolean);
+    if (recipients.length === 0 || recipients.some((r) => !EMAIL_RE.test(r))) {
+      toast("Enter one or more valid recipient email addresses", "error");
+      return;
+    }
+    setSchedule({ ...schedDraft });
+    setScheduleOpen(false);
+    toast(`${activeCat} report scheduled ${schedDraft.frequency.toLowerCase()}`);
+  }
+
+  const chartTitle = activeCat === "Order Performance" ? "Order Volume Over Time" : `${activeCat} Over Time`;
 
   return (
     <div className="space-y-6">
@@ -137,6 +266,12 @@ export default function OperationalReportsPage() {
               <LineChart className="w-[18px] h-[18px] text-action-blue" />
             </span>
             <h1 className="text-[24px] font-bold text-text-primary leading-none">Operational Reports</h1>
+            {schedule && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#ECFDF5] text-[#065F46] text-[11px] font-medium">
+                <CalendarClock className="w-3 h-3" />
+                Scheduled · {schedule.frequency}
+              </span>
+            )}
           </div>
           <p className="text-[14px] text-text-muted mt-1">Gain visibility into your operations and make data-driven decisions.</p>
         </div>
@@ -147,10 +282,10 @@ export default function OperationalReportsPage() {
             onSelect={(r) => { setRange(r); toast(`Operational reports scoped to ${r}`, "info"); }}
             presets={["May 1 – May 31, 2025", "Last 7 days", "Last 30 days", "This quarter", "Year to date"]}
           />
-          <button onClick={() => toast("Report scheduled to run weekly", "success")} className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] font-medium text-[#1E293B] hover:bg-[#F8FAFC] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+          <button onClick={openSchedule} className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] font-medium text-[#1E293B] hover:bg-[#F8FAFC] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
             <CalendarClock className="w-4 h-4 text-[#64748B]" />Schedule Report
           </button>
-          <button onClick={exportChannels} className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] font-medium text-[#1E293B] hover:bg-[#F8FAFC] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+          <button onClick={exportCurrent} className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] font-medium text-[#1E293B] hover:bg-[#F8FAFC] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
             <Download className="w-4 h-4 text-[#64748B]" />Export
           </button>
           <button onClick={() => toast("Custom report builder opened", "info")} className="flex items-center gap-2 px-3.5 py-2 bg-action-blue text-white rounded-lg text-[13px] font-medium hover:bg-action-blue/90 shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
@@ -202,8 +337,11 @@ export default function OperationalReportsPage() {
       <div className="grid gap-4" style={{ gridTemplateColumns: "1.9fr 1fr" }}>
         <div className="bg-white rounded-xl border border-[#E2E8F0] p-5 shadow-[0_1px_3px_0_rgba(0,0,0,0.1),0_1px_2px_0_rgba(0,0,0,0.06)]">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-[16px] font-semibold text-[#1E293B]">Order Volume Over Time</h3>
-            <button onClick={cycleGran} className="inline-flex items-center gap-1.5 text-[12px] text-[#64748B] border border-[#E2E8F0] px-2.5 py-1 rounded-lg hover:bg-[#F8FAFC]">{gran} <ChevronDown className="w-3.5 h-3.5 text-[#94A3B8]" /></button>
+            <h3 className="text-[16px] font-semibold text-[#1E293B]">{chartTitle}</h3>
+            <div className="flex items-center gap-2">
+              <button onClick={exportSeries} className="inline-flex items-center gap-1.5 text-[12px] text-[#64748B] border border-[#E2E8F0] px-2.5 py-1 rounded-lg hover:bg-[#F8FAFC]"><Download className="w-3.5 h-3.5 text-[#94A3B8]" />Export</button>
+              <button onClick={cycleGran} className="inline-flex items-center gap-1.5 text-[12px] text-[#64748B] border border-[#E2E8F0] px-2.5 py-1 rounded-lg hover:bg-[#F8FAFC]">{gran} <ChevronDown className="w-3.5 h-3.5 text-[#94A3B8]" /></button>
+            </div>
           </div>
           <div className="flex items-center gap-5 mb-3">
             {series.map((s) => (
@@ -214,7 +352,7 @@ export default function OperationalReportsPage() {
             {[0, 1, 2, 3, 4].map((i) => (
               <line key={i} x1={padL} y1={padT + i * ((H - padT - padB) / 4)} x2={W - 10} y2={padT + i * ((H - padT - padB) / 4)} stroke="#F1F5F9" strokeWidth="1" />
             ))}
-            {["1.2K", "0.9K", "0.6K", "0.3K", "0"].map((l, i) => (
+            {GRAN_YLABELS[gran].map((l, i) => (
               <text key={i} x={padL - 6} y={padT + i * ((H - padT - padB) / 4) + 3} textAnchor="end" fontSize="9" fill="#94A3B8">{l}</text>
             ))}
             {series.map((s, si) => (
@@ -223,8 +361,8 @@ export default function OperationalReportsPage() {
                 {s.pts.map((v, i) => <circle key={i} cx={x(i)} cy={y(v)} r="2.5" fill="white" stroke={s.color} strokeWidth="1.5" />)}
               </g>
             ))}
-            {["May 1", "May 8", "May 16", "May 24", "May 31"].map((l, i) => (
-              <text key={i} x={padL + i * ((W - padL - 10) / 4)} y={H - 6} textAnchor="middle" fontSize="9" fill="#94A3B8">{l}</text>
+            {GRAN_XLABELS[gran].map((l, i) => (
+              <text key={i} x={padL + i * ((W - padL - 10) / Math.max(1, GRAN_XLABELS[gran].length - 1))} y={H - 6} textAnchor="middle" fontSize="9" fill="#94A3B8">{l}</text>
             ))}
           </svg>
         </div>
@@ -237,7 +375,7 @@ export default function OperationalReportsPage() {
               const Icon = c.icon;
               const active = activeCat === c.name;
               return (
-                <button key={c.name} onClick={() => { setActiveCat(c.name); toast(`Viewing ${c.name}`, "info"); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] font-medium transition-colors ${active ? "bg-action-blue/10 text-action-blue" : "text-[#64748B] hover:bg-[#F8FAFC]"}`}>
+                <button key={c.name} onClick={() => setActiveCat(c.name)} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] font-medium transition-colors ${active ? "bg-action-blue/10 text-action-blue" : "text-[#64748B] hover:bg-[#F8FAFC]"}`}>
                   <Icon className="w-4 h-4" />{c.name}
                 </button>
               );
@@ -249,7 +387,7 @@ export default function OperationalReportsPage() {
       {/* Channel table + Top Warehouses donut */}
       <div className="grid gap-4" style={{ gridTemplateColumns: "1.9fr 1fr" }}>
         <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-[0_1px_3px_0_rgba(0,0,0,0.1),0_1px_2px_0_rgba(0,0,0,0.06)]">
-          <div className="px-5 py-4 border-b border-[#E2E8F0]"><h3 className="text-[16px] font-semibold text-[#1E293B]">Order Performance by Channel</h3></div>
+          <div className="px-5 py-4 border-b border-[#E2E8F0]"><h3 className="text-[16px] font-semibold text-[#1E293B]">{activeCat} by Channel</h3></div>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
@@ -260,7 +398,7 @@ export default function OperationalReportsPage() {
                 </tr>
               </thead>
               <tbody>
-                {channels.map((c) => (
+                {tableRows.map((c) => (
                   <tr key={c.name} className="border-b border-[#E2E8F0] last:border-b-0 hover:bg-[#F8FAFC] transition-colors">
                     <td className="px-5 py-3.5"><div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: c.color }} /><span className="text-[13px] font-medium text-[#1E293B]">{c.name}</span></div></td>
                     <td className="px-5 py-3.5 text-[13px] text-[#1E293B] text-right">{c.orders}</td>
@@ -273,7 +411,7 @@ export default function OperationalReportsPage() {
               </tbody>
             </table>
           </div>
-          <div className="px-5 py-3 border-t border-[#E2E8F0] text-right"><button onClick={exportChannels} className="text-[13px] font-medium text-action-blue hover:underline">View full report →</button></div>
+          <div className="px-5 py-3 border-t border-[#E2E8F0] text-right"><button onClick={exportCurrent} className="text-[13px] font-medium text-action-blue hover:underline">View full report →</button></div>
         </div>
 
         {/* Top Warehouses donut */}
@@ -369,6 +507,57 @@ export default function OperationalReportsPage() {
           </div>
         </div>
       </div>
+
+      {/* Schedule modal */}
+      <Modal
+        open={scheduleOpen}
+        onClose={() => setScheduleOpen(false)}
+        title="Schedule report"
+        description={`Deliver the ${activeCat} report automatically to your team.`}
+        size="sm"
+        footer={
+          <>
+            <SecondaryButton onClick={() => setScheduleOpen(false)}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={saveSchedule}>Save schedule</PrimaryButton>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Field label="Frequency">
+            <FormSelect
+              options={[...FREQUENCIES]}
+              value={schedDraft.frequency}
+              onChange={(e) => {
+                const frequency = e.target.value as Schedule["frequency"];
+                setSchedDraft((d) => ({
+                  ...d,
+                  frequency,
+                  day: frequency === "Weekly" ? WEEK_DAYS[0] : frequency === "Monthly" ? MONTH_DAYS[0] : "",
+                }));
+              }}
+            />
+          </Field>
+          {schedDraft.frequency !== "Daily" && (
+            <Field label={schedDraft.frequency === "Weekly" ? "Day of week" : "Day of month"}>
+              <FormSelect
+                options={schedDraft.frequency === "Weekly" ? WEEK_DAYS : MONTH_DAYS}
+                value={schedDraft.day}
+                onChange={(e) => setSchedDraft((d) => ({ ...d, day: e.target.value }))}
+              />
+            </Field>
+          )}
+          <Field label="Send at">
+            <TextInput type="time" value={schedDraft.time} onChange={(e) => setSchedDraft((d) => ({ ...d, time: e.target.value }))} />
+          </Field>
+          <Field label="Recipients" required hint="Comma-separated email addresses">
+            <TextInput
+              value={schedDraft.recipients}
+              onChange={(e) => setSchedDraft((d) => ({ ...d, recipients: e.target.value }))}
+              placeholder="ops@company.com, finance@company.com"
+            />
+          </Field>
+        </div>
+      </Modal>
     </div>
   );
 }

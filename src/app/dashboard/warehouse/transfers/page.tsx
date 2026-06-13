@@ -5,20 +5,16 @@ import {
   ArrowLeftRight, CheckCircle2, Truck, Clock, XCircle,
   Search, Columns3, Plus, ChevronDown, MoreHorizontal, ArrowRight,
   ArrowUpRight, ArrowDownRight, Layers, Gauge, Boxes, Eye, Ban,
+  Pencil, MapPin,
 } from "lucide-react";
 import { Modal } from "@/components/dashboard/Modal";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
+import { Drawer, DrawerRow, DrawerSection } from "@/components/dashboard/Drawer";
 import { Field, TextInput, NumberInput, Select } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
 import { exportToCsv } from "@/lib/client";
 
-const stats = [
-  { title: "Total Transfers", value: "586", change: "+14.7%", note: "vs last 30 days", positive: true, icon: ArrowLeftRight, iconBg: "bg-action-blue/10", iconColor: "text-action-blue" },
-  { title: "Completed", value: "512", sub: "87.4%", change: "+11.2%", note: "vs last 30 days", positive: true, icon: CheckCircle2, iconBg: "bg-teal/10", iconColor: "text-teal" },
-  { title: "In Transit", value: "48", sub: "8.2%", change: "+5.6%", note: "vs last 30 days", positive: true, icon: Truck, iconBg: "bg-[#7C6FF6]/10", iconColor: "text-[#7C6FF6]" },
-  { title: "Pending", value: "16", sub: "2.7%", change: "-11.1%", note: "vs last 30 days", positive: false, icon: Clock, iconBg: "bg-[#F59E0B]/10", iconColor: "text-[#F59E0B]" },
-  { title: "Cancelled", value: "10", sub: "1.7%", change: "-25.1%", note: "vs last 30 days", positive: false, icon: XCircle, iconBg: "bg-[#EF4444]/10", iconColor: "text-[#EF4444]" },
-];
+type StatItem = { title: string; value: string; sub?: string; change: string; note: string; positive: boolean; icon: typeof ArrowLeftRight; iconBg: string; iconColor: string };
 
 const tabs = ["All Transfers", "In Transit", "Pending", "Completed", "Cancelled"];
 
@@ -123,6 +119,9 @@ export default function StockTransfersPage() {
   const [busy, setBusy] = useState(false);
   const [cancelling, setCancelling] = useState<Row | null>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Row | null>(null);
+  const [editDraft, setEditDraft] = useState<Draft>(emptyDraft);
+  const [detailRow, setDetailRow] = useState<Row | null>(null);
   const seq = useRef(987);
 
   const filtered = useMemo(() => {
@@ -135,6 +134,29 @@ export default function StockTransfersPage() {
       return tab && wh && st && search;
     });
   }, [rows, activeTab, whFilter, statusFilter, query]);
+
+  const total = rows.length;
+  const completedCount = rows.filter((r) => r.status === "Completed").length;
+  const inTransitCount = rows.filter((r) => r.status === "In Transit").length;
+  const pendingCount = rows.filter((r) => r.status === "Pending").length;
+  const cancelledCount = rows.filter((r) => r.status === "Cancelled").length;
+  const pct = (n: number) => total > 0 ? ((n / total) * 100).toFixed(1) : "0.0";
+
+  const computedStats: StatItem[] = useMemo(() => [
+    { title: "Total Transfers", value: String(total), change: "+14.7%", note: "vs last 30 days", positive: true, icon: ArrowLeftRight, iconBg: "bg-action-blue/10", iconColor: "text-action-blue" },
+    { title: "Completed", value: String(completedCount), sub: `${pct(completedCount)}%`, change: "+11.2%", note: "vs last 30 days", positive: true, icon: CheckCircle2, iconBg: "bg-teal/10", iconColor: "text-teal" },
+    { title: "In Transit", value: String(inTransitCount), sub: `${pct(inTransitCount)}%`, change: "+5.6%", note: "vs last 30 days", positive: true, icon: Truck, iconBg: "bg-[#7C6FF6]/10", iconColor: "text-[#7C6FF6]" },
+    { title: "Pending", value: String(pendingCount), sub: `${pct(pendingCount)}%`, change: "-11.1%", note: "vs last 30 days", positive: false, icon: Clock, iconBg: "bg-[#F59E0B]/10", iconColor: "text-[#F59E0B]" },
+    { title: "Cancelled", value: String(cancelledCount), sub: `${pct(cancelledCount)}%`, change: "-25.1%", note: "vs last 30 days", positive: false, icon: XCircle, iconBg: "bg-[#EF4444]/10", iconColor: "text-[#EF4444]" },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [total, completedCount, inTransitCount, pendingCount, cancelledCount]);
+
+  const donutSegments: [string, number][] = useMemo(() => [
+    ["var(--color-teal)", completedCount],
+    ["var(--color-action-blue)", inTransitCount],
+    ["#F59E0B", pendingCount],
+    ["#EF4444", cancelledCount],
+  ], [completedCount, inTransitCount, pendingCount, cancelledCount]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, totalPages);
@@ -177,6 +199,35 @@ export default function StockTransfersPage() {
     toast(msg);
   }
 
+  function openEdit(r: Row) {
+    const skuNum = r.items.replace(/\s*SKUs?/i, "").trim();
+    const unitNum = r.units.replace(/\s*units?/i, "").replace(/,/g, "").trim();
+    setEditDraft({ from: r.from, to: r.to, skus: skuNum, units: unitNum, eta: new Date(r.eta).toISOString().slice(0, 10) });
+    setEditing(r);
+    setMenuFor(null);
+  }
+
+  function saveEdit() {
+    if (!editing) return;
+    if (editDraft.from === editDraft.to) { toast("Source and destination must differ", "error"); return; }
+    if (!editDraft.skus.trim() || !editDraft.units.trim()) { toast("SKUs and units are required", "error"); return; }
+    setRows((prev) => prev.map((r) => {
+      if (r.tr !== editing.tr) return r;
+      return {
+        ...r,
+        from: editDraft.from,
+        fromCity: WH_CITY[editDraft.from],
+        to: editDraft.to,
+        toCity: WH_CITY[editDraft.to],
+        items: `${editDraft.skus} SKUs`,
+        units: `${editDraft.units} units`,
+        eta: new Date(editDraft.eta).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+      };
+    }));
+    toast(`Transfer ${editing.tr} updated`);
+    setEditing(null);
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -194,7 +245,7 @@ export default function StockTransfersPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
-        {stats.map((s) => {
+        {computedStats.map((s) => {
           const Icon = s.icon;
           const Arrow = s.positive ? ArrowUpRight : ArrowDownRight;
           return (
@@ -278,7 +329,10 @@ export default function StockTransfersPage() {
                           <>
                             <div className="fixed inset-0 z-10" onClick={() => setMenuFor(null)} />
                             <div className="absolute right-0 mt-1 z-20 w-44 bg-white rounded-lg border border-border-soft shadow-lg py-1 text-left">
-                              <button onClick={() => { setMenuFor(null); toast(`Viewing ${r.tr}`, "info"); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-[13px] text-text-primary hover:bg-soft-bg"><Eye className="w-3.5 h-3.5" /> View details</button>
+                              <button onClick={() => { setMenuFor(null); setDetailRow(r); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-[13px] text-text-primary hover:bg-soft-bg"><Eye className="w-3.5 h-3.5" /> View details</button>
+                              {r.status !== "Cancelled" && r.status !== "Completed" && (
+                                <button onClick={() => openEdit(r)} className="w-full flex items-center gap-2 px-3 py-1.5 text-[13px] text-text-primary hover:bg-soft-bg"><Pencil className="w-3.5 h-3.5" /> Edit</button>
+                              )}
                               {(r.status === "Pending" || r.status === "In Transit") && (
                                 <button onClick={() => setStatus(r.tr, "Completed", `Transfer ${r.tr} marked completed`)} className="w-full flex items-center gap-2 px-3 py-1.5 text-[13px] text-teal hover:bg-soft-bg"><CheckCircle2 className="w-3.5 h-3.5" /> Mark completed</button>
                               )}
@@ -320,19 +374,20 @@ export default function StockTransfersPage() {
               <div className="relative w-[110px] h-[110px] shrink-0">
                 <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
                   <circle cx="50" cy="50" r="40" fill="none" stroke="var(--color-border-blue)" strokeWidth="12" />
-                  {(() => { let off = 0; const segs = [["var(--color-teal)", 87.4], ["var(--color-action-blue)", 8.2], ["#F59E0B", 2.7], ["#EF4444", 1.7]] as [string, number][]; return segs.map(([c, p], i) => {
+                  {(() => { let off = 0; return donutSegments.map(([c, count], i) => {
+                    const p = total > 0 ? (count / total) * 100 : 0;
                     const da = `${p * 2.51327} ${251.327 - p * 2.51327}`;
                     const el = <circle key={i} cx="50" cy="50" r="40" fill="none" stroke={c} strokeWidth="12" strokeDasharray={da} strokeDashoffset={-off * 2.51327} />;
                     off += p; return el;
                   }); })()}
                 </svg>
-                <div className="absolute inset-0 flex items-center justify-center"><div className="text-center"><p className="text-[17px] font-bold text-text-primary leading-none">586</p><p className="text-[10px] text-text-light mt-0.5">Total</p></div></div>
+                <div className="absolute inset-0 flex items-center justify-center"><div className="text-center"><p className="text-[17px] font-bold text-text-primary leading-none">{total}</p><p className="text-[10px] text-text-light mt-0.5">Total</p></div></div>
               </div>
               <div className="flex-1 space-y-2 text-[12px]">
-                <div className="flex justify-between"><span className="flex items-center gap-2 text-text-muted"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: "var(--color-teal)" }} />Completed</span><span className="font-medium text-text-primary">512 (87.4%)</span></div>
-                <div className="flex justify-between"><span className="flex items-center gap-2 text-text-muted"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: "var(--color-action-blue)" }} />In Transit</span><span className="font-medium text-text-primary">48 (8.2%)</span></div>
-                <div className="flex justify-between"><span className="flex items-center gap-2 text-text-muted"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: "#F59E0B" }} />Pending</span><span className="font-medium text-text-primary">16 (2.7%)</span></div>
-                <div className="flex justify-between"><span className="flex items-center gap-2 text-text-muted"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: "#EF4444" }} />Cancelled</span><span className="font-medium text-text-primary">10 (1.7%)</span></div>
+                <div className="flex justify-between"><span className="flex items-center gap-2 text-text-muted"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: "var(--color-teal)" }} />Completed</span><span className="font-medium text-text-primary">{completedCount} ({pct(completedCount)}%)</span></div>
+                <div className="flex justify-between"><span className="flex items-center gap-2 text-text-muted"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: "var(--color-action-blue)" }} />In Transit</span><span className="font-medium text-text-primary">{inTransitCount} ({pct(inTransitCount)}%)</span></div>
+                <div className="flex justify-between"><span className="flex items-center gap-2 text-text-muted"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: "#F59E0B" }} />Pending</span><span className="font-medium text-text-primary">{pendingCount} ({pct(pendingCount)}%)</span></div>
+                <div className="flex justify-between"><span className="flex items-center gap-2 text-text-muted"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: "#EF4444" }} />Cancelled</span><span className="font-medium text-text-primary">{cancelledCount} ({pct(cancelledCount)}%)</span></div>
               </div>
             </div>
           </div>
@@ -413,6 +468,116 @@ export default function StockTransfersPage() {
           <div className="col-span-2"><Field label="Estimated arrival"><TextInput type="date" value={draft.eta} onChange={(e) => setDraft((d) => ({ ...d, eta: e.target.value }))} /></Field></div>
         </div>
       </Modal>
+
+      {/* Edit Transfer modal */}
+      <Modal
+        open={!!editing}
+        onClose={() => setEditing(null)}
+        title="Edit Transfer"
+        description={`Update details for ${editing?.tr ?? ""}.`}
+        footer={
+          <>
+            <button onClick={() => setEditing(null)} className="px-4 py-2 text-[13px] font-medium text-text-primary bg-white border border-border-soft rounded-lg hover:bg-soft-bg">Cancel</button>
+            <button onClick={saveEdit} className="px-4 py-2 text-[13px] font-medium text-white bg-action-blue rounded-lg hover:bg-[#004BBF]">Save changes</button>
+          </>
+        }
+      >
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="From warehouse"><Select options={WAREHOUSES} value={editDraft.from} onChange={(e) => setEditDraft((d) => ({ ...d, from: e.target.value }))} /></Field>
+          <Field label="To warehouse"><Select options={WAREHOUSES} value={editDraft.to} onChange={(e) => setEditDraft((d) => ({ ...d, to: e.target.value }))} /></Field>
+          <Field label="SKUs" required><NumberInput value={editDraft.skus} onChange={(e) => setEditDraft((d) => ({ ...d, skus: e.target.value }))} min="1" /></Field>
+          <Field label="Units" required><NumberInput value={editDraft.units} onChange={(e) => setEditDraft((d) => ({ ...d, units: e.target.value }))} min="1" /></Field>
+          <div className="col-span-2"><Field label="Estimated arrival"><TextInput type="date" value={editDraft.eta} onChange={(e) => setEditDraft((d) => ({ ...d, eta: e.target.value }))} /></Field></div>
+        </div>
+      </Modal>
+
+      {/* Detail Drawer */}
+      <Drawer
+        open={!!detailRow}
+        onClose={() => setDetailRow(null)}
+        title={detailRow?.tr ?? "Transfer Details"}
+        subtitle={detailRow?.ref}
+      >
+        {detailRow && (
+          <>
+            {/* Visual route line */}
+            <div className="flex items-center gap-3 py-4">
+              <div className="flex flex-col items-center gap-0.5">
+                <div className="w-10 h-10 rounded-full bg-action-blue/10 flex items-center justify-center"><MapPin className="w-4 h-4 text-action-blue" /></div>
+                <span className="text-[11px] font-medium text-text-primary">{detailRow.from}</span>
+              </div>
+              <div className="flex-1 relative h-0.5 bg-border-soft">
+                <div className={`absolute inset-y-0 left-0 rounded-full ${
+                  detailRow.status === "Completed" ? "bg-teal" :
+                  detailRow.status === "In Transit" ? "bg-[#7C6FF6]" :
+                  detailRow.status === "Cancelled" ? "bg-[#EF4444]" : "bg-[#F59E0B]"
+                }`} style={{ width: detailRow.status === "Completed" ? "100%" : detailRow.status === "In Transit" ? "60%" : detailRow.status === "Cancelled" ? "30%" : "0%" }} />
+                <ArrowRight className="absolute -right-2 -top-1.5 w-3.5 h-3.5 text-text-light" />
+              </div>
+              <div className="flex flex-col items-center gap-0.5">
+                <div className="w-10 h-10 rounded-full bg-teal/10 flex items-center justify-center"><MapPin className="w-4 h-4 text-teal" /></div>
+                <span className="text-[11px] font-medium text-text-primary">{detailRow.to}</span>
+              </div>
+            </div>
+
+            <DrawerSection title="Transfer Details">
+              <DrawerRow label="Transfer #"><span className="font-mono">{detailRow.tr}</span></DrawerRow>
+              <DrawerRow label="Reference"><span className="font-mono">{detailRow.ref}</span></DrawerRow>
+              <DrawerRow label="From">{detailRow.from} ({detailRow.fromCity})</DrawerRow>
+              <DrawerRow label="To">{detailRow.to} ({detailRow.toCity})</DrawerRow>
+              <DrawerRow label="Status"><Badge text={detailRow.status} /></DrawerRow>
+              <DrawerRow label="Items">{detailRow.items}</DrawerRow>
+              <DrawerRow label="Units">{detailRow.units}</DrawerRow>
+              <DrawerRow label="Requested">{detailRow.req}</DrawerRow>
+              <DrawerRow label="ETA">{detailRow.eta}</DrawerRow>
+            </DrawerSection>
+
+            <DrawerSection title="Transfer Timeline">
+              <div className="space-y-0">
+                {[
+                  { label: "Created", desc: `Transfer ${detailRow.tr} was created`, time: detailRow.req, done: true },
+                  { label: "Dispatched", desc: `Shipment left ${detailRow.from}`, time: detailRow.req, done: detailRow.status === "In Transit" || detailRow.status === "Completed" },
+                  { label: "In Transit", desc: `En route from ${detailRow.fromCity} to ${detailRow.toCity}`, time: detailRow.status === "In Transit" ? detailRow.eta : "", done: detailRow.status === "In Transit" || detailRow.status === "Completed" },
+                  { label: "Delivered", desc: `Arrived at ${detailRow.to}`, time: detailRow.status === "Completed" ? detailRow.eta : "", done: detailRow.status === "Completed" },
+                ].map((step, i) => (
+                  <div key={i} className="flex gap-3">
+                    <div className="flex flex-col items-center">
+                      <div className={`w-3 h-3 rounded-full mt-1 shrink-0 ${step.done ? "bg-action-blue" : "bg-gray-300"}`} />
+                      {i < 3 && <div className={`w-0.5 flex-1 min-h-[24px] ${step.done ? "bg-action-blue" : "bg-gray-200"}`} />}
+                    </div>
+                    <div className="pb-4">
+                      <p className={`text-[13px] font-medium ${step.done ? "text-text-primary" : "text-text-light"}`}>{step.label}</p>
+                      <p className="text-[11px] text-text-muted">{step.desc}</p>
+                      {step.time && <p className="text-[11px] text-text-light mt-0.5">{step.time}</p>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </DrawerSection>
+
+            <DrawerSection title="Transfer Summary">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-soft-bg rounded-lg p-3">
+                  <p className="text-[11px] text-text-light">Items</p>
+                  <p className="text-[15px] font-semibold text-text-primary">{detailRow.items}</p>
+                </div>
+                <div className="bg-soft-bg rounded-lg p-3">
+                  <p className="text-[11px] text-text-light">Units</p>
+                  <p className="text-[15px] font-semibold text-text-primary">{detailRow.units}</p>
+                </div>
+                <div className="bg-soft-bg rounded-lg p-3">
+                  <p className="text-[11px] text-text-light">Origin</p>
+                  <p className="text-[15px] font-semibold text-text-primary">{detailRow.from}</p>
+                </div>
+                <div className="bg-soft-bg rounded-lg p-3">
+                  <p className="text-[11px] text-text-light">Destination</p>
+                  <p className="text-[15px] font-semibold text-text-primary">{detailRow.to}</p>
+                </div>
+              </div>
+            </DrawerSection>
+          </>
+        )}
+      </Drawer>
 
       {/* Cancel confirm */}
       <ConfirmDialog

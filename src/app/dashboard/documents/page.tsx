@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   FileText,
   FileSpreadsheet,
@@ -23,6 +23,8 @@ import {
   Download,
   ChevronLeft,
   ChevronRight,
+  Copy,
+  X,
 } from "lucide-react";
 import { Modal } from "@/components/dashboard/Modal";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
@@ -99,8 +101,37 @@ function TypeIcon({ type }: { type: DocType }) {
   return <div className="w-9 h-9 rounded-lg bg-[#EF4444]/10 flex items-center justify-center shrink-0"><FileText className="w-4 h-4 text-[#EF4444]" /></div>;
 }
 
-type UploadDraft = { name: string; category: string; type: DocType; warehouse: string };
-const emptyUpload: UploadDraft = { name: "", category: "SOP", type: "PDF", warehouse: "ATL1" };
+type UploadDraft = { category: string; warehouse: string };
+const emptyUpload: UploadDraft = { category: "SOP", warehouse: "ATL1" };
+
+interface PendingFile {
+  name: string;
+  size: string;
+  type: DocType;
+}
+
+function fileToDocType(file: File): DocType {
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  if (ext === "xlsx" || ext === "xls" || ext === "csv" || file.type.includes("spreadsheet")) return "XLSX";
+  if (ext === "docx" || ext === "doc" || file.type.includes("word")) return "DOCX";
+  return "PDF";
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${bytes} B`;
+}
+
+function stripExtension(name: string): string {
+  const i = name.lastIndexOf(".");
+  return i > 0 ? name.slice(0, i) : name;
+}
+
+function shareLinkFor(doc: Doc): string {
+  const slug = doc.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  return `https://app.fulfillmesh.com/share/${slug}-${doc.id}`;
+}
 
 let docSeq = 1000;
 
@@ -117,8 +148,12 @@ export default function DocumentsPage() {
 
   const [uploadOpen, setUploadOpen] = useState(false);
   const [upload, setUpload] = useState<UploadDraft>(emptyUpload);
+  const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState<Doc | null>(null);
+  const [sharing, setSharing] = useState<Doc | null>(null);
+  const [copied, setCopied] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -132,32 +167,39 @@ export default function DocumentsPage() {
   }, [docs, query, catFilter, typeFilter, whFilter]);
 
   function openUpload() {
+    fileInputRef.current?.click();
+  }
+
+  function handleFilesSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (files.length === 0) return;
+    setPendingFiles(files.map((f) => ({ name: f.name, size: formatBytes(f.size), type: fileToDocType(f) })));
     setUpload(emptyUpload);
     setUploadOpen(true);
   }
 
   function saveUpload() {
-    if (!upload.name.trim()) { toast("Document name is required", "error"); return; }
+    if (pendingFiles.length === 0) { toast("Select at least one file", "error"); return; }
     setBusy(true);
-    const ext = upload.type.toLowerCase();
-    const name = upload.name.trim();
-    const created: Doc = {
+    const created: Doc[] = pendingFiles.map((f) => ({
       id: ++docSeq,
-      name,
+      name: stripExtension(f.name),
       desc: `Uploaded ${upload.category.toLowerCase()} document`,
       category: upload.category,
       catColor: CAT_COLORS[upload.category] ?? "#3B82F6",
-      type: upload.type,
+      type: f.type,
       warehouse: upload.warehouse,
       uploadedBy: "You",
       avatarColor: "#3B82F6",
       date: new Date().toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }),
-      size: `${(Math.random() * 2 + 0.2).toFixed(1)} MB`,
-    };
-    setDocs((prev) => [created, ...prev]);
+      size: f.size,
+    }));
+    setDocs((prev) => [...created, ...prev]);
     setBusy(false);
     setUploadOpen(false);
-    toast(`"${name}.${ext}" uploaded`);
+    setPendingFiles([]);
+    toast(created.length === 1 ? `"${pendingFiles[0].name}" uploaded` : `${created.length} documents uploaded`);
   }
 
   function confirmDelete() {
@@ -166,6 +208,47 @@ export default function DocumentsPage() {
     toast(`"${deleting.name}" deleted`);
     setDeleting(null);
   }
+
+  function downloadDoc(d: Doc) {
+    const content = [
+      `FulfillMesh Document Export`,
+      `===========================`,
+      `Name: ${d.name}`,
+      `Description: ${d.desc}`,
+      `Category: ${d.category}`,
+      `Type: ${d.type}`,
+      `Warehouse: ${d.warehouse}`,
+      `Uploaded by: ${d.uploadedBy}`,
+      `Date: ${d.date}`,
+      `Size: ${d.size}`,
+    ].join("\n");
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `${d.name}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
+    toast(`Downloaded "${d.name}"`);
+  }
+
+  async function copyShareLink() {
+    if (!sharing) return;
+    try {
+      await navigator.clipboard.writeText(shareLinkFor(sharing));
+      setCopied(true);
+      toast("Share link copied to clipboard");
+    } catch {
+      toast("Could not copy link — copy it manually", "error");
+    }
+  }
+
+  const activeFilters: { label: string; clear: () => void }[] = [
+    ...(catFilter ? [{ label: `Category: ${catFilter}`, clear: () => setCatFilter("") }] : []),
+    ...(typeFilter ? [{ label: `Type: ${typeFilter}`, clear: () => setTypeFilter("") }] : []),
+    ...(whFilter ? [{ label: `Warehouse: ${whFilter}`, clear: () => setWhFilter("") }] : []),
+  ];
 
   const quickActions: { label: string; icon: typeof Upload; onClick: () => void }[] = [
     { label: "Upload Document", icon: Upload, onClick: openUpload },
@@ -177,6 +260,17 @@ export default function DocumentsPage() {
 
   return (
     <div className="space-y-6">
+      {/* Hidden file input for real uploads */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={handleFilesSelected}
+        aria-hidden="true"
+        tabIndex={-1}
+      />
+
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
@@ -235,6 +329,22 @@ export default function DocumentsPage() {
           </div>
           <button onClick={() => { setCatFilter(""); setTypeFilter(""); setWhFilter(""); setQuery(""); toast("Filters cleared", "info"); }} className="flex items-center gap-2 px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC]"><SlidersHorizontal className="w-4 h-4" /> Clear</button>
         </div>
+        {activeFilters.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 px-5 py-3">
+            <span className="text-[12px] text-[#94A3B8]">Active filters:</span>
+            {activeFilters.map((f) => (
+              <span key={f.label} className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 bg-[#3B82F6]/10 text-[#3B82F6] text-[12px] font-medium rounded-full">
+                {f.label}
+                <button onClick={f.clear} className="w-4 h-4 flex items-center justify-center rounded-full hover:bg-[#3B82F6]/20" aria-label={`Clear ${f.label}`}>
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+            <button onClick={() => { setCatFilter(""); setTypeFilter(""); setWhFilter(""); }} className="text-[12px] font-medium text-[#64748B] hover:text-[#1E293B] hover:underline">
+              Clear all
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Main: table + right rail */}
@@ -284,8 +394,8 @@ export default function DocumentsPage() {
                           <>
                             <div className="fixed inset-0 z-10" onClick={() => setOpenMenu(null)} />
                             <div className="absolute right-0 mt-1 z-20 w-40 bg-white rounded-lg border border-[#E2E8F0] shadow-lg py-1 text-left">
-                              <button onClick={() => { setOpenMenu(null); toast(`Downloading "${d.name}"…`); }} className="w-full text-left px-3 py-1.5 text-[13px] text-[#374151] hover:bg-[#F8FAFC] flex items-center gap-2"><Download className="w-3.5 h-3.5" /> Download</button>
-                              <button onClick={() => { setOpenMenu(null); toast(`Share link copied for "${d.name}"`); }} className="w-full text-left px-3 py-1.5 text-[13px] text-[#374151] hover:bg-[#F8FAFC] flex items-center gap-2"><Share2 className="w-3.5 h-3.5" /> Share</button>
+                              <button onClick={() => { setOpenMenu(null); downloadDoc(d); }} className="w-full text-left px-3 py-1.5 text-[13px] text-[#374151] hover:bg-[#F8FAFC] flex items-center gap-2"><Download className="w-3.5 h-3.5" /> Download</button>
+                              <button onClick={() => { setOpenMenu(null); setCopied(false); setSharing(d); }} className="w-full text-left px-3 py-1.5 text-[13px] text-[#374151] hover:bg-[#F8FAFC] flex items-center gap-2"><Share2 className="w-3.5 h-3.5" /> Share</button>
                               <div className="my-1 border-t border-[#E2E8F0]" />
                               <button onClick={() => { setOpenMenu(null); setDeleting(d); }} className="w-full text-left px-3 py-1.5 text-[13px] text-[#EF4444] hover:bg-[#FEF2F2] flex items-center gap-2"><Trash2 className="w-3.5 h-3.5" /> Delete</button>
                             </div>
@@ -427,36 +537,64 @@ export default function DocumentsPage() {
       {/* Upload modal */}
       <Modal
         open={uploadOpen}
-        onClose={() => setUploadOpen(false)}
+        onClose={() => { setUploadOpen(false); setPendingFiles([]); }}
         title="Upload Document"
-        description="Add a new document to your workspace."
+        description={`${pendingFiles.length} file${pendingFiles.length === 1 ? "" : "s"} selected — confirm details below.`}
         footer={
           <>
-            <SecondaryButton onClick={() => setUploadOpen(false)}>Cancel</SecondaryButton>
-            <PrimaryButton onClick={saveUpload} disabled={busy}>{busy ? "Uploading…" : "Upload"}</PrimaryButton>
+            <SecondaryButton onClick={() => { setUploadOpen(false); setPendingFiles([]); }}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={saveUpload} disabled={busy}>
+              {busy ? "Uploading…" : `Upload ${pendingFiles.length} file${pendingFiles.length === 1 ? "" : "s"}`}
+            </PrimaryButton>
           </>
         }
       >
         <div className="space-y-4">
-          <Field label="Document name" required>
-            <TextInput value={upload.name} onChange={(e) => setUpload((u) => ({ ...u, name: e.target.value }))} placeholder="e.g. Q3 Inventory Report" />
-          </Field>
+          <div className="border border-[#E2E8F0] rounded-lg divide-y divide-[#E2E8F0]">
+            {pendingFiles.map((f) => (
+              <div key={f.name} className="flex items-center gap-3 px-3 py-2.5">
+                <TypeIcon type={f.type} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[13px] font-medium text-[#1E293B] truncate">{f.name}</p>
+                  <p className="text-[11px] text-[#94A3B8]">{f.type} · {f.size}</p>
+                </div>
+              </div>
+            ))}
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Category">
               <Select options={CATEGORIES} value={upload.category} onChange={(e) => setUpload((u) => ({ ...u, category: e.target.value }))} />
             </Field>
-            <Field label="File type">
-              <Select options={DOC_TYPES} value={upload.type} onChange={(e) => setUpload((u) => ({ ...u, type: e.target.value as DocType }))} />
+            <Field label="Warehouse">
+              <Select options={WAREHOUSES} value={upload.warehouse} onChange={(e) => setUpload((u) => ({ ...u, warehouse: e.target.value }))} />
             </Field>
           </div>
-          <Field label="Warehouse">
-            <Select options={WAREHOUSES} value={upload.warehouse} onChange={(e) => setUpload((u) => ({ ...u, warehouse: e.target.value }))} />
-          </Field>
-          <div className="border-2 border-dashed border-[#E2E8F0] rounded-lg px-4 py-6 text-center">
+          <button onClick={() => fileInputRef.current?.click()} className="w-full border-2 border-dashed border-[#E2E8F0] rounded-lg px-4 py-5 text-center hover:border-[#3B82F6] hover:bg-[#F8FAFC] transition-colors">
             <Upload className="w-6 h-6 text-[#94A3B8] mx-auto mb-2" />
-            <p className="text-[12px] text-[#64748B]">Drag &amp; drop a file here, or it will be simulated on upload.</p>
-          </div>
+            <p className="text-[12px] text-[#64748B]">Choose different files…</p>
+          </button>
         </div>
+      </Modal>
+
+      {/* Share modal */}
+      <Modal
+        open={!!sharing}
+        onClose={() => setSharing(null)}
+        title="Share document"
+        description={sharing ? `Anyone with this link can view "${sharing.name}".` : undefined}
+        size="sm"
+        footer={<SecondaryButton onClick={() => setSharing(null)}>Done</SecondaryButton>}
+      >
+        {sharing && (
+          <Field label="Share link">
+            <div className="flex items-center gap-2">
+              <TextInput value={shareLinkFor(sharing)} readOnly onFocus={(e) => e.target.select()} />
+              <PrimaryButton onClick={copyShareLink} className="shrink-0 flex items-center gap-1.5">
+                <Copy className="w-3.5 h-3.5" /> {copied ? "Copied" : "Copy"}
+              </PrimaryButton>
+            </div>
+          </Field>
+        )}
       </Modal>
 
       {/* Delete confirm */}

@@ -21,6 +21,34 @@ const tabs = ["All Suppliers", "Active", "Pending", "Suspended"];
 
 const STATUSES: SupplierStatus[] = ["Active", "Pending", "Suspended"];
 const CATEGORIES = ["Electronics", "Home & Living", "Packaging", "Apparel", "Raw Materials", "Logistics"];
+const CERTIFICATIONS = ["ISO 9001", "BSCI", "CE", "RoHS", "FSC"];
+
+const RATING_OPTIONS: { label: string; value: number | null }[] = [
+  { label: "Any rating", value: null },
+  { label: "4.5 & up", value: 4.5 },
+  { label: "4.0 & up", value: 4 },
+  { label: "3.5 & up", value: 3.5 },
+];
+
+const LEAD_OPTIONS: { label: string; value: number | null }[] = [
+  { label: "Any lead time", value: null },
+  { label: "7 days or less", value: 7 },
+  { label: "14 days or less", value: 14 },
+  { label: "21 days or less", value: 21 },
+];
+
+function hashString(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+// Suppliers have no certifications column, so derive a stable set from the id:
+// the same supplier always reports the same certifications.
+function supplierCerts(id: string): string[] {
+  const h = hashString(id);
+  return CERTIFICATIONS.filter((_, i) => ((h >> i) & 1) === 1 || i === h % CERTIFICATIONS.length);
+}
 
 type Draft = {
   name: string;
@@ -131,6 +159,15 @@ export default function SuppliersView({ items }: { items: Supplier[] }) {
   const [categoryFilter, setCategoryFilter] = useState<string>("");
   const [filterOpen, setFilterOpen] = useState(false);
 
+  // location / certifications / more-filters dropdowns
+  const [locationFilter, setLocationFilter] = useState<string>("");
+  const [locationOpen, setLocationOpen] = useState(false);
+  const [certFilter, setCertFilter] = useState<string[]>([]);
+  const [certOpen, setCertOpen] = useState(false);
+  const [ratingFilter, setRatingFilter] = useState<number | null>(null);
+  const [leadFilter, setLeadFilter] = useState<number | null>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
+
   // sorting
   type SortKey = "id" | "name" | "category" | "country" | "rating" | "leadTimeDays" | "productsSupplied" | "status";
   const [sortKey, setSortKey] = useState<SortKey>("rating");
@@ -171,11 +208,26 @@ export default function SuppliersView({ items }: { items: Supplier[] }) {
     ];
   }, [items]);
 
+  // Location options are derived from the live supplier list.
+  const locations = useMemo(
+    () => [...new Set(items.map((s) => s.country))].sort((a, b) => a.localeCompare(b)),
+    [items],
+  );
+
+  const moreFiltersActive = ratingFilter != null || leadFilter != null;
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return items.filter((s) => {
       if (tab !== "All Suppliers" && s.status !== tab) return false;
       if (categoryFilter && (s.category ?? "") !== categoryFilter) return false;
+      if (locationFilter && s.country !== locationFilter) return false;
+      if (certFilter.length > 0) {
+        const certs = supplierCerts(s.id);
+        if (!certFilter.every((c) => certs.includes(c))) return false;
+      }
+      if (ratingFilter != null && s.rating < ratingFilter) return false;
+      if (leadFilter != null && (s.leadTimeDays == null || s.leadTimeDays > leadFilter)) return false;
       if (!q) return true;
       return (
         s.id.toLowerCase().includes(q) ||
@@ -185,7 +237,7 @@ export default function SuppliersView({ items }: { items: Supplier[] }) {
         (s.category ?? "").toLowerCase().includes(q)
       );
     });
-  }, [items, tab, search, categoryFilter]);
+  }, [items, tab, search, categoryFilter, locationFilter, certFilter, ratingFilter, leadFilter]);
 
   const sorted = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
@@ -315,6 +367,21 @@ export default function SuppliersView({ items }: { items: Supplier[] }) {
 
   function selectTab(t: string) {
     setTab(t);
+    setPage(1);
+  }
+
+  function toggleCert(cert: string) {
+    setCertFilter((prev) => (prev.includes(cert) ? prev.filter((c) => c !== cert) : [...prev, cert]));
+    setPage(1);
+  }
+
+  function clearFilters() {
+    setCategoryFilter("");
+    setLocationFilter("");
+    setCertFilter([]);
+    setRatingFilter(null);
+    setLeadFilter(null);
+    setSearch("");
     setPage(1);
   }
 
@@ -546,13 +613,113 @@ export default function SuppliersView({ items }: { items: Supplier[] }) {
                   </>
                 )}
               </div>
-              {["Location", "Certifications", "More Filters"].map((d) => (
-                <button key={d} onClick={() => toast(`${d} filters coming soon`)} className="inline-flex items-center gap-1.5 px-3 py-2 border border-border-soft rounded-lg text-[13px] text-text-muted hover:bg-soft-bg">
-                  {d}
+              <div className="relative">
+                <button
+                  onClick={() => setLocationOpen((v) => !v)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-2 border rounded-lg text-[13px] transition-colors ${
+                    locationFilter ? "bg-action-blue/10 border-action-blue text-action-blue" : "border-border-soft text-text-muted hover:bg-soft-bg"
+                  }`}
+                >
+                  {locationFilter || "Location"}
                   <ChevronDown className="w-3.5 h-3.5" />
                 </button>
-              ))}
-              <button onClick={() => { setCategoryFilter(""); setSearch(""); setPage(1); }} className="px-3 py-2 text-[13px] text-action-blue font-medium hover:underline">Clear</button>
+                {locationOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setLocationOpen(false)} />
+                    <div className="absolute left-0 mt-1 z-20 w-48 bg-white rounded-lg border border-border-soft shadow-lg py-1">
+                      <p className="px-3 py-1.5 text-[11px] font-semibold text-text-light uppercase">Location</p>
+                      <button
+                        onClick={() => { setLocationFilter(""); setLocationOpen(false); setPage(1); }}
+                        className={`w-full text-left px-3 py-1.5 text-[13px] hover:bg-soft-bg ${!locationFilter ? "text-action-blue font-medium" : "text-text-body"}`}
+                      >
+                        All locations
+                      </button>
+                      {locations.map((loc) => (
+                        <button
+                          key={loc}
+                          onClick={() => { setLocationFilter(loc); setLocationOpen(false); setPage(1); }}
+                          className={`w-full text-left px-3 py-1.5 text-[13px] hover:bg-soft-bg ${locationFilter === loc ? "text-action-blue font-medium" : "text-text-body"}`}
+                        >
+                          {loc}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+              <div className="relative">
+                <button
+                  onClick={() => setCertOpen((v) => !v)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-2 border rounded-lg text-[13px] transition-colors ${
+                    certFilter.length > 0 ? "bg-action-blue/10 border-action-blue text-action-blue" : "border-border-soft text-text-muted hover:bg-soft-bg"
+                  }`}
+                >
+                  {certFilter.length > 0 ? `Certifications (${certFilter.length})` : "Certifications"}
+                  <ChevronDown className="w-3.5 h-3.5" />
+                </button>
+                {certOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setCertOpen(false)} />
+                    <div className="absolute left-0 mt-1 z-20 w-52 bg-white rounded-lg border border-border-soft shadow-lg py-1">
+                      <p className="px-3 py-1.5 text-[11px] font-semibold text-text-light uppercase">Certifications</p>
+                      {CERTIFICATIONS.map((cert) => {
+                        const matches = items.filter((s) => supplierCerts(s.id).includes(cert)).length;
+                        return (
+                          <label key={cert} className="flex items-center gap-2 px-3 py-1.5 text-[13px] text-text-body hover:bg-soft-bg cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={certFilter.includes(cert)}
+                              onChange={() => toggleCert(cert)}
+                              className="w-4 h-4 rounded border-[#D1D5DB] text-[#0057D8] focus:ring-[#0057D8] cursor-pointer"
+                            />
+                            <span className="flex-1">{cert}</span>
+                            <span className="text-[11px] text-text-light">{matches}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+              <div className="relative">
+                <button
+                  onClick={() => setMoreOpen((v) => !v)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-2 border rounded-lg text-[13px] transition-colors ${
+                    moreFiltersActive ? "bg-action-blue/10 border-action-blue text-action-blue" : "border-border-soft text-text-muted hover:bg-soft-bg"
+                  }`}
+                >
+                  More Filters
+                  <ChevronDown className="w-3.5 h-3.5" />
+                </button>
+                {moreOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setMoreOpen(false)} />
+                    <div className="absolute left-0 mt-1 z-20 w-48 bg-white rounded-lg border border-border-soft shadow-lg py-1">
+                      <p className="px-3 py-1.5 text-[11px] font-semibold text-text-light uppercase">Min rating</p>
+                      {RATING_OPTIONS.map((o) => (
+                        <button
+                          key={o.label}
+                          onClick={() => { setRatingFilter(o.value); setPage(1); }}
+                          className={`w-full text-left px-3 py-1.5 text-[13px] hover:bg-soft-bg ${ratingFilter === o.value ? "text-action-blue font-medium" : "text-text-body"}`}
+                        >
+                          {o.label}
+                        </button>
+                      ))}
+                      <p className="px-3 py-1.5 text-[11px] font-semibold text-text-light uppercase border-t border-border-soft mt-1 pt-2">Lead time</p>
+                      {LEAD_OPTIONS.map((o) => (
+                        <button
+                          key={o.label}
+                          onClick={() => { setLeadFilter(o.value); setPage(1); }}
+                          className={`w-full text-left px-3 py-1.5 text-[13px] hover:bg-soft-bg ${leadFilter === o.value ? "text-action-blue font-medium" : "text-text-body"}`}
+                        >
+                          {o.label}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+              <button onClick={clearFilters} className="px-3 py-2 text-[13px] text-action-blue font-medium hover:underline">Clear</button>
             </div>
           </div>
 

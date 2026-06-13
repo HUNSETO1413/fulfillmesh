@@ -4,21 +4,16 @@ import { useMemo, useState } from "react";
 import {
   Boxes, CheckCircle2, Gauge, AlertTriangle, XCircle,
   Search, Columns3, Plus, Download, ChevronDown, MoreHorizontal,
-  ArrowUpRight, ArrowDownRight, Eye, Power,
+  ArrowUpRight, ArrowDownRight, Eye, Power, Pencil,
 } from "lucide-react";
 import { Modal } from "@/components/dashboard/Modal";
+import { Drawer, DrawerRow, DrawerSection } from "@/components/dashboard/Drawer";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { Field, TextInput, TextArea, Select } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
 import { exportToCsv } from "@/lib/client";
 
-const stats = [
-  { title: "Total Storage Types", value: "18", change: "+12.5%", note: "vs last 30 days", positive: true, icon: Boxes, iconBg: "bg-action-blue/10", iconColor: "text-action-blue" },
-  { title: "Active Storage Types", value: "15", sub: "83.3% of total", change: "+7.1%", note: "vs last 30 days", positive: true, icon: CheckCircle2, iconBg: "bg-teal/10", iconColor: "text-teal" },
-  { title: "Utilized Capacity", value: "67.8%", change: "+5.6%", note: "vs last 30 days", positive: true, icon: Gauge, iconBg: "bg-[#7C6FF6]/10", iconColor: "text-[#7C6FF6]" },
-  { title: "Low Utilization", value: "2", change: "-13.3%", note: "vs last 30 days", positive: false, icon: AlertTriangle, iconBg: "bg-[#F59E0B]/10", iconColor: "text-[#F59E0B]" },
-  { title: "Inactive Storage Types", value: "3", change: "-15.0%", note: "vs last 30 days", positive: false, icon: XCircle, iconBg: "bg-[#EF4444]/10", iconColor: "text-[#EF4444]" },
-];
+/* stats and sidebar widgets are now computed from rows via useMemo */
 
 type Status = "Active" | "Inactive";
 type Row = { code: string; name: string; desc: string; suit: string; util: number; status: Status };
@@ -38,15 +33,10 @@ const SUITABLE = ["Small Items", "General", "Pallets", "Bulk", "High Value", "Pe
 const STATUSES: Status[] = ["Active", "Inactive"];
 
 const byCategory = [
-  { name: "Standard", count: "8", pct: "(44.4%)", color: "var(--color-action-blue)" },
-  { name: "Specialized", count: "6", pct: "(33.3%)", color: "var(--color-teal)" },
-  { name: "Temperature Controlled", count: "2", pct: "(11.1%)", color: "#7C6FF6" },
-  { name: "Security / Restricted", count: "2", pct: "(11.1%)", color: "#F59E0B" },
-];
-
-const lowUtil = [
-  { code: "QUAR", name: "Quarantine Storage", util: "28%" },
-  { code: "TMP", name: "Temperature Buffer", util: "24%" },
+  { name: "Standard", color: "var(--color-action-blue)" },
+  { name: "Specialized", color: "var(--color-teal)" },
+  { name: "Temperature Controlled", color: "#7C6FF6" },
+  { name: "Security / Restricted", color: "#F59E0B" },
 ];
 
 const activity = [
@@ -54,12 +44,7 @@ const activity = [
   { text: 'New storage type "Mezzanine" added', info: "Created by Admin", time: "5h ago", color: "var(--color-action-blue)" },
 ];
 
-const utilBands = [
-  { label: "80 - 100%", color: "var(--color-teal)", count: "8 (44.4%)" },
-  { label: "50 - 79%", color: "var(--color-action-blue)", count: "6 (33.3%)" },
-  { label: "20 - 49%", color: "#F59E0B", count: "2 (11.1%)" },
-  { label: "0 - 19%", color: "#EF4444", count: "2 (11.1%)" },
-];
+/* utilBands computed dynamically */
 
 const card = "bg-white rounded-xl border border-border-soft shadow-soft";
 const thCls = "text-left text-[11px] font-semibold text-text-light uppercase tracking-[0.05em] px-6 py-3";
@@ -108,6 +93,66 @@ export default function StorageTypesPage() {
   const [busy, setBusy] = useState(false);
   const [deactivating, setDeactivating] = useState<Row | null>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [drawerRow, setDrawerRow] = useState<Row | null>(null);
+  const [editRow, setEditRow] = useState<Row | null>(null);
+  const [editDraft, setEditDraft] = useState<Draft>(emptyDraft);
+
+  /* ---- Computed stats from rows ---- */
+  const stats = useMemo(() => {
+    const total = rows.length;
+    const active = rows.filter((r) => r.status === "Active").length;
+    const inactive = rows.filter((r) => r.status === "Inactive").length;
+    const avgUtil = total > 0 ? rows.reduce((s, r) => s + r.util, 0) / total : 0;
+    const lowUtilCount = rows.filter((r) => r.util < 40).length;
+    return [
+      { title: "Total Storage Types", value: String(total), sub: undefined as string | undefined, change: "+12.5%", note: "vs last 30 days", positive: true, icon: Boxes, iconBg: "bg-action-blue/10", iconColor: "text-action-blue" },
+      { title: "Active Storage Types", value: String(active), sub: total > 0 ? `${((active / total) * 100).toFixed(1)}% of total` : undefined, change: "+7.1%", note: "vs last 30 days", positive: true, icon: CheckCircle2, iconBg: "bg-teal/10", iconColor: "text-teal" },
+      { title: "Avg Utilization", value: `${avgUtil.toFixed(1)}%`, sub: undefined, change: "+5.6%", note: "vs last 30 days", positive: true, icon: Gauge, iconBg: "bg-[#7C6FF6]/10", iconColor: "text-[#7C6FF6]" },
+      { title: "Low Utilization", value: String(lowUtilCount), sub: undefined, change: "-13.3%", note: "vs last 30 days", positive: false, icon: AlertTriangle, iconBg: "bg-[#F59E0B]/10", iconColor: "text-[#F59E0B]" },
+      { title: "Inactive Storage Types", value: String(inactive), sub: undefined, change: "-15.0%", note: "vs last 30 days", positive: false, icon: XCircle, iconBg: "bg-[#EF4444]/10", iconColor: "text-[#EF4444]" },
+    ];
+  }, [rows]);
+
+  /* ---- Sidebar: Utilization bands from rows ---- */
+  const utilBands = useMemo(() => {
+    const total = rows.length || 1;
+    const hi = rows.filter((r) => r.util >= 80).length;
+    const mid = rows.filter((r) => r.util >= 50 && r.util < 80).length;
+    const lo = rows.filter((r) => r.util >= 20 && r.util < 50).length;
+    const vl = rows.filter((r) => r.util < 20).length;
+    return [
+      { label: "80 - 100%", color: "var(--color-teal)", count: `${hi} (${((hi / total) * 100).toFixed(1)}%)` },
+      { label: "50 - 79%", color: "var(--color-action-blue)", count: `${mid} (${((mid / total) * 100).toFixed(1)}%)` },
+      { label: "20 - 49%", color: "#F59E0B", count: `${lo} (${((lo / total) * 100).toFixed(1)}%)` },
+      { label: "0 - 19%", color: "#EF4444", count: `${vl} (${((vl / total) * 100).toFixed(1)}%)` },
+    ];
+  }, [rows]);
+
+  /* ---- Sidebar: Average util for donut center ---- */
+  const avgUtil = useMemo(() => {
+    const total = rows.length;
+    return total > 0 ? rows.reduce((s, r) => s + r.util, 0) / total : 0;
+  }, [rows]);
+
+  /* ---- Sidebar: byCategory from rows ---- */
+  const byCategoryDynamic = useMemo(() => {
+    const catMap: Record<string, string[]> = {
+      Standard: ["Small Items", "General"],
+      Specialized: ["Pallets", "Bulk"],
+      "Temperature Controlled": ["Perishables", "Frozen"],
+      "Security / Restricted": ["High Value", "Regulated"],
+    };
+    return byCategory.map((c) => {
+      const count = rows.filter((r) => catMap[c.name]?.includes(r.suit)).length;
+      const total = rows.length || 1;
+      return { ...c, count: String(count), pct: `(${((count / total) * 100).toFixed(1)}%)` };
+    });
+  }, [rows]);
+
+  /* ---- Sidebar: Low utilization from rows ---- */
+  const lowUtilDynamic = useMemo(() => {
+    return rows.filter((r) => r.util < 40).map((r) => ({ code: r.code, name: r.name, util: `${r.util}%` }));
+  }, [rows]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -152,6 +197,28 @@ export default function StorageTypesPage() {
     setRows((prev) => prev.map((r) => (r.code === code ? { ...r, status } : r)));
     setMenuFor(null);
     toast(msg);
+  }
+
+  function openDetails(r: Row) {
+    setDrawerRow(r);
+    setMenuFor(null);
+  }
+
+  function openEdit(r: Row) {
+    setEditRow(r);
+    setEditDraft({ code: r.code, name: r.name, desc: r.desc, suit: r.suit });
+    setMenuFor(null);
+  }
+
+  function saveEdit() {
+    if (!editRow) return;
+    if (!editDraft.name.trim()) { toast("Name is required", "error"); return; }
+    setRows((prev) => prev.map((r) =>
+      r.code === editRow.code ? { ...r, name: editDraft.name.trim(), desc: editDraft.desc.trim() || "—", suit: editDraft.suit } : r
+    ));
+    setEditRow(null);
+    setEditDraft(emptyDraft);
+    toast(`${editRow.code} updated`);
   }
 
   return (
@@ -252,7 +319,8 @@ export default function StorageTypesPage() {
                           <>
                             <div className="fixed inset-0 z-10" onClick={() => setMenuFor(null)} />
                             <div className="absolute right-0 mt-1 z-20 w-44 bg-white rounded-lg border border-border-soft shadow-lg py-1 text-left">
-                              <button onClick={() => { setMenuFor(null); toast(`Viewing ${r.code}`, "info"); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-[13px] text-text-primary hover:bg-soft-bg"><Eye className="w-3.5 h-3.5" /> View details</button>
+                              <button onClick={() => openDetails(r)} className="w-full flex items-center gap-2 px-3 py-1.5 text-[13px] text-text-primary hover:bg-soft-bg"><Eye className="w-3.5 h-3.5" /> View details</button>
+                              <button onClick={() => openEdit(r)} className="w-full flex items-center gap-2 px-3 py-1.5 text-[13px] text-text-primary hover:bg-soft-bg"><Pencil className="w-3.5 h-3.5" /> Edit</button>
                               {r.status === "Active" ? (
                                 <button onClick={() => { setMenuFor(null); setDeactivating(r); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-[13px] text-[#EF4444] hover:bg-soft-bg"><Power className="w-3.5 h-3.5" /> Deactivate</button>
                               ) : (
@@ -296,7 +364,7 @@ export default function StorageTypesPage() {
                     off += p; return el;
                   }); })()}
                 </svg>
-                <div className="absolute inset-0 flex items-center justify-center"><div className="text-center"><p className="text-[17px] font-bold text-text-primary leading-none">67.8%</p><p className="text-[10px] text-text-light mt-0.5">Average</p></div></div>
+                <div className="absolute inset-0 flex items-center justify-center"><div className="text-center"><p className="text-[17px] font-bold text-text-primary leading-none">{avgUtil.toFixed(1)}%</p><p className="text-[10px] text-text-light mt-0.5">Average</p></div></div>
               </div>
               <div className="flex-1 space-y-2">
                 {utilBands.map((b) => (
@@ -313,13 +381,13 @@ export default function StorageTypesPage() {
           <div className={card + " p-5"}>
             <h3 className="text-[14px] font-semibold text-text-primary mb-3">Storage Types by Category</h3>
             <div className="space-y-2.5">
-              {byCategory.map((c) => (
+              {byCategoryDynamic.map((c) => (
                 <div key={c.name} className="flex items-center justify-between text-[12px]">
                   <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: c.color }} /><span className="text-text-muted">{c.name}</span></div>
                   <div className="flex items-center gap-3"><span className="font-medium text-text-primary">{c.count}</span><span className="text-text-light w-12 text-right">{c.pct}</span></div>
                 </div>
               ))}
-              <div className="flex items-center justify-between text-[12px] pt-2 border-t border-border-soft"><span className="font-semibold text-text-primary">Total</span><span className="font-semibold text-text-primary">18</span></div>
+              <div className="flex items-center justify-between text-[12px] pt-2 border-t border-border-soft"><span className="font-semibold text-text-primary">Total</span><span className="font-semibold text-text-primary">{rows.length}</span></div>
             </div>
           </div>
 
@@ -327,7 +395,8 @@ export default function StorageTypesPage() {
           <div className={card + " p-5"}>
             <div className="flex items-center justify-between mb-3"><h3 className="text-[14px] font-semibold text-text-primary">Low Utilization Storage Types</h3><button onClick={() => toast("Showing all low-utilization types", "info")} className="text-[12px] text-action-blue hover:underline">View all</button></div>
             <div className="space-y-3">
-              {lowUtil.map((l) => (
+              {lowUtilDynamic.length === 0 && <p className="text-[12px] text-text-muted">No low-utilization types.</p>}
+              {lowUtilDynamic.map((l) => (
                 <div key={l.code} className="flex items-center gap-3">
                   <div className="w-9 h-9 rounded-lg bg-soft-bg flex items-center justify-center shrink-0"><Gauge className="w-4 h-4 text-[#F59E0B]" /></div>
                   <div className="flex-1 min-w-0"><p className="text-[12px] font-medium text-text-primary truncate">{l.name}</p><p className="text-[11px] text-text-light font-mono">{l.code}</p></div>
@@ -373,6 +442,95 @@ export default function StorageTypesPage() {
           <div className="col-span-2"><Field label="Description"><TextArea value={draft.desc} onChange={(e) => setDraft((d) => ({ ...d, desc: e.target.value }))} placeholder="Elevated platform storage for overflow stock" /></Field></div>
         </div>
       </Modal>
+
+      {/* Edit Storage Type modal */}
+      <Modal
+        open={!!editRow}
+        onClose={() => { setEditRow(null); setEditDraft(emptyDraft); }}
+        title="Edit Storage Type"
+        description={`Editing ${editRow?.code}`}
+        footer={
+          <>
+            <button onClick={() => { setEditRow(null); setEditDraft(emptyDraft); }} className="px-4 py-2 text-[13px] font-medium text-text-primary bg-white border border-border-soft rounded-lg hover:bg-soft-bg">Cancel</button>
+            <button onClick={saveEdit} className="px-4 py-2 text-[13px] font-medium text-white bg-action-blue rounded-lg hover:bg-[#004BBF]">Save changes</button>
+          </>
+        }
+      >
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Code" hint="Cannot be changed"><TextInput value={editDraft.code} readOnly className="bg-[#F9FAFB] text-text-light cursor-not-allowed" /></Field>
+          <Field label="Suitable for"><Select options={SUITABLE} value={editDraft.suit} onChange={(e) => setEditDraft((d) => ({ ...d, suit: e.target.value }))} /></Field>
+          <div className="col-span-2"><Field label="Name" required><TextInput value={editDraft.name} onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))} placeholder="Storage type name" /></Field></div>
+          <div className="col-span-2"><Field label="Description"><TextArea value={editDraft.desc} onChange={(e) => setEditDraft((d) => ({ ...d, desc: e.target.value }))} placeholder="Description" /></Field></div>
+        </div>
+      </Modal>
+
+      {/* Detail drawer */}
+      <Drawer
+        open={!!drawerRow}
+        onClose={() => setDrawerRow(null)}
+        title={drawerRow?.name ?? "Storage Type"}
+        subtitle={drawerRow?.code}
+        footer={
+          <>
+            <button onClick={() => { if (drawerRow) { openEdit(drawerRow); setDrawerRow(null); } }} className="px-4 py-2 text-[13px] font-medium text-action-blue bg-action-blue/10 rounded-lg hover:bg-action-blue/20">Edit</button>
+            <button onClick={() => setDrawerRow(null)} className="px-4 py-2 text-[13px] font-medium text-text-primary bg-white border border-border-soft rounded-lg hover:bg-soft-bg">Close</button>
+          </>
+        }
+      >
+        {drawerRow && (
+          <>
+            <DrawerSection title="General">
+              <DrawerRow label="Code"><span className="font-mono">{drawerRow.code}</span></DrawerRow>
+              <DrawerRow label="Name">{drawerRow.name}</DrawerRow>
+              <DrawerRow label="Description">{drawerRow.desc}</DrawerRow>
+              <DrawerRow label="Suitable For">{drawerRow.suit}</DrawerRow>
+            </DrawerSection>
+
+            <DrawerSection title="Utilization">
+              <DrawerRow label="Current">
+                <div className="flex items-center gap-2">
+                  <div className="w-24 bg-border-blue rounded-full h-2">
+                    <div className="h-2 rounded-full" style={{
+                      width: `${drawerRow.util}%`,
+                      backgroundColor: drawerRow.util >= 80 ? "var(--color-teal)" : drawerRow.util >= 50 ? "var(--color-action-blue)" : drawerRow.util >= 40 ? "#F59E0B" : "#EF4444",
+                    }} />
+                  </div>
+                  <span className="text-[13px] font-medium">{drawerRow.util}%</span>
+                </div>
+              </DrawerRow>
+              <DrawerRow label="Status">
+                <span className={`inline-flex px-2.5 py-1 text-[12px] font-medium rounded-full ${drawerRow.status === "Active" ? "bg-teal/10 text-teal" : "bg-[#EF4444]/10 text-[#EF4444]"}`}>{drawerRow.status}</span>
+              </DrawerRow>
+            </DrawerSection>
+
+            <DrawerSection title="Recent Activity">
+              <div className="space-y-3">
+                <div className="flex items-start gap-2.5">
+                  <span className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ backgroundColor: "var(--color-teal)" }} />
+                  <div className="flex-1">
+                    <p className="text-[12px] text-text-primary">Utilization updated to {drawerRow.util}%</p>
+                    <p className="text-[11px] text-text-light">System • 1h ago</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2.5">
+                  <span className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ backgroundColor: "var(--color-action-blue)" }} />
+                  <div className="flex-1">
+                    <p className="text-[12px] text-text-primary">Configuration modified</p>
+                    <p className="text-[11px] text-text-light">Admin • 3h ago</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2.5">
+                  <span className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ backgroundColor: "#F59E0B" }} />
+                  <div className="flex-1">
+                    <p className="text-[12px] text-text-primary">Status changed to {drawerRow.status}</p>
+                    <p className="text-[11px] text-text-light">Admin • 2d ago</p>
+                  </div>
+                </div>
+              </div>
+            </DrawerSection>
+          </>
+        )}
+      </Drawer>
 
       {/* Deactivate confirm */}
       <ConfirmDialog
