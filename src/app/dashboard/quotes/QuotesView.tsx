@@ -8,7 +8,7 @@ import {
   Search, ChevronDown, Pencil, Trash2, Plus, Calendar, Bell, SlidersHorizontal,
   ChevronLeft, ChevronRight, AlertCircle, Wallet, Download, ChevronUp, ArrowUpDown,
 } from "lucide-react";
-import type { Quote, QuoteStatus } from "@/types";
+import type { AppNotification, Quote, QuoteStatus } from "@/types";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Modal } from "@/components/dashboard/Modal";
@@ -18,6 +18,141 @@ import { useToast } from "@/components/dashboard/Toast";
 import { api, exportToCsv } from "@/lib/client";
 
 const STATUSES: QuoteStatus[] = ["Draft", "Sent", "Accepted", "Declined", "Expired"];
+
+// The demo workspace anchors "today" to the end of the header range so date
+// filtering stays deterministic across renders.
+const REF_DATE = new Date("2025-05-31T12:00:00Z");
+const DATE_RANGES = ["All time", "Last 7 days", "Last 30 days", "This quarter", "Year to date"];
+
+function rangeStart(range: string): Date | null {
+  const start = new Date(REF_DATE);
+  switch (range) {
+    case "Last 7 days":
+      start.setUTCDate(start.getUTCDate() - 7);
+      return start;
+    case "Last 30 days":
+      start.setUTCDate(start.getUTCDate() - 30);
+      return start;
+    case "This quarter":
+      return new Date("2025-04-01T00:00:00Z");
+    case "Year to date":
+      return new Date("2025-01-01T00:00:00Z");
+    default:
+      return null;
+  }
+}
+
+function inDateRange(iso: string, range: string): boolean {
+  const start = rangeStart(range);
+  if (!start) return true;
+  const d = new Date(`${iso}T12:00:00Z`);
+  return d >= start && d <= REF_DATE;
+}
+
+// Real notification bell: opens a popover that fetches GET /api/notifications and
+// lists items linking to their target, with a genuine empty state. Falls back to
+// the full notifications page via "View all".
+function NotificationBell() {
+  const [open, setOpen] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+  const [notes, setNotes] = useState<AppNotification[]>([]);
+
+  async function load() {
+    setLoading(true);
+    setError(false);
+    try {
+      const res = await api.get<{ data: AppNotification[]; total: number }>("/api/notifications");
+      setNotes(res.data);
+      setLoaded(true);
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function toggle() {
+    setOpen((v) => {
+      const next = !v;
+      if (next && !loaded) void load();
+      return next;
+    });
+  }
+
+  const unread = notes.filter((n) => !n.read).length;
+
+  return (
+    <div className="relative">
+      <button
+        onClick={toggle}
+        aria-label={`Notifications${unread > 0 ? ` (${unread} unread)` : ""}`}
+        className="relative w-9 h-9 flex items-center justify-center bg-white border border-border-soft rounded-lg text-text-muted hover:bg-soft-bg transition-colors"
+      >
+        <Bell className="w-4 h-4" />
+        {loaded && unread > 0 && (
+          <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 flex items-center justify-center bg-[#EF4444] rounded-full text-[10px] font-semibold text-white">
+            {unread}
+          </span>
+        )}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 mt-2 z-40 w-80 bg-white rounded-xl border border-border-soft shadow-lg py-1">
+            <div className="px-3 py-2 border-b border-border-soft">
+              <p className="text-[13px] font-semibold text-text-primary">Notifications</p>
+            </div>
+            <div className="max-h-[320px] overflow-y-auto">
+              {loading && <p className="px-3 py-6 text-center text-[12px] text-text-light">Loading…</p>}
+              {!loading && error && <p className="px-3 py-6 text-center text-[12px] text-[#EF4444]">Could not load notifications.</p>}
+              {!loading && !error && notes.length === 0 && (
+                <p className="px-3 py-6 text-center text-[12px] text-text-light">You&apos;re all caught up.</p>
+              )}
+              {!loading && !error &&
+                notes.map((n) => {
+                  const body = (
+                    <>
+                      <span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${n.read ? "bg-transparent" : "bg-[#3B82F6]"}`} />
+                      <span className="min-w-0 flex-1">
+                        <span className={`block text-[13px] leading-snug ${n.read ? "text-text-body" : "font-semibold text-text-primary"}`}>{n.title}</span>
+                        {n.description && <span className="block text-[12px] text-text-muted mt-0.5 line-clamp-2">{n.description}</span>}
+                        <span className="block text-[11px] text-text-light mt-0.5">{formatDate(n.createdAt.slice(0, 10))}</span>
+                      </span>
+                    </>
+                  );
+                  return n.link ? (
+                    <Link
+                      key={n.id}
+                      href={n.link}
+                      onClick={() => setOpen(false)}
+                      className="w-full flex items-start gap-2.5 px-3 py-2.5 text-left hover:bg-soft-bg transition-colors border-b border-border-soft last:border-b-0"
+                    >
+                      {body}
+                    </Link>
+                  ) : (
+                    <div key={n.id} className="w-full flex items-start gap-2.5 px-3 py-2.5 text-left border-b border-border-soft last:border-b-0">
+                      {body}
+                    </div>
+                  );
+                })}
+            </div>
+            <div className="px-3 py-2 border-t border-border-soft">
+              <Link
+                href="/dashboard/notifications"
+                onClick={() => setOpen(false)}
+                className="block w-full text-center text-[12px] font-medium text-action-blue hover:underline"
+              >
+                View all notifications
+              </Link>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 type Draft = {
   customer: string;
@@ -82,7 +217,8 @@ export default function QuotesView({ items }: { items: Quote[] }) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(8);
   const [pageSizeOpen, setPageSizeOpen] = useState(false);
-  const [dateOpen, setDateOpen] = useState(false);
+  const [dateRange, setDateRange] = useState("All time");
+  const [dateRangeOpen, setDateRangeOpen] = useState(false);
 
   // "More filters" panel (value range + created-date range)
   const [moreOpen, setMoreOpen] = useState(false);
@@ -144,6 +280,7 @@ export default function QuotesView({ items }: { items: Quote[] }) {
     return items.filter((q) => {
       const matchesTab = activeTab === "All" || q.status === activeTab;
       const matchesValue = (min == null || q.total >= min) && (max == null || q.total <= max);
+      const matchesRange = inDateRange(q.createdDate, dateRange);
       const matchesDate =
         (!dateFrom || q.createdDate >= dateFrom) && (!dateTo || q.createdDate <= dateTo);
       const term = query.trim().toLowerCase();
@@ -151,9 +288,9 @@ export default function QuotesView({ items }: { items: Quote[] }) {
         !term ||
         q.id.toLowerCase().includes(term) ||
         q.customer.toLowerCase().includes(term);
-      return matchesTab && matchesValue && matchesDate && matchesQuery;
+      return matchesTab && matchesValue && matchesRange && matchesDate && matchesQuery;
     });
-  }, [items, activeTab, query, valueMin, valueMax, dateFrom, dateTo]);
+  }, [items, activeTab, query, valueMin, valueMax, dateFrom, dateTo, dateRange]);
 
   const sorted = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
@@ -329,20 +466,20 @@ export default function QuotesView({ items }: { items: Quote[] }) {
         <div className="flex items-center gap-3">
           <div className="relative">
             <button
-              onClick={() => setDateOpen((v) => !v)}
+              onClick={() => setDateRangeOpen((v) => !v)}
               className="inline-flex items-center gap-2 px-3.5 py-2 bg-white border border-border-soft rounded-lg text-[13px] font-medium text-text-body hover:bg-soft-bg transition-colors"
             >
-              <Calendar className="w-4 h-4 text-text-light" /> May 1 – May 31, 2025 <ChevronDown className="w-3.5 h-3.5 text-text-light" />
+              <Calendar className="w-4 h-4 text-text-light" /> {dateRange} <ChevronDown className="w-3.5 h-3.5 text-text-light" />
             </button>
-            {dateOpen && (
+            {dateRangeOpen && (
               <>
-                <div className="fixed inset-0 z-10" onClick={() => setDateOpen(false)} />
+                <div className="fixed inset-0 z-10" onClick={() => setDateRangeOpen(false)} />
                 <div className="absolute right-0 mt-1 z-20 w-44 bg-white rounded-lg border border-border-soft shadow-lg py-1">
-                  {["Last 7 days", "Last 30 days", "This quarter", "Year to date"].map((r) => (
+                  {DATE_RANGES.map((r) => (
                     <button
                       key={r}
-                      onClick={() => { setDateOpen(false); toast(`Date range: ${r}`); }}
-                      className="w-full text-left px-3 py-1.5 text-[13px] text-text-body hover:bg-soft-bg"
+                      onClick={() => { setDateRange(r); setPage(1); setDateRangeOpen(false); }}
+                      className={`w-full text-left px-3 py-1.5 text-[13px] hover:bg-soft-bg ${dateRange === r ? "text-action-blue font-medium" : "text-text-body"}`}
                     >
                       {r}
                     </button>
@@ -351,12 +488,7 @@ export default function QuotesView({ items }: { items: Quote[] }) {
               </>
             )}
           </div>
-          <button
-            onClick={() => toast("No new notifications")}
-            className="w-9 h-9 flex items-center justify-center bg-white border border-border-soft rounded-lg text-text-muted hover:bg-soft-bg transition-colors"
-          >
-            <Bell className="w-4 h-4" />
-          </button>
+          <NotificationBell />
           <button
             onClick={handleExport}
             className="inline-flex items-center gap-2 px-3.5 py-2 bg-white border border-border-soft rounded-lg text-[13px] font-medium text-text-body hover:bg-soft-bg transition-colors"

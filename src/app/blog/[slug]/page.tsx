@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
+import { notFound } from "next/navigation";
 import {
   Clock3,
   CheckCircle2,
@@ -14,24 +15,31 @@ import {
   Mail,
 } from "lucide-react";
 import { pageMetadata } from "@/lib/seo";
+import { articles, articleSlugs, getArticleBySlug } from "../articles";
 
-// Humanize a URL slug into a readable blog post title for metadata.
-function titleFromSlug(slug: string): string {
-  return slug
-    .split("-")
-    .filter(Boolean)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ");
+// Prerender every known article slug so detail pages are static (and discoverable
+// for the sitemap's BLOG_SLUGS list).
+export function generateStaticParams() {
+  return articleSlugs.map((slug) => ({ slug }));
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
+  const article = getArticleBySlug(slug);
+  if (!article) {
+    return pageMetadata({
+      title: "Article not found",
+      description: "The article you are looking for could not be found.",
+      path: `/blog/${slug}`,
+      noindex: true,
+    });
+  }
   return pageMetadata({
-    title: titleFromSlug(slug),
-    description:
-      "Reduce risk, improve product quality, and build long-term partnerships with a proven supplier vetting process built for global brands.",
+    title: article.title,
+    description: article.desc,
     path: `/blog/${slug}`,
-    keywords: ["supply chain", "supplier vetting", "e-commerce fulfillment", "logistics strategy"],
+    ogImage: article.image,
+    keywords: ["supply chain", article.topic.toLowerCase(), "e-commerce fulfillment", "logistics strategy"],
   });
 }
 
@@ -54,69 +62,21 @@ const heroBadges = [
   { icon: Handshake, label: "Long-Term Partnership" },
 ];
 
-const tocItems = [
-  "Define Your Requirements",
-  "Research & Shortlist Suppliers",
-  "Evaluate and Verify",
-  "Build Long-Term Partnerships",
-  "Best Practices Checklist",
-  "Final Thoughts",
-];
+export default async function BlogDetailPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const article = getArticleBySlug(slug);
+  if (!article) {
+    notFound();
+  }
 
-const section1Bullets = [
-  "Product specifications & materials",
-  "Quality standards & certifications",
-  "Order volumes & packaging requirements",
-  "Timeline, Incoterms, and compliance needs",
-];
+  // Table of contents derived from the article's body headings.
+  const tocItems = article.body
+    .map((block) => block.heading)
+    .filter((h): h is string => Boolean(h));
 
-const section2Bullets = [
-  "B2B platforms (Alibaba, Made-in-China, Global Sources)",
-  "Industry directories & trade shows",
-  "Referrals from trusted partners or fulfillment experts",
-];
+  // Related = other articles, capped at three.
+  const related = articles.filter((a) => a.slug !== article.slug).slice(0, 3);
 
-const section3Bullets = [
-  "Request business licenses, certifications, and product samples",
-  "Conduct factory audits (in-person or virtual)",
-  "Check references and track record with global clients",
-  "Assess communication speed and professionalism",
-];
-
-const related = [
-  {
-    category: "Logistics",
-    title: "Shipping from China: Best Practices for Global Brands",
-    desc: "Learn the strategies top brands use to reduce shipping costs and transit times.",
-    image: "/images/photo-1494412574643-ff11b0a5c1c3.jpg",
-    date: "Apr 28, 2025",
-    read: "8 min read",
-  },
-  {
-    category: "Supply Chain",
-    title: "How to Improve On-Time Delivery from China",
-    desc: "Actionable tips to ensure your orders arrive when your customers need them.",
-    image: "/images/photo-1565008447742-97f6f38c985c.jpg",
-    date: "Apr 15, 2025",
-    read: "6 min read",
-  },
-  {
-    category: "Fulfillment",
-    title: "China to US Fulfillment: What to Know in 2025",
-    desc: "Key considerations for smooth customs clearance and faster delivery.",
-    image: "/images/photo-1605281317010-fe5ffe798166.jpg",
-    date: "Mar 30, 2025",
-    read: "7 min read",
-  },
-];
-
-const sidebarRelated = [
-  { title: "Shipping from China: Best Practices for Global Brands", date: "Apr 28, 2025", image: "/images/photo-1494412574643-ff11b0a5c1c3.jpg" },
-  { title: "How to Improve On-Time Delivery from China", date: "Apr 15, 2025", image: "/images/photo-1565008447742-97f6f38c985c.jpg" },
-  { title: "China to US Fulfillment: What to Know in 2025", date: "Mar 30, 2025", image: "/images/photo-1605281317010-fe5ffe798166.jpg" },
-];
-
-export default function BlogDetailPage() {
   return (
     <main>
       {/* Breadcrumb */}
@@ -128,7 +88,7 @@ export default function BlogDetailPage() {
           <span className="text-text-light">/</span>
           <Link href="/blog" className="text-text-muted hover:text-deep-navy">Blog</Link>
           <span className="text-text-light">/</span>
-          <span className="text-text-muted truncate">The Ultimate Guide to Vetting Suppliers in China</span>
+          <span className="text-text-muted truncate">{article.title}</span>
         </div>
       </section>
 
@@ -136,13 +96,13 @@ export default function BlogDetailPage() {
       <section className="bg-white border-b border-border-soft">
         <div className="max-w-[1200px] mx-auto px-6 pt-8 pb-9">
           <p className="inline-block text-[11px] font-semibold text-teal bg-teal/10 px-3 py-1 rounded-full uppercase tracking-wide mb-4">
-            Supplier Management
+            {article.category}
           </p>
           <h1 className="text-[34px] lg:text-[42px] font-bold text-deep-navy leading-[1.12] max-w-[760px]">
-            The Ultimate Guide to Vetting Suppliers in China
+            {article.title}
           </h1>
           <p className="mt-4 text-[16px] text-text-body leading-relaxed max-w-[680px]">
-            Reduce risk, improve product quality, and build long-term partnerships with a proven supplier vetting process built for global brands.
+            {article.desc}
           </p>
           <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3">
             <div className="flex items-center gap-3">
@@ -155,8 +115,8 @@ export default function BlogDetailPage() {
                 <p className="text-[12px] text-text-muted">Supply Chain Expert at FulfillMesh</p>
               </div>
             </div>
-            <span className="inline-flex items-center gap-1.5 text-[13px] text-text-muted"><Calendar className="w-4 h-4" /> May 12, 2025</span>
-            <span className="inline-flex items-center gap-1.5 text-[13px] text-text-muted"><Clock3 className="w-4 h-4" /> 10 min read</span>
+            <span className="inline-flex items-center gap-1.5 text-[13px] text-text-muted"><Calendar className="w-4 h-4" /> {article.date}</span>
+            <span className="inline-flex items-center gap-1.5 text-[13px] text-text-muted"><Clock3 className="w-4 h-4" /> {article.read}</span>
             <div className="flex items-center gap-2.5 text-text-muted ml-auto">
               <span className="text-[13px] mr-1">Share this article</span>
               <span className="w-8 h-8 rounded-full bg-soft-bg flex items-center justify-center text-text-muted hover:text-action-blue transition-colors cursor-pointer"><LinkedinIcon className="w-4 h-4" /></span>
@@ -172,8 +132,8 @@ export default function BlogDetailPage() {
         <div className="max-w-[1200px] mx-auto px-6 pt-8">
           <div className="relative rounded-2xl overflow-hidden aspect-[16/7] shadow-card">
             <Image
-              src="/images/photo-1581092918056-0c4c3acd3789.jpg"
-              alt="Supplier vetting and quality control in China"
+              src={article.image}
+              alt={article.title}
               fill
               sizes="(max-width: 1024px) 100vw, 1200px"
               className="object-cover"
@@ -196,114 +156,65 @@ export default function BlogDetailPage() {
         <div className="max-w-[1200px] mx-auto px-6 py-12 grid lg:grid-cols-3 gap-10">
           {/* Main content */}
           <article className="lg:col-span-2 space-y-10">
-            {/* Intro */}
-            <div>
-              <p className="text-[15px] text-text-body leading-relaxed">
-                Finding the right supplier in China can be a game-changer for your business&mdash;unlocking better margins, unique products, and faster growth. But without a structured vetting process, it can also lead to costly mistakes, delays, and quality issues.
-              </p>
-              <p className="mt-4 text-[15px] text-text-body leading-relaxed">
-                This guide walks you through a proven, step-by-step framework to vet suppliers in China with confidence and build partnerships that last.
-              </p>
-              <div className="mt-5 flex items-start gap-3 rounded-xl bg-teal/5 border border-teal/20 p-5">
-                <ShieldCheck className="w-5 h-5 text-teal shrink-0 mt-0.5" />
-                <p className="text-[14px] text-text-body leading-relaxed">
-                  <span className="font-semibold text-deep-navy">Strong supplier vetting reduces risk and builds a resilient supply chain.</span>{" "}
-                  According to our data, brands that follow a structured vetting process see <span className="font-semibold text-teal">47% fewer quality issues</span> and <span className="font-semibold text-teal">32% fewer delays</span>.
-                </p>
+            {article.body.map((block, i) => (
+              <div
+                key={i}
+                id={block.heading ? block.heading.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") : undefined}
+              >
+                {block.heading && (
+                  <h2 className="text-[22px] font-bold text-deep-navy mb-3">{block.heading}</h2>
+                )}
+                {block.paragraphs.map((p, j) => (
+                  <p key={j} className={`text-[15px] text-text-body leading-relaxed ${j > 0 ? "mt-4" : ""}`}>
+                    {p}
+                  </p>
+                ))}
+                {block.bullets && (
+                  <ul className="mt-4 space-y-2.5">
+                    {block.bullets.map((b, k) => (
+                      <li key={k} className="flex items-start gap-2.5 text-[14px] text-text-body">
+                        <CheckCircle2 className="w-4 h-4 text-teal shrink-0 mt-0.5" /> {b}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {i === 0 && (
+                  <div className="mt-5 flex items-start gap-3 rounded-xl bg-teal/5 border border-teal/20 p-5">
+                    <ShieldCheck className="w-5 h-5 text-teal shrink-0 mt-0.5" />
+                    <p className="text-[14px] text-text-body leading-relaxed">
+                      <span className="font-semibold text-deep-navy">A structured process reduces risk and builds a resilient supply chain.</span>{" "}
+                      Brands that follow one see <span className="font-semibold text-teal">47% fewer quality issues</span> and{" "}
+                      <span className="font-semibold text-teal">32% fewer delays</span>.
+                    </p>
+                  </div>
+                )}
               </div>
-            </div>
-
-            {/* Section 1 */}
-            <div id="define-your-requirements" className="grid sm:grid-cols-[1fr_180px] gap-6 items-start">
-              <div>
-                <h2 className="text-[22px] font-bold text-deep-navy mb-2">1. Define Your Requirements Clearly</h2>
-                <p className="text-[14px] text-text-body leading-relaxed mb-4">
-                  A clear brief sets the foundation for a successful partnership. Before contacting suppliers, get specific about:
-                </p>
-                <ul className="space-y-2.5">
-                  {section1Bullets.map((b, i) => (
-                    <li key={i} className="flex items-start gap-2.5 text-[14px] text-text-body">
-                      <CheckCircle2 className="w-4 h-4 text-teal shrink-0 mt-0.5" /> {b}
-                    </li>
-                  ))}
-                </ul>
-                <p className="mt-4 text-[14px] text-text-body leading-relaxed">
-                  The more detail you provide upfront, the easier it is to filter out suppliers who aren&apos;t the right fit.
-                </p>
-              </div>
-              <div className="relative rounded-xl overflow-hidden aspect-square hidden sm:block">
-                <Image src="/images/photo-1586528116311-ad8dd3c8310d.jpg" alt="Defining supplier requirements" fill sizes="180px" className="object-cover" />
-              </div>
-            </div>
-
-            {/* Section 2 */}
-            <div id="research-shortlist-suppliers" className="grid sm:grid-cols-[1fr_180px] gap-6 items-start">
-              <div>
-                <h2 className="text-[22px] font-bold text-deep-navy mb-2">2. Research and Shortlist Potential Suppliers</h2>
-                <p className="text-[14px] text-text-body leading-relaxed mb-4">
-                  Use multiple channels to build a strong supplier list:
-                </p>
-                <ul className="space-y-2.5">
-                  {section2Bullets.map((b, i) => (
-                    <li key={i} className="flex items-start gap-2.5 text-[14px] text-text-body">
-                      <CheckCircle2 className="w-4 h-4 text-teal shrink-0 mt-0.5" /> {b}
-                    </li>
-                  ))}
-                </ul>
-                <p className="mt-4 text-[14px] text-text-body leading-relaxed">
-                  Look beyond pricing&mdash;consider experience, specialization, and export capability.
-                </p>
-              </div>
-              <div className="relative rounded-xl overflow-hidden aspect-square hidden sm:block">
-                <Image src="/images/photo-1494412574643-ff11b0a5c1c3.jpg" alt="Researching potential suppliers" fill sizes="180px" className="object-cover" />
-              </div>
-            </div>
-
-            {/* Section 3 */}
-            <div id="evaluate-and-verify" className="grid sm:grid-cols-[1fr_180px] gap-6 items-start">
-              <div>
-                <h2 className="text-[22px] font-bold text-deep-navy mb-2">3. Evaluate and Verify</h2>
-                <p className="text-[14px] text-text-body leading-relaxed mb-4">
-                  Dig deep into each supplier&apos;s capabilities and reliability:
-                </p>
-                <ul className="space-y-2.5">
-                  {section3Bullets.map((b, i) => (
-                    <li key={i} className="flex items-start gap-2.5 text-[14px] text-text-body">
-                      <CheckCircle2 className="w-4 h-4 text-teal shrink-0 mt-0.5" /> {b}
-                    </li>
-                  ))}
-                </ul>
-                <p className="mt-4 text-[14px] text-text-body leading-relaxed">
-                  A thorough evaluation now prevents expensive problems later.
-                </p>
-              </div>
-              <div className="relative rounded-xl overflow-hidden aspect-square hidden sm:block">
-                <Image src="/images/photo-1565008447742-97f6f38c985c.jpg" alt="Evaluating and verifying suppliers" fill sizes="180px" className="object-cover" />
-              </div>
-            </div>
+            ))}
           </article>
 
           {/* Sidebar */}
           <div className="space-y-6">
             {/* TOC */}
-            <div className="rounded-2xl border border-border-soft p-6 sticky top-6">
-              <p className="text-[12px] font-bold text-text-muted uppercase tracking-wide mb-4">On This Page</p>
-              <ol className="space-y-1">
-                {tocItems.map((item, i) => (
-                  <li key={i}>
-                    <a
-                      href={`#${item.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}`}
-                      className={`flex gap-2.5 text-[13px] py-1.5 transition-colors ${
-                        i === 0 ? "text-action-blue font-medium" : "text-text-body hover:text-action-blue"
-                      }`}
-                    >
-                      <span className="text-action-blue font-bold w-5 shrink-0">{String(i + 1).padStart(2, "0")}</span>
-                      <span className="leading-snug">{item}</span>
-                    </a>
-                  </li>
-                ))}
-              </ol>
-            </div>
+            {tocItems.length > 0 && (
+              <div className="rounded-2xl border border-border-soft p-6 sticky top-6">
+                <p className="text-[12px] font-bold text-text-muted uppercase tracking-wide mb-4">On This Page</p>
+                <ol className="space-y-1">
+                  {tocItems.map((item, i) => (
+                    <li key={i}>
+                      <a
+                        href={`#${item.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}`}
+                        className={`flex gap-2.5 text-[13px] py-1.5 transition-colors ${
+                          i === 0 ? "text-action-blue font-medium" : "text-text-body hover:text-action-blue"
+                        }`}
+                      >
+                        <span className="text-action-blue font-bold w-5 shrink-0">{String(i + 1).padStart(2, "0")}</span>
+                        <span className="leading-snug">{item}</span>
+                      </a>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
 
             {/* Author Card */}
             <div className="rounded-2xl border border-border-soft p-6">
@@ -330,8 +241,8 @@ export default function BlogDetailPage() {
             <div className="rounded-2xl border border-border-soft p-6">
               <p className="text-[14px] font-bold text-deep-navy mb-4">Related Resources</p>
               <div className="space-y-4">
-                {sidebarRelated.map((r, i) => (
-                  <Link key={i} href="/blog/shipping-from-china" className="flex items-start gap-3 group">
+                {related.map((r) => (
+                  <Link key={r.slug} href={`/blog/${r.slug}`} className="flex items-start gap-3 group">
                     <div className="relative w-14 h-14 rounded-lg overflow-hidden shrink-0 bg-soft-bg">
                       <Image src={r.image} alt={r.title} fill sizes="56px" className="object-cover" />
                     </div>
@@ -373,10 +284,10 @@ export default function BlogDetailPage() {
         <div className="max-w-[1200px] mx-auto px-6 py-12">
           <h2 className="text-[24px] font-bold text-deep-navy mb-6">Related Articles</h2>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {related.map((a, i) => (
+            {related.map((a) => (
               <Link
-                key={i}
-                href="/blog/shipping-from-china"
+                key={a.slug}
+                href={`/blog/${a.slug}`}
                 className="group rounded-2xl border border-border-soft bg-white overflow-hidden hover:shadow-card transition-all flex flex-col"
               >
                 <div className="relative aspect-[16/9] overflow-hidden bg-deep-navy">

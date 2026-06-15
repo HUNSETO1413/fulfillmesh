@@ -99,7 +99,11 @@ export default function WarehouseOperationsPage() {
   const [activityExpanded, setActivityExpanded] = useState(false);
   const [viewing, setViewing] = useState<WhRow | null>(null);
   const tableRef = useRef<HTMLDivElement>(null);
-  const inboundRef = useRef<HTMLDivElement>(null);
+
+  // Smooth-scroll to a section by its DOM id (used by scrollTo stat cards).
+  function scrollToSection(id: string) {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -369,8 +373,8 @@ export default function WarehouseOperationsPage() {
               {s.href && (
                 <Link href={s.href} className="inline-block text-[12px] text-action-blue hover:underline mt-2 font-medium">View details</Link>
               )}
-              {s.scrollTo === "inbound" && (
-                <button onClick={() => inboundRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })} className="text-[12px] text-action-blue hover:underline mt-2 font-medium">View details</button>
+              {s.scrollTo && (
+                <button onClick={() => scrollToSection(s.scrollTo as string)} className="text-[12px] text-action-blue hover:underline mt-2 font-medium">View details</button>
               )}
             </div>
           );
@@ -577,7 +581,7 @@ export default function WarehouseOperationsPage() {
         </div>
 
         {/* Recent Inbound Tasks (live Receive / Putaway) */}
-        <div ref={inboundRef} className={card + " p-5"}>
+        <div id="inbound" className={card + " p-5"}>
           <h3 className="text-[14px] font-semibold text-text-primary mb-4">Open Inbound Tasks</h3>
           <div className="space-y-3">
             {inbound.map((s) => (

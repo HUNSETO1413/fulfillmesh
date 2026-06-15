@@ -24,6 +24,37 @@ const STATUSES: ShipmentStatus[] = [
 ];
 const CARRIERS = ["FedEx", "UPS", "USPS", "DHL"];
 
+// The demo workspace anchors "today" to the end of the header range so date
+// filtering stays deterministic across renders.
+const REF_DATE = new Date("2025-05-18T12:00:00Z");
+const DATE_RANGES = ["All time", "Last 7 days", "Last 30 days", "This quarter", "Year to date"];
+
+function rangeStart(range: string): Date | null {
+  const start = new Date(REF_DATE);
+  switch (range) {
+    case "Last 7 days":
+      start.setUTCDate(start.getUTCDate() - 7);
+      return start;
+    case "Last 30 days":
+      start.setUTCDate(start.getUTCDate() - 30);
+      return start;
+    case "This quarter":
+      return new Date("2025-04-01T00:00:00Z");
+    case "Year to date":
+      return new Date("2025-01-01T00:00:00Z");
+    default:
+      return null;
+  }
+}
+
+function inDateRange(iso: string | undefined, range: string): boolean {
+  const start = rangeStart(range);
+  if (!start) return true;
+  if (!iso) return false;
+  const d = new Date(`${iso}T12:00:00Z`);
+  return d >= start && d <= REF_DATE;
+}
+
 const carrierColors: Record<string, string> = {
   FedEx: "#4D148C",
   UPS: "#7B5B2E",
@@ -110,6 +141,7 @@ export default function ShipmentsView({ items }: { items: Shipment[] }) {
   const [pageSize, setPageSize] = useState(8);
   const [pageSizeOpen, setPageSizeOpen] = useState(false);
   const [dateOpen, setDateOpen] = useState(false);
+  const [dateRange, setDateRange] = useState("All time");
 
   const [carrierFilter, setCarrierFilter] = useState<string>("");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -158,15 +190,19 @@ export default function ShipmentsView({ items }: { items: Shipment[] }) {
     return items.filter((s) => {
       const matchesTab = activeTab === "All Shipments" || s.status === activeTab;
       const matchesCarrier = !carrierFilter || s.carrier === carrierFilter;
+      const matchesDate =
+        dateRange === "All time" ||
+        inDateRange(s.shippedDate, dateRange) ||
+        inDateRange(s.estimatedDelivery, dateRange);
       const q = query.trim().toLowerCase();
       const matchesQuery =
         !q ||
         s.id.toLowerCase().includes(q) ||
         s.trackingNumber.toLowerCase().includes(q) ||
         (s.orderId?.toLowerCase().includes(q) ?? false);
-      return matchesTab && matchesCarrier && matchesQuery;
+      return matchesTab && matchesCarrier && matchesDate && matchesQuery;
     });
-  }, [items, activeTab, carrierFilter, query]);
+  }, [items, activeTab, carrierFilter, dateRange, query]);
 
   const sorted = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
@@ -347,19 +383,21 @@ export default function ShipmentsView({ items }: { items: Shipment[] }) {
           <div className="relative">
             <button
               onClick={() => setDateOpen((v) => !v)}
-              className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] font-medium text-[#475569] shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
+              className={`flex items-center gap-2 px-3.5 py-2 bg-white border rounded-lg text-[13px] font-medium shadow-[0_1px_2px_rgba(0,0,0,0.05)] ${
+                dateRange !== "All time" ? "border-[#3B82F6] text-[#3B82F6]" : "border-[#E2E8F0] text-[#475569]"
+              }`}
             >
-              <Calendar className="w-4 h-4" /> May 12 – May 18, 2025 <ChevronDown className="w-3.5 h-3.5" />
+              <Calendar className="w-4 h-4" /> {dateRange === "All time" ? "All time" : dateRange} <ChevronDown className="w-3.5 h-3.5" />
             </button>
             {dateOpen && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setDateOpen(false)} />
                 <div className="absolute right-0 mt-1 z-20 w-44 bg-white rounded-lg border border-[#E2E8F0] shadow-lg py-1">
-                  {["Last 7 days", "Last 30 days", "This quarter", "Year to date"].map((r) => (
+                  {DATE_RANGES.map((r) => (
                     <button
                       key={r}
-                      onClick={() => { setDateOpen(false); toast(`Date range: ${r}`); }}
-                      className="w-full text-left px-3 py-1.5 text-[13px] text-[#374151] hover:bg-[#F8FAFC]"
+                      onClick={() => { setDateRange(r); setPage(1); setDateOpen(false); }}
+                      className={`w-full text-left px-3 py-1.5 text-[13px] hover:bg-[#F8FAFC] ${dateRange === r ? "text-[#3B82F6] font-medium" : "text-[#374151]"}`}
                     >
                       {r}
                     </button>

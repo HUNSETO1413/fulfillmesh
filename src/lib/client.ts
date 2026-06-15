@@ -1,6 +1,10 @@
 // Client-side helpers for talking to the REST API from dashboard components and
 // for exporting table data to CSV.
 
+// The auth probe is expected to 401 for logged-out visitors; callers handle it
+// themselves, so we must NOT bounce the browser to /login for this endpoint.
+const AUTH_PROBE_URL = "/api/auth/me";
+
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
   const res = await fetch(url, {
     method,
@@ -8,6 +12,12 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
+    // Global 401 handling: an expired/missing session should bounce the user to
+    // the login page instead of surfacing a raw error to the UI. The auth probe
+    // is exempt so logged-out callers can detect "no user" gracefully.
+    if (res.status === 401 && typeof window !== "undefined" && url !== AUTH_PROBE_URL) {
+      window.location.assign("/login");
+    }
     const data = await res.json().catch(() => ({}));
     throw new Error((data as { error?: string }).error || `Request failed (${res.status})`);
   }

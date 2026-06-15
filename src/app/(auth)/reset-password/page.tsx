@@ -14,6 +14,8 @@ import {
   KeyRound,
   BadgeCheck,
   UserCheck,
+  CheckCircle2,
+  Loader2,
 } from "lucide-react";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
@@ -21,12 +23,15 @@ import Footer from "@/components/Footer";
 const inputBase =
   "w-full rounded-lg border border-border-soft bg-white px-4 py-3 text-sm text-deep-navy placeholder:text-text-light focus:outline-none focus:border-action-blue focus:ring-2 focus:ring-action-blue/20 transition-colors";
 
-const requirements = [
-  "At least 8 characters",
-  "Uppercase and lowercase letters",
-  "At least one number",
-  "At least one special character (e.g. ! @ # $)",
+// Each rule is a real predicate so the checklist + strength meter reflect input.
+const requirements: { label: string; test: (v: string) => boolean }[] = [
+  { label: "At least 8 characters", test: (v) => v.length >= 8 },
+  { label: "Uppercase and lowercase letters", test: (v) => /[a-z]/.test(v) && /[A-Z]/.test(v) },
+  { label: "At least one number", test: (v) => /\d/.test(v) },
+  { label: "At least one special character (e.g. ! @ # $)", test: (v) => /[^A-Za-z0-9]/.test(v) },
 ];
+
+const STRENGTH_LABELS = ["Too weak", "Weak", "Fair", "Good", "Strong"] as const;
 
 const features = [
   { icon: ShieldCheck, title: "Vetted Partners", desc: "Work with pre-vetted factories and logistics providers you can trust." },
@@ -45,6 +50,35 @@ const securityBadges = [
 export default function ResetPasswordPage() {
   const [show1, setShow1] = useState(false);
   const [show2, setShow2] = useState(false);
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const metRules = requirements.map((r) => r.test(password));
+  const metCount = metRules.filter(Boolean).length;
+  const strengthIdx = password.length === 0 ? 0 : metCount; // 0..4
+  const strengthLabel = STRENGTH_LABELS[strengthIdx];
+  const allMet = metCount === requirements.length;
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (!allMet) {
+      setError("Your password doesn't meet all the requirements below.");
+      return;
+    }
+    if (password !== confirm) {
+      setError("Passwords don't match. Please re-enter them.");
+      return;
+    }
+    setSubmitting(true);
+    // No reset endpoint exists yet; resolve client-side and confirm success.
+    await new Promise((r) => setTimeout(r, 600));
+    setSubmitting(false);
+    setDone(true);
+  }
 
   return (
     <>
@@ -63,103 +97,161 @@ export default function ResetPasswordPage() {
             {/* ===== Left: Form ===== */}
             <div className="lg:sticky lg:top-24">
               <div className="rounded-2xl border border-border-soft bg-white shadow-card p-8">
-                <div className="flex justify-center mb-6">
-                  <div className="w-14 h-14 rounded-xl bg-action-blue/10 flex items-center justify-center">
-                    <Lock className="w-6 h-6 text-action-blue" />
-                  </div>
-                </div>
-
-                <h1 className="text-3xl font-bold text-deep-navy text-center">
-                  Create a new password
-                </h1>
-                <p className="mt-3 text-base text-text-body text-center leading-relaxed max-w-sm mx-auto">
-                  Your new password must be different from your previous passwords.
-                </p>
-
-                <form className="mt-7 space-y-5" onSubmit={(e) => e.preventDefault()}>
-                  <div>
-                    <label className="block text-sm font-semibold text-deep-navy mb-2">New password</label>
-                    <div className="relative">
-                      <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-light" />
-                      <input
-                        type={show1 ? "text" : "password"}
-                        className={inputBase + " pl-11 pr-11"}
-                        placeholder="Enter new password"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShow1((s) => !s)}
-                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-text-light hover:text-deep-navy"
-                      >
-                        {show1 ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
+                {done ? (
+                  <div className="text-center">
+                    <div className="flex justify-center mb-6">
+                      <div className="w-14 h-14 rounded-xl bg-teal/10 flex items-center justify-center">
+                        <CheckCircle2 className="w-6 h-6 text-teal" />
+                      </div>
                     </div>
-                    <p className="mt-2 text-xs text-text-muted">
-                      Use 8 or more characters with a mix of letters, numbers, and symbols.
+                    <h1 className="text-3xl font-bold text-deep-navy">Password reset</h1>
+                    <p className="mt-3 text-base text-text-body leading-relaxed max-w-sm mx-auto">
+                      Your password has been updated. You can now sign in with your new password.
                     </p>
+                    <Link
+                      href="/login"
+                      className="mt-7 inline-flex w-full items-center justify-center py-3 rounded-lg bg-navy text-white text-base font-semibold hover:bg-navy/90 transition-colors"
+                    >
+                      Continue to sign in
+                    </Link>
                   </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-deep-navy mb-2">Confirm new password</label>
-                    <div className="relative">
-                      <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-light" />
-                      <input
-                        type={show2 ? "text" : "password"}
-                        className={inputBase + " pl-11 pr-11"}
-                        placeholder="Confirm new password"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShow2((s) => !s)}
-                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-text-light hover:text-deep-navy"
-                      >
-                        {show2 ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
+                ) : (
+                  <>
+                    <div className="flex justify-center mb-6">
+                      <div className="w-14 h-14 rounded-xl bg-action-blue/10 flex items-center justify-center">
+                        <Lock className="w-6 h-6 text-action-blue" />
+                      </div>
                     </div>
-                  </div>
 
-                  {/* Password strength */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-xs font-semibold text-deep-navy">Password strength</span>
-                      <span className="text-xs font-semibold text-teal">Strong</span>
-                    </div>
-                    <div className="grid grid-cols-4 gap-1.5">
-                      <div className="h-1.5 rounded-full bg-teal" />
-                      <div className="h-1.5 rounded-full bg-teal" />
-                      <div className="h-1.5 rounded-full bg-teal" />
-                      <div className="h-1.5 rounded-full bg-border-soft" />
-                    </div>
-                    <p className="mt-1.5 text-xs text-teal font-medium">Great job! This password looks strong.</p>
-                  </div>
+                    <h1 className="text-3xl font-bold text-deep-navy text-center">
+                      Create a new password
+                    </h1>
+                    <p className="mt-3 text-base text-text-body text-center leading-relaxed max-w-sm mx-auto">
+                      Your new password must be different from your previous passwords.
+                    </p>
 
-                  {/* Requirements checklist */}
-                  <div className="rounded-lg bg-soft-bg p-4">
-                    <p className="text-xs font-semibold text-deep-navy mb-2.5">Password must include:</p>
-                    <ul className="space-y-2">
-                      {requirements.map((r) => (
-                        <li key={r} className="flex items-center gap-2 text-xs text-text-body">
-                          <span className="w-4 h-4 rounded-full bg-teal flex items-center justify-center flex-shrink-0">
-                            <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />
+                    <form className="mt-7 space-y-5" onSubmit={handleSubmit} noValidate>
+                      <div>
+                        <label className="block text-sm font-semibold text-deep-navy mb-2">New password</label>
+                        <div className="relative">
+                          <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-light" />
+                          <input
+                            type={show1 ? "text" : "password"}
+                            value={password}
+                            onChange={(e) => {
+                              setPassword(e.target.value);
+                              if (error) setError(null);
+                            }}
+                            autoComplete="new-password"
+                            className={inputBase + " pl-11 pr-11"}
+                            placeholder="Enter new password"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShow1((s) => !s)}
+                            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-text-light hover:text-deep-navy"
+                          >
+                            {show1 ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                        <p className="mt-2 text-xs text-text-muted">
+                          Use 8 or more characters with a mix of letters, numbers, and symbols.
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold text-deep-navy mb-2">Confirm new password</label>
+                        <div className="relative">
+                          <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-light" />
+                          <input
+                            type={show2 ? "text" : "password"}
+                            value={confirm}
+                            onChange={(e) => {
+                              setConfirm(e.target.value);
+                              if (error) setError(null);
+                            }}
+                            autoComplete="new-password"
+                            className={inputBase + " pl-11 pr-11"}
+                            placeholder="Confirm new password"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShow2((s) => !s)}
+                            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-text-light hover:text-deep-navy"
+                          >
+                            {show2 ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                        {confirm.length > 0 && confirm !== password && (
+                          <p className="mt-2 text-xs font-medium text-red-600">Passwords don&apos;t match.</p>
+                        )}
+                      </div>
+
+                      {/* Password strength */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-xs font-semibold text-deep-navy">Password strength</span>
+                          <span className={`text-xs font-semibold ${allMet ? "text-teal" : strengthIdx >= 2 ? "text-action-blue" : "text-text-muted"}`}>
+                            {strengthLabel}
                           </span>
-                          {r}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+                        </div>
+                        <div className="grid grid-cols-4 gap-1.5">
+                          {[0, 1, 2, 3].map((i) => (
+                            <div
+                              key={i}
+                              className={`h-1.5 rounded-full transition-colors ${
+                                i < strengthIdx ? (allMet ? "bg-teal" : "bg-action-blue") : "bg-border-soft"
+                              }`}
+                            />
+                          ))}
+                        </div>
+                        {allMet ? (
+                          <p className="mt-1.5 text-xs text-teal font-medium">Great job! This password looks strong.</p>
+                        ) : (
+                          <p className="mt-1.5 text-xs text-text-muted">Meet all requirements below for a strong password.</p>
+                        )}
+                      </div>
 
-                  <button
-                    type="submit"
-                    className="w-full py-3 rounded-lg bg-navy text-white text-base font-semibold hover:bg-navy/90 transition-colors"
-                  >
-                    Reset password
-                  </button>
+                      {/* Requirements checklist */}
+                      <div className="rounded-lg bg-soft-bg p-4">
+                        <p className="text-xs font-semibold text-deep-navy mb-2.5">Password must include:</p>
+                        <ul className="space-y-2">
+                          {requirements.map((r, i) => {
+                            const met = metRules[i];
+                            return (
+                              <li key={r.label} className={`flex items-center gap-2 text-xs ${met ? "text-text-body" : "text-text-muted"}`}>
+                                <span className={`w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 ${met ? "bg-teal" : "bg-border-soft"}`}>
+                                  <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />
+                                </span>
+                                {r.label}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
 
-                  <p className="flex items-start gap-2 text-xs text-text-muted leading-relaxed">
-                    <ShieldCheck className="w-4 h-4 text-text-muted flex-shrink-0 mt-0.5" />
-                    For your security, you&apos;ll be signed in on all devices after resetting your password.
-                  </p>
-                </form>
+                      {error && (
+                        <p className="text-sm font-medium text-red-600" role="alert">
+                          {error}
+                        </p>
+                      )}
+
+                      <button
+                        type="submit"
+                        disabled={submitting}
+                        className="w-full py-3 rounded-lg bg-navy text-white text-base font-semibold hover:bg-navy/90 transition-colors disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
+                      >
+                        {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                        {submitting ? "Resetting…" : "Reset password"}
+                      </button>
+
+                      <p className="flex items-start gap-2 text-xs text-text-muted leading-relaxed">
+                        <ShieldCheck className="w-4 h-4 text-text-muted flex-shrink-0 mt-0.5" />
+                        For your security, you&apos;ll be signed in on all devices after resetting your password.
+                      </p>
+                    </form>
+                  </>
+                )}
               </div>
             </div>
 

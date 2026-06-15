@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+import { api } from "@/lib/client";
 import {
   LayoutDashboard,
   Package,
@@ -89,6 +91,27 @@ interface DashboardSidebarProps {
   onMobileClose: () => void;
 }
 
+interface CurrentUser {
+  name: string;
+  email: string;
+  role: string;
+}
+
+// Placeholder shown while loading or when no user session is available.
+const PLACEHOLDER_USER: CurrentUser = {
+  name: "FulfillMesh Co.",
+  email: "",
+  role: "Admin",
+};
+
+// Derive up-to-two-letter initials from a display name (e.g. "Jane Doe" -> "JD").
+function initialsFor(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "AD";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
 export default function DashboardSidebar({
   collapsed,
   onToggleCollapse,
@@ -96,6 +119,23 @@ export default function DashboardSidebar({
   onMobileClose,
 }: DashboardSidebarProps) {
   const pathname = usePathname();
+  const [user, setUser] = useState<CurrentUser>(PLACEHOLDER_USER);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<{ user: { name: string; email: string; role: string } | null }>("/api/auth/me")
+      .then((res) => {
+        if (!cancelled && res.user) setUser(res.user);
+      })
+      .catch(() => {
+        // Logged-out / probe failure: keep the placeholder. The /api/auth/me
+        // probe is exempt from the global 401 redirect in lib/client.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const isActive = (href: string) => {
     if (href === "/dashboard") return pathname === "/dashboard";
@@ -148,12 +188,12 @@ export default function DashboardSidebar({
       <div className="shrink-0 p-3">
         <div className={`flex items-center gap-2.5 px-2 py-2 rounded-lg ${collapsed ? "justify-center" : ""}`}>
           <div className="w-8 h-8 rounded-full bg-[#3B82F6] flex items-center justify-center shrink-0">
-            <span className="text-white text-[11px] font-semibold">AD</span>
+            <span className="text-white text-[11px] font-semibold">{initialsFor(user.name)}</span>
           </div>
           {!collapsed && (
             <div className="min-w-0 flex-1">
-              <p className="text-[13px] font-medium text-white truncate">FulfillMesh Co.</p>
-              <p className="text-[11px] text-[#94A3B8] truncate">Admin</p>
+              <p className="text-[13px] font-medium text-white truncate">{user.name}</p>
+              <p className="text-[11px] text-[#94A3B8] truncate">{user.role}</p>
             </div>
           )}
         </div>

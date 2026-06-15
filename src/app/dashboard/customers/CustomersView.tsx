@@ -378,21 +378,23 @@ export default function CustomersView({ items }: { items: Customer[] }) {
           <div className="relative">
             <button
               onClick={() => setDateOpen((v) => !v)}
-              className="inline-flex items-center gap-2 px-3.5 py-2 bg-white border border-border-soft rounded-lg text-[13px] font-medium text-text-body hover:bg-soft-bg"
+              className={`inline-flex items-center gap-2 px-3.5 py-2 bg-white border rounded-lg text-[13px] font-medium hover:bg-soft-bg ${
+                joinRange !== "All Time" ? "border-action-blue text-action-blue" : "border-border-soft text-text-body"
+              }`}
             >
               <Calendar className="w-4 h-4" />
-              May 12 – May 18, 2025
+              {joinRange === "All Time" ? "All Time" : joinRange}
               <ChevronDown className="w-3.5 h-3.5" />
             </button>
             {dateOpen && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setDateOpen(false)} />
                 <div className="absolute right-0 mt-1 z-20 w-44 bg-white rounded-lg border border-border-soft shadow-lg py-1">
-                  {["Last 7 days", "Last 30 days", "This quarter", "Year to date"].map((r) => (
+                  {JOIN_RANGES.map((r) => (
                     <button
                       key={r}
-                      onClick={() => { setDateOpen(false); toast(`Date range: ${r}`); }}
-                      className="w-full text-left px-3 py-1.5 text-[13px] text-text-body hover:bg-soft-bg"
+                      onClick={() => { setJoinRange(r); setPage(1); setDateOpen(false); }}
+                      className={`w-full text-left px-3 py-1.5 text-[13px] hover:bg-soft-bg ${joinRange === r ? "text-action-blue font-medium" : "text-text-body"}`}
                     >
                       {r}
                     </button>

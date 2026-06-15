@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   Settings as SettingsIcon, Download, Save, CheckCircle2, ChevronDown, ChevronRight,
   Package, Warehouse, Bell, Shield,
@@ -280,6 +282,7 @@ const prefTabs = ["Pricing", "Documents", "Shipping", "Returns", "Billing", "API
 
 export default function SystemSettingsPage() {
   const { toast } = useToast();
+  const router = useRouter();
   const [prefTab, setPrefTab] = useState("Pricing");
   const [integrations, setIntegrations] = useState<IntegrationRow[]>(integrationsTable);
   const [automationRules, setAutomationRules] = useState<AutomationRule[]>(initialAutomationRules);
@@ -359,7 +362,18 @@ export default function SystemSettingsPage() {
   const runQuickAction = (label: string) => {
     if (busyAction) return;
     if (label === "View Audit Logs") {
-      setLogsOpen(true);
+      router.push("/dashboard/audit-logs");
+      return;
+    }
+    if (label === "Download System Config") {
+      // Generate a real file download of the current configuration.
+      exportToJson("system-config", {
+        settings: values,
+        integrations,
+        automationRules,
+        exportedAt: new Date().toISOString(),
+      });
+      toast("System configuration downloaded");
       return;
     }
     if (label === "Clear System Cache") {
@@ -375,7 +389,6 @@ export default function SystemSettingsPage() {
     setBusyAction(label);
     setTimeout(() => {
       setBusyAction(null);
-      if (label === "Download System Config") exportToJson("system-config", { settings: values, exportedAt: new Date().toISOString() });
       toast(action.done);
     }, 1000);
   };
@@ -631,9 +644,9 @@ export default function SystemSettingsPage() {
           <Card className="p-5">
             <h3 className="text-[14px] font-semibold text-text-primary mb-3">Help &amp; Resources</h3>
             <div className="space-y-2 text-[13px]">
-              <a href="/resources" className="block text-action-blue hover:underline cursor-pointer">Configuration Guide</a>
-              <a href="/resources" className="block text-action-blue hover:underline cursor-pointer">API Documentation</a>
-              <a href="/contact" className="block text-action-blue hover:underline cursor-pointer">Contact Support</a>
+              <Link href="/resources/guides" className="block text-action-blue hover:underline cursor-pointer">Configuration Guide</Link>
+              <Link href="/resources/api-documentation" className="block text-action-blue hover:underline cursor-pointer">API Documentation</Link>
+              <Link href="/contact" className="block text-action-blue hover:underline cursor-pointer">Contact Support</Link>
             </div>
           </Card>
         </div>

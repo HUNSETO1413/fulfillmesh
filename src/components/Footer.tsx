@@ -1,4 +1,9 @@
+"use client";
+
+import { useState } from "react";
 import Link from "next/link";
+import { Loader2, CheckCircle2 } from "lucide-react";
+import { api } from "@/lib/client";
 
 const footerLinks = {
   solutions: {
@@ -46,7 +51,37 @@ function SocialIcon({ children, label }: { children: React.ReactNode; label: str
   );
 }
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export default function Footer() {
+  const [email, setEmail] = useState("");
+  const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [feedback, setFeedback] = useState("");
+
+  const handleSubscribe = async () => {
+    const value = email.trim();
+    if (!EMAIL_RE.test(value)) {
+      setStatus("error");
+      setFeedback("Please enter a valid email address.");
+      return;
+    }
+    setStatus("loading");
+    setFeedback("");
+    try {
+      await api.post("/api/submissions", {
+        type: "contact",
+        name: "Newsletter subscriber",
+        email: value,
+      });
+      setStatus("success");
+      setFeedback("You're subscribed! Watch your inbox for fulfillment insights.");
+      setEmail("");
+    } catch {
+      setStatus("error");
+      setFeedback("Something went wrong. Please try again.");
+    }
+  };
+
   return (
     <footer className="bg-white border-t border-border-soft">
       <div className="max-w-[1200px] mx-auto px-6">
@@ -81,16 +116,47 @@ export default function Footer() {
             <p className="text-[13px] text-text-muted leading-relaxed mb-4">
               Get insights, updates, and tips on fulfillment and e-commerce.
             </p>
-            <div className="space-y-3">
-              <input
-                type="email"
-                placeholder="Enter your email"
-                className="w-full rounded-lg border border-border-soft bg-soft-bg px-3.5 py-2.5 text-[14px] text-text-primary placeholder:text-text-light focus:outline-none focus:border-teal focus:ring-1 focus:ring-teal/30 transition-colors"
-              />
-              <button className="w-full rounded-lg bg-deep-navy text-white text-[14px] font-semibold py-2.5 hover:bg-navy transition-colors">
-                Subscribe
-              </button>
-            </div>
+            {status === "success" ? (
+              <div className="flex items-start gap-2.5 rounded-lg border border-teal/30 bg-teal/5 px-3.5 py-3">
+                <CheckCircle2 className="w-5 h-5 shrink-0 text-teal mt-px" />
+                <p className="text-[13px] text-text-body leading-relaxed">{feedback}</p>
+              </div>
+            ) : (
+              <form
+                className="space-y-3"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void handleSubscribe();
+                }}
+                noValidate
+              >
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (status === "error") setStatus("idle");
+                  }}
+                  placeholder="Enter your email"
+                  aria-invalid={status === "error"}
+                  aria-label="Email address"
+                  className="w-full rounded-lg border border-border-soft bg-soft-bg px-3.5 py-2.5 text-[14px] text-text-primary placeholder:text-text-light focus:outline-none focus:border-teal focus:ring-1 focus:ring-teal/30 transition-colors"
+                />
+                <button
+                  type="submit"
+                  disabled={status === "loading"}
+                  className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-deep-navy text-white text-[14px] font-semibold py-2.5 hover:bg-navy transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {status === "loading" && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {status === "loading" ? "Subscribing…" : "Subscribe"}
+                </button>
+                {status === "error" && (
+                  <p className="text-[12px] text-red-500 leading-snug" role="alert">
+                    {feedback}
+                  </p>
+                )}
+              </form>
+            )}
           </div>
         </div>
 

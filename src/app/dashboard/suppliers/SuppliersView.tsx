@@ -5,12 +5,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Users, CheckCircle2, Target, Clock, ArrowUpRight,
-  Search, ChevronDown, Pencil, Trash2, Plus, Download, Calendar, Bell,
+  Search, ChevronDown, Pencil, Trash2, Plus, Download, Bell,
   ChevronLeft, ChevronRight, ChevronUp, ArrowUpDown,
 } from "lucide-react";
-import type { Supplier, SupplierStatus } from "@/types";
+import type { AppNotification, Supplier, SupplierStatus } from "@/types";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
-import { formatNumber } from "@/lib/format";
+import { formatDate, formatNumber } from "@/lib/format";
 import { Modal } from "@/components/dashboard/Modal";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { Field, TextInput, NumberInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
@@ -144,6 +144,110 @@ function PerfRing({ pct }: { pct: number }) {
   );
 }
 
+// Real notification bell: opens a popover that fetches GET /api/notifications and
+// lists items linking to their target, with a genuine empty state.
+function NotificationBell() {
+  const [open, setOpen] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+  const [notes, setNotes] = useState<AppNotification[]>([]);
+
+  async function load() {
+    setLoading(true);
+    setError(false);
+    try {
+      const res = await api.get<{ data: AppNotification[]; total: number }>("/api/notifications");
+      setNotes(res.data);
+      setLoaded(true);
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function toggle() {
+    setOpen((v) => {
+      const next = !v;
+      if (next && !loaded) void load();
+      return next;
+    });
+  }
+
+  const unread = notes.filter((n) => !n.read).length;
+
+  return (
+    <div className="relative">
+      <button
+        onClick={toggle}
+        aria-label={`Notifications${unread > 0 ? ` (${unread} unread)` : ""}`}
+        className="relative w-9 h-9 flex items-center justify-center bg-white border border-border-soft rounded-lg text-text-muted hover:bg-soft-bg"
+      >
+        <Bell className="w-4 h-4" />
+        {loaded && unread > 0 && (
+          <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 flex items-center justify-center bg-[#EF4444] rounded-full text-[10px] font-semibold text-white">
+            {unread}
+          </span>
+        )}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 mt-2 z-40 w-80 bg-white rounded-xl border border-border-soft shadow-lg py-1">
+            <div className="px-3 py-2 border-b border-border-soft">
+              <p className="text-[13px] font-semibold text-deep-navy">Notifications</p>
+            </div>
+            <div className="max-h-[320px] overflow-y-auto">
+              {loading && <p className="px-3 py-6 text-center text-[12px] text-text-light">Loading…</p>}
+              {!loading && error && <p className="px-3 py-6 text-center text-[12px] text-[#EF4444]">Could not load notifications.</p>}
+              {!loading && !error && notes.length === 0 && (
+                <p className="px-3 py-6 text-center text-[12px] text-text-light">You&apos;re all caught up.</p>
+              )}
+              {!loading && !error &&
+                notes.map((n) => {
+                  const body = (
+                    <>
+                      <span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${n.read ? "bg-transparent" : "bg-action-blue"}`} />
+                      <span className="min-w-0 flex-1">
+                        <span className={`block text-[13px] leading-snug ${n.read ? "text-text-body" : "font-semibold text-deep-navy"}`}>{n.title}</span>
+                        {n.description && <span className="block text-[12px] text-text-muted mt-0.5 line-clamp-2">{n.description}</span>}
+                        <span className="block text-[11px] text-text-light mt-0.5">{formatDate(n.createdAt.slice(0, 10))}</span>
+                      </span>
+                    </>
+                  );
+                  return n.link ? (
+                    <Link
+                      key={n.id}
+                      href={n.link}
+                      onClick={() => setOpen(false)}
+                      className="w-full flex items-start gap-2.5 px-3 py-2.5 text-left hover:bg-soft-bg transition-colors border-b border-border-soft last:border-b-0"
+                    >
+                      {body}
+                    </Link>
+                  ) : (
+                    <div key={n.id} className="w-full flex items-start gap-2.5 px-3 py-2.5 text-left border-b border-border-soft last:border-b-0">
+                      {body}
+                    </div>
+                  );
+                })}
+            </div>
+            <div className="px-3 py-2 border-t border-border-soft">
+              <Link
+                href="/dashboard/notifications"
+                onClick={() => setOpen(false)}
+                className="block w-full text-center text-[12px] font-medium text-action-blue hover:underline"
+              >
+                View all notifications
+              </Link>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function SuppliersView({ items }: { items: Supplier[] }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -153,7 +257,6 @@ export default function SuppliersView({ items }: { items: Supplier[] }) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [pageSizeOpen, setPageSizeOpen] = useState(false);
-  const [dateOpen, setDateOpen] = useState(false);
   const circumference = 2 * Math.PI * 38;
 
   const [categoryFilter, setCategoryFilter] = useState<string>("");
@@ -474,38 +577,7 @@ export default function SuppliersView({ items }: { items: Supplier[] }) {
           <p className="text-[14px] text-text-body mt-0.5">Discover, evaluate, and manage your vetted fulfillment partners.</p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="relative">
-            <button
-              onClick={() => setDateOpen((v) => !v)}
-              className="inline-flex items-center gap-2 px-3.5 py-2 bg-white border border-border-soft rounded-lg text-[13px] font-medium text-text-body hover:bg-soft-bg"
-            >
-              <Calendar className="w-4 h-4" />
-              May 12 – May 18, 2025
-              <ChevronDown className="w-3.5 h-3.5" />
-            </button>
-            {dateOpen && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setDateOpen(false)} />
-                <div className="absolute right-0 mt-1 z-20 w-44 bg-white rounded-lg border border-border-soft shadow-lg py-1">
-                  {["Last 7 days", "Last 30 days", "This quarter", "Year to date"].map((r) => (
-                    <button
-                      key={r}
-                      onClick={() => { setDateOpen(false); toast(`Date range: ${r}`); }}
-                      className="w-full text-left px-3 py-1.5 text-[13px] text-text-body hover:bg-soft-bg"
-                    >
-                      {r}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-          <button
-            onClick={() => toast("No new notifications")}
-            className="w-9 h-9 flex items-center justify-center bg-white border border-border-soft rounded-lg text-text-muted hover:bg-soft-bg"
-          >
-            <Bell className="w-4 h-4" />
-          </button>
+          <NotificationBell />
         </div>
       </div>
 

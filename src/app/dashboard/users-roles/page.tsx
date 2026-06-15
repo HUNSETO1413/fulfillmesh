@@ -105,7 +105,8 @@ const permissionCategories = ["Dashboard & Reports", "Orders", "Inventory", "Inb
 const permLevels = ["Admin", "Ops Manager", "Warehouse Manager", "Supervisor", "Operator", "Viewer"];
 
 type Lvl = "full" | "read" | "none" | "na";
-const matrix: { cat: string; perm: string; desc: string; levels: Lvl[] }[] = [
+type PermRow = { cat: string; perm: string; desc: string; levels: Lvl[] };
+const matrix: PermRow[] = [
   { cat: "Dashboard & Reports", perm: "View Dashboard", desc: "View dashboards and analytics", levels: ["full", "full", "full", "full", "read", "read"] },
   { cat: "Dashboard & Reports", perm: "Export Reports", desc: "Export reports and analytics data", levels: ["full", "full", "full", "read", "none", "none"] },
   { cat: "Orders", perm: "Manage Orders", desc: "Create, edit, and cancel orders", levels: ["full", "full", "full", "read", "read", "read"] },
@@ -203,7 +204,10 @@ export default function UsersRolesPage() {
 
   const [rows, setRows] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [permMatrix, setPermMatrix] = useState(matrix);
+  const [permMatrix, setPermMatrix] = useState<PermRow[]>(matrix);
+  const [levelLabels, setLevelLabels] = useState<string[]>(permLevels);
+  const [detailRole, setDetailRole] = useState<string | null>(null);
+  const [invitesOpen, setInvitesOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -230,8 +234,9 @@ export default function UsersRolesPage() {
         ]);
         if (!alive) return;
         setRows((usersRes?.data ?? []).map(mapUser));
-        const stored = (settingsRes?.roles as { matrix?: typeof matrix } | undefined)?.matrix;
-        if (Array.isArray(stored) && stored.length > 0) setPermMatrix(stored);
+        const storedRoles = settingsRes?.roles as { matrix?: PermRow[]; levels?: string[] } | undefined;
+        if (Array.isArray(storedRoles?.matrix) && storedRoles.matrix.length > 0) setPermMatrix(storedRoles.matrix);
+        if (Array.isArray(storedRoles?.levels) && storedRoles.levels.length > 0) setLevelLabels(storedRoles.levels);
       } catch {
         if (alive) toast("Failed to load users", "error");
       } finally {
@@ -348,6 +353,21 @@ export default function UsersRolesPage() {
     }
   }
 
+  // Persist the whole permission matrix (and column labels) to the settings KV store.
+  async function persistMatrix(nextMatrix: PermRow[], nextLevels: string[]): Promise<void> {
+    setPermMatrix(nextMatrix);
+    setLevelLabels(nextLevels);
+    await api.put("/api/settings", { roles: { matrix: nextMatrix, levels: nextLevels } });
+  }
+
+  // Persist a member's role change (used by the Assign Users modal).
+  async function persistMemberRole(id: string, role: string): Promise<void> {
+    setRows((cur) => cur.map((u) => (u.id === id ? { ...u, role } : u)));
+    if (isPersisted(id)) {
+      await api.put(`/api/users/${id}`, { role: toApiRole(role) });
+    }
+  }
+
   function handleExport() {
     exportToCsv("users", filteredUsers, [
       { key: "name", header: "Name" },
@@ -362,7 +382,19 @@ export default function UsersRolesPage() {
 
   const selectCls = "inline-flex items-center gap-2 px-3 py-2 text-[13px] text-text-muted border border-border-soft rounded-lg bg-white hover:bg-soft-bg whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-action-blue/20";
 
-  if (showDetail) return <RoleDetail onBack={() => setShowDetail(false)} />;
+  if (showDetail && detailRole) {
+    return (
+      <RoleDetail
+        roleName={detailRole}
+        matrix={permMatrix}
+        levels={levelLabels}
+        members={rows}
+        persistMatrix={persistMatrix}
+        persistMemberRole={persistMemberRole}
+        onBack={() => setShowDetail(false)}
+      />
+    );
+  }
 
   if (loading) {
     return (
@@ -595,7 +627,7 @@ export default function UsersRolesPage() {
           <Card className="p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-[14px] font-semibold text-text-primary">Pending Invitations</h3>
-              <button onClick={() => toast("Opening all invitations…", "info")} className="text-[12px] font-medium text-action-blue hover:underline">View all</button>
+              <button onClick={() => setInvitesOpen(true)} className="text-[12px] font-medium text-action-blue hover:underline">View all</button>
             </div>
             <div className="space-y-4">
               {pendingInvites.map((inv) => (
@@ -648,7 +680,7 @@ export default function UsersRolesPage() {
                     <tr className="bg-soft-bg border-b border-border-soft">
                       <th className="text-left text-[11px] font-semibold text-text-muted px-5 py-2.5">Permission</th>
                       <th className="text-left text-[11px] font-semibold text-text-muted px-2 py-2.5">Description</th>
-                      {permLevels.map((l) => (
+                      {levelLabels.map((l) => (
                         <th key={l} className="text-center text-[11px] font-semibold text-text-muted px-2 py-2.5 whitespace-nowrap">{l}</th>
                       ))}
                     </tr>
@@ -678,7 +710,7 @@ export default function UsersRolesPage() {
           {permTab === "roles" && (
             <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
               {roleDistribution.map((r) => (
-                <button key={r.name} onClick={() => setShowDetail(true)} className="text-left border border-border-soft rounded-lg p-4 hover:border-action-blue hover:bg-soft-bg transition-colors">
+                <button key={r.name} onClick={() => { setDetailRole(r.name); setShowDetail(true); }} className="text-left border border-border-soft rounded-lg p-4 hover:border-action-blue hover:bg-soft-bg transition-colors">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-[14px] font-semibold text-text-primary">{r.name}</span>
                     <span className="text-[12px] text-text-muted">{r.count} users</span>
@@ -792,6 +824,33 @@ export default function UsersRolesPage() {
         </div>
       </Modal>
 
+      {/* All pending invitations */}
+      <Modal
+        open={invitesOpen}
+        onClose={() => setInvitesOpen(false)}
+        title="Pending Invitations"
+        description={`${pendingInvites.length} invitation${pendingInvites.length === 1 ? "" : "s"} awaiting acceptance.`}
+        footer={<SecondaryButton onClick={() => setInvitesOpen(false)}>Close</SecondaryButton>}
+      >
+        <div className="space-y-1">
+          {pendingInvites.map((inv) => (
+            <div key={inv.email} className="flex items-center gap-3 py-2.5 border-b border-border-soft last:border-b-0">
+              <div className="w-9 h-9 rounded-full bg-[#0057D8]/10 flex items-center justify-center text-[#0057D8] text-[11px] font-semibold shrink-0">
+                {inv.name.split(" ").map((n) => n[0]).join("")}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-medium text-text-primary truncate">{inv.name}</p>
+                <p className="text-[12px] text-text-light truncate">{inv.email}</p>
+              </div>
+              <div className="text-right shrink-0">
+                <span className={`inline-flex px-2.5 py-0.5 text-[12px] font-medium rounded-md ${roleColors[inv.role] ?? "bg-[#64748B]/10 text-[#64748B]"} whitespace-nowrap`}>{inv.role}</span>
+                <p className="text-[11px] text-text-light mt-1">{inv.sent}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Modal>
+
       {/* Remove confirm */}
       <ConfirmDialog
         open={!!removing}
@@ -808,10 +867,116 @@ export default function UsersRolesPage() {
 
 /* ---------------- Role & Permission Detail ---------------- */
 
-function RoleDetail({ onBack }: { onBack: () => void }) {
+// Map a display role name to its column label in the permission matrix.
+const ROLE_TO_LEVEL_LABEL: Record<string, string> = {
+  "Admin": "Admin",
+  "Operations Manager": "Ops Manager",
+  "Warehouse Manager": "Warehouse Manager",
+  "Supervisor": "Supervisor",
+  "Operator": "Operator",
+  "Viewer": "Viewer",
+};
+
+const LVL_SELECT_OPTIONS = ["Full Access", "Read Only", "No Access", "Not Applicable"];
+const LVL_TO_LABEL: Record<Lvl, string> = { full: "Full Access", read: "Read Only", none: "No Access", na: "Not Applicable" };
+const LABEL_TO_LVL: Record<string, Lvl> = { "Full Access": "full", "Read Only": "read", "No Access": "none", "Not Applicable": "na" };
+
+interface RoleDetailProps {
+  roleName: string;
+  matrix: PermRow[];
+  levels: string[];
+  members: UserRow[];
+  persistMatrix: (nextMatrix: PermRow[], nextLevels: string[]) => Promise<void>;
+  persistMemberRole: (id: string, role: string) => Promise<void>;
+  onBack: () => void;
+}
+
+function RoleDetail({ roleName, matrix: permMatrix, levels, members, persistMatrix, persistMemberRole, onBack }: RoleDetailProps) {
   const { toast } = useToast();
   const [tab, setTab] = useState<"permissions" | "users" | "groups">("permissions");
   const circumference = 2 * Math.PI * 40;
+
+  // Resolve which matrix column corresponds to this role.
+  const levelLabel = ROLE_TO_LEVEL_LABEL[roleName] ?? roleName;
+  const colIndex = levels.indexOf(levelLabel);
+
+  // Edit Role modal: a per-permission access-level editor for this role's column.
+  const [editOpen, setEditOpen] = useState(false);
+  const [draftLevels, setDraftLevels] = useState<Lvl[]>([]);
+  const [savingPerms, setSavingPerms] = useState(false);
+
+  // Assign Users modal: change members' roles.
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [memberRoles, setMemberRoles] = useState<Record<string, string>>({});
+  const [savingAssign, setSavingAssign] = useState(false);
+
+  const [duplicating, setDuplicating] = useState(false);
+
+  const assignedMembers = useMemo(() => members.filter((m) => m.role === roleName), [members, roleName]);
+
+  function openEditRole() {
+    if (colIndex < 0) { toast("This role has no editable permission column yet — duplicate it first.", "info"); return; }
+    setDraftLevels(permMatrix.map((row) => row.levels[colIndex] ?? "none"));
+    setEditOpen(true);
+  }
+
+  async function saveEditRole() {
+    if (colIndex < 0) return;
+    setSavingPerms(true);
+    const nextMatrix = permMatrix.map((row, i) => {
+      const nextRowLevels = [...row.levels];
+      nextRowLevels[colIndex] = draftLevels[i] ?? row.levels[colIndex];
+      return { ...row, levels: nextRowLevels };
+    });
+    try {
+      await persistMatrix(nextMatrix, levels);
+      toast(`Permissions for ${roleName} saved`);
+      setEditOpen(false);
+    } catch {
+      toast("Failed to save permissions", "error");
+    } finally {
+      setSavingPerms(false);
+    }
+  }
+
+  function openAssign() {
+    setMemberRoles(Object.fromEntries(members.map((m) => [m.id, m.role])));
+    setAssignOpen(true);
+  }
+
+  async function saveAssign() {
+    setSavingAssign(true);
+    const changed = members.filter((m) => memberRoles[m.id] && memberRoles[m.id] !== m.role);
+    try {
+      await Promise.all(changed.map((m) => persistMemberRole(m.id, memberRoles[m.id])));
+      toast(changed.length ? `Updated ${changed.length} member${changed.length === 1 ? "" : "s"}` : "No changes to save");
+      setAssignOpen(false);
+    } catch {
+      toast("Failed to update some members", "error");
+    } finally {
+      setSavingAssign(false);
+    }
+  }
+
+  // Duplicate Role: append a new matrix column copied from this role's column.
+  async function duplicateRole() {
+    setDuplicating(true);
+    const base = `${roleName} (Copy)`;
+    let label = base;
+    let n = 2;
+    while (levels.includes(label)) { label = `${base} ${n++}`; }
+    const sourceCol = colIndex >= 0 ? colIndex : 0;
+    const nextLevels = [...levels, label];
+    const nextMatrix = permMatrix.map((row) => ({ ...row, levels: [...row.levels, row.levels[sourceCol] ?? "none"] }));
+    try {
+      await persistMatrix(nextMatrix, nextLevels);
+      toast(`Created role "${label}"`);
+    } catch {
+      toast("Failed to duplicate role", "error");
+    } finally {
+      setDuplicating(false);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -825,10 +990,10 @@ function RoleDetail({ onBack }: { onBack: () => void }) {
           <p className="text-[14px] text-text-muted mt-0.5">View and manage permissions for this role.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={() => toast("Role duplicated", "success")} className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-border-soft bg-white text-text-body text-[13px] font-medium hover:bg-soft-bg shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-            <Copy className="w-4 h-4 text-text-light" /> Duplicate Role
+          <button onClick={duplicateRole} disabled={duplicating} className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-border-soft bg-white text-text-body text-[13px] font-medium hover:bg-soft-bg shadow-[0_1px_2px_rgba(0,0,0,0.05)] disabled:opacity-60">
+            <Copy className="w-4 h-4 text-text-light" /> {duplicating ? "Duplicating…" : "Duplicate Role"}
           </button>
-          <button onClick={() => toast("Opening role editor…", "info")} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-action-blue text-white text-[13px] font-medium hover:bg-[#0047B3] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+          <button onClick={openEditRole} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-action-blue text-white text-[13px] font-medium hover:bg-[#0047B3] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
             <Edit2 className="w-4 h-4" /> Edit Role
           </button>
         </div>
@@ -849,7 +1014,7 @@ function RoleDetail({ onBack }: { onBack: () => void }) {
               <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <div className="flex items-center gap-2">
-                    <h2 className="text-[18px] font-bold text-text-primary">Warehouse Manager</h2>
+                    <h2 className="text-[18px] font-bold text-text-primary">{roleName}</h2>
                     <span className="inline-flex px-2 py-0.5 text-[11px] font-medium rounded bg-[#00B894]/10 text-[#00B894]">Active</span>
                   </div>
                   <p className="text-[12px] text-text-muted mt-1">Manages daily warehouse operations including inventory, inbound, outbound, and warehouse staff. Cannot access billing or system settings.</p>
@@ -870,7 +1035,7 @@ function RoleDetail({ onBack }: { onBack: () => void }) {
           <Card>
             <div className="px-5 pt-4 border-b border-border-soft">
               <nav className="flex gap-6">
-                {([["permissions", "Permissions"], ["users", "Users (18)"], ["groups", "Role Groups"]] as const).map(([k, label]) => (
+                {([["permissions", "Permissions"], ["users", `Users (${assignedMembers.length})`], ["groups", "Role Groups"]] as const).map(([k, label]) => (
                   <button key={k} onClick={() => setTab(k)} className={`pb-3 text-[13px] font-medium border-b-2 ${tab === k ? "border-action-blue text-action-blue" : "border-transparent text-text-muted hover:text-text-primary"}`}>{label}</button>
                 ))}
               </nav>
@@ -923,7 +1088,28 @@ function RoleDetail({ onBack }: { onBack: () => void }) {
                 </div>
               </>
             )}
-            {tab === "users" && <div className="p-8 text-center text-[13px] text-text-light">18 users assigned to this role.</div>}
+            {tab === "users" && (
+              assignedMembers.length === 0
+                ? <div className="p-8 text-center text-[13px] text-text-light">No members are assigned to {roleName} yet. Use &ldquo;Assign Users&rdquo; to add some.</div>
+                : (
+                  <div className="divide-y divide-border-soft">
+                    {assignedMembers.map((m, i) => (
+                      <div key={m.id} className="flex items-center gap-3 px-5 py-3">
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-[11px] font-semibold shrink-0" style={{ backgroundColor: avatarColors[i % avatarColors.length] }}>
+                          {m.name.split(" ").map((n) => n[0]).join("")}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[13px] font-medium text-text-primary truncate">{m.name}</p>
+                          <p className="text-[12px] text-text-light truncate">{m.email}</p>
+                        </div>
+                        <span className={`inline-flex items-center gap-1.5 text-[12px] font-medium ${m.status === "Active" ? "text-[#00B894]" : "text-[#9AA8B8]"}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${m.status === "Active" ? "bg-[#00B894]" : "bg-[#9AA8B8]"}`} />{m.status}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )
+            )}
             {tab === "groups" && <div className="p-8 text-center text-[13px] text-text-light">No role groups.</div>}
           </Card>
         </div>
@@ -987,15 +1173,91 @@ function RoleDetail({ onBack }: { onBack: () => void }) {
           <Card className="p-5">
             <h3 className="text-[14px] font-semibold text-text-primary mb-3">Quick Actions</h3>
             <div className="space-y-2">
-              {([["Edit Role", Edit2], ["Assign Users", UserPlus], ["Duplicate Role", Copy]] as [string, typeof Edit2][]).map(([label, Icon]) => (
-                <button key={label} onClick={() => toast(`${label} — done`)} className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-text-primary border border-border-soft rounded-lg hover:bg-soft-bg">
-                  <Icon className="w-4 h-4 text-text-muted" /> {label}
-                </button>
-              ))}
+              <button onClick={openEditRole} className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-text-primary border border-border-soft rounded-lg hover:bg-soft-bg">
+                <Edit2 className="w-4 h-4 text-text-muted" /> Edit Role
+              </button>
+              <button onClick={openAssign} className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-text-primary border border-border-soft rounded-lg hover:bg-soft-bg">
+                <UserPlus className="w-4 h-4 text-text-muted" /> Assign Users
+              </button>
+              <button onClick={duplicateRole} disabled={duplicating} className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-text-primary border border-border-soft rounded-lg hover:bg-soft-bg disabled:opacity-60">
+                <Copy className="w-4 h-4 text-text-muted" /> {duplicating ? "Duplicating…" : "Duplicate Role"}
+              </button>
             </div>
           </Card>
         </div>
       </div>
+
+      {/* Edit Role modal: per-permission access levels for this role */}
+      <Modal
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        title={`Edit ${roleName}`}
+        description="Set the access level this role has for each permission."
+        size="lg"
+        footer={
+          <>
+            <SecondaryButton onClick={() => setEditOpen(false)}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={saveEditRole} disabled={savingPerms}>{savingPerms ? "Saving…" : "Save permissions"}</PrimaryButton>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          {permMatrix.map((row, i) => (
+            <div key={row.perm} className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-[13px] font-medium text-text-primary truncate">{row.perm}</p>
+                <p className="text-[12px] text-text-light truncate">{row.desc}</p>
+              </div>
+              <div className="shrink-0 w-[160px]">
+                <Select
+                  options={LVL_SELECT_OPTIONS}
+                  value={LVL_TO_LABEL[draftLevels[i] ?? "none"]}
+                  onChange={(e) => setDraftLevels((cur) => cur.map((l, j) => (j === i ? (LABEL_TO_LVL[e.target.value] ?? l) : l)))}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </Modal>
+
+      {/* Assign Users modal: change each member's role */}
+      <Modal
+        open={assignOpen}
+        onClose={() => setAssignOpen(false)}
+        title="Assign Users"
+        description={`Change a member's role. Members on ${roleName} are listed first.`}
+        size="lg"
+        footer={
+          <>
+            <SecondaryButton onClick={() => setAssignOpen(false)}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={saveAssign} disabled={savingAssign}>{savingAssign ? "Saving…" : "Save assignments"}</PrimaryButton>
+          </>
+        }
+      >
+        {members.length === 0 ? (
+          <p className="text-[13px] text-text-muted py-6 text-center">No members to assign.</p>
+        ) : (
+          <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
+            {[...members]
+              .sort((a, b) => Number(b.role === roleName) - Number(a.role === roleName))
+              .map((m) => (
+                <div key={m.id} className="flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-medium text-text-primary truncate">{m.name}</p>
+                    <p className="text-[12px] text-text-light truncate">{m.email}</p>
+                  </div>
+                  <div className="shrink-0 w-[180px]">
+                    <Select
+                      options={ROLE_OPTIONS}
+                      value={memberRoles[m.id] ?? m.role}
+                      onChange={(e) => setMemberRoles((cur) => ({ ...cur, [m.id]: e.target.value }))}
+                    />
+                  </div>
+                </div>
+              ))}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

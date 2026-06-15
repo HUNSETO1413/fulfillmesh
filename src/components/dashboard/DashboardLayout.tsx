@@ -4,6 +4,7 @@ import { useState } from "react";
 import { usePathname } from "next/navigation";
 import DashboardSidebar from "./DashboardSidebar";
 import DashboardTopbar from "./DashboardTopbar";
+import Breadcrumb from "./Breadcrumb";
 
 const pageTitles: Record<string, string> = {
   "/dashboard": "Overview",
@@ -75,6 +76,7 @@ export default function DashboardLayout({
           pageTitle={pageTitle}
         />
         <main className="flex-1 overflow-y-auto bg-[#F8FAFC] px-6 py-8">
+          <Breadcrumb />
           {children}
         </main>
       </div>
