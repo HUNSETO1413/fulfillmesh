@@ -213,6 +213,9 @@ export default function UsersRolesPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [openMenu, setOpenMenu] = useState<string | null>(null);
 
+  const PAGE_SIZE = 10;
+  const [page, setPage] = useState(1);
+
   const [inviteOpen, setInviteOpen] = useState(false);
   const [invite, setInvite] = useState<InviteDraft>(emptyInvite);
   const [editing, setEditing] = useState<UserRow | null>(null);
@@ -255,6 +258,11 @@ export default function UsersRolesPage() {
       return matchesQuery && matchesRole && matchesStatus;
     });
   }, [rows, query, roleFilter, statusFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
+  const pageUsers = filteredUsers.slice(pageStart, pageStart + PAGE_SIZE);
 
   function openInvite() {
     setInvite(emptyInvite);
@@ -460,18 +468,18 @@ export default function UsersRolesPage() {
       <div className="bg-white rounded-xl border border-border-soft p-3 shadow-[0_1px_3px_rgba(0,0,0,0.05)] flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[240px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-light" />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search users by name, email, or role..." className="w-full pl-9 pr-4 py-2 border border-border-soft rounded-lg text-[13px] text-text-primary placeholder:text-text-light focus:outline-none focus:ring-2 focus:ring-action-blue/20" />
+          <input value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }} placeholder="Search users by name, email, or role..." className="w-full pl-9 pr-4 py-2 border border-border-soft rounded-lg text-[13px] text-text-primary placeholder:text-text-light focus:outline-none focus:ring-2 focus:ring-action-blue/20" />
         </div>
-        <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className={selectCls}>
+        <select value={roleFilter} onChange={(e) => { setRoleFilter(e.target.value); setPage(1); }} className={selectCls}>
           <option value="">All Roles</option>
           {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
         </select>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={selectCls}>
+        <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} className={selectCls}>
           <option value="">All Statuses</option>
           <option value="Active">Active</option>
           <option value="Inactive">Inactive</option>
         </select>
-        <button onClick={() => { setQuery(""); setRoleFilter(""); setStatusFilter(""); toast("Filters cleared", "info"); }} className="inline-flex items-center gap-2 px-3 py-2 text-[13px] text-text-muted border border-border-soft rounded-lg bg-white hover:bg-soft-bg whitespace-nowrap">
+        <button onClick={() => { setQuery(""); setRoleFilter(""); setStatusFilter(""); setPage(1); toast("Filters cleared", "info"); }} className="inline-flex items-center gap-2 px-3 py-2 text-[13px] text-text-muted border border-border-soft rounded-lg bg-white hover:bg-soft-bg whitespace-nowrap">
           <SlidersHorizontal className="w-4 h-4 text-text-light" /> Clear
         </button>
       </div>
@@ -490,7 +498,7 @@ export default function UsersRolesPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredUsers.map((u, i) => (
+                {pageUsers.map((u, i) => (
                   <tr key={u.id} className="border-b border-border-soft last:border-b-0 hover:bg-soft-bg/60 transition-colors">
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-2.5">
@@ -549,11 +557,15 @@ export default function UsersRolesPage() {
           </div>
           {/* Pagination */}
           <div className="flex items-center justify-between px-5 py-4 border-t border-border-soft">
-            <p className="text-[13px] text-text-muted">Showing {filteredUsers.length} of {rows.length} users</p>
+            <p className="text-[13px] text-text-muted">
+              {filteredUsers.length === 0
+                ? "Showing 0 of 0 users"
+                : `Showing ${pageStart + 1}–${Math.min(pageStart + PAGE_SIZE, filteredUsers.length)} of ${filteredUsers.length.toLocaleString()} users`}
+            </p>
             <div className="flex items-center gap-1.5">
-              <button disabled={true} className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-light hover:bg-soft-bg disabled:opacity-40 disabled:cursor-not-allowed" aria-label="Previous page"><ChevronLeft className="w-4 h-4" /></button>
-              <button onClick={() => toast("Page 1 of 1", "info")} className="w-8 h-8 flex items-center justify-center rounded-lg bg-action-blue text-white text-[13px] font-medium">1</button>
-              <button disabled={true} className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-light hover:bg-soft-bg disabled:opacity-40 disabled:cursor-not-allowed" aria-label="Next page"><ChevronRight className="w-4 h-4" /></button>
+              <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={currentPage === 1} className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-light hover:bg-soft-bg disabled:opacity-40 disabled:cursor-not-allowed" aria-label="Previous page"><ChevronLeft className="w-4 h-4" /></button>
+              <span className="px-3 text-[13px] font-medium text-text-primary whitespace-nowrap">Page {currentPage} of {totalPages}</span>
+              <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-light hover:bg-soft-bg disabled:opacity-40 disabled:cursor-not-allowed" aria-label="Next page"><ChevronRight className="w-4 h-4" /></button>
             </div>
           </div>
         </Card>

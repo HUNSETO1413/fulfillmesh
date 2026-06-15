@@ -201,6 +201,9 @@ export default function DocumentsPage() {
   const [whFilter, setWhFilter] = useState("");
   const [openMenu, setOpenMenu] = useState<string | null>(null);
 
+  const PAGE_SIZE = 10;
+  const [page, setPage] = useState(1);
+
   const [uploadOpen, setUploadOpen] = useState(false);
   const [upload, setUpload] = useState<UploadDraft>(emptyUpload);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
@@ -258,6 +261,11 @@ export default function DocumentsPage() {
       return matchesQuery && matchesCat && matchesType && matchesWh;
     });
   }, [docs, query, catFilter, typeFilter, whFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
+  const pageRows = filtered.slice(pageStart, pageStart + PAGE_SIZE);
 
   function openUpload() {
     fileInputRef.current?.click();
@@ -454,9 +462,9 @@ export default function DocumentsPage() {
   }, [docs]);
 
   const activeFilters: { label: string; clear: () => void }[] = [
-    ...(catFilter ? [{ label: `Category: ${catFilter}`, clear: () => setCatFilter("") }] : []),
-    ...(typeFilter ? [{ label: `Type: ${typeFilter}`, clear: () => setTypeFilter("") }] : []),
-    ...(whFilter ? [{ label: `Warehouse: ${whFilter}`, clear: () => setWhFilter("") }] : []),
+    ...(catFilter ? [{ label: `Category: ${catFilter}`, clear: () => { setCatFilter(""); setPage(1); } }] : []),
+    ...(typeFilter ? [{ label: `Type: ${typeFilter}`, clear: () => { setTypeFilter(""); setPage(1); } }] : []),
+    ...(whFilter ? [{ label: `Warehouse: ${whFilter}`, clear: () => { setWhFilter(""); setPage(1); } }] : []),
   ];
 
   const quickActions: { label: string; icon: typeof Upload; action: "upload" | "folder" | "request" | "links" | "recycle" }[] = [
@@ -531,22 +539,22 @@ export default function DocumentsPage() {
           <div className="flex items-center gap-3 flex-1">
             <div className="relative flex-1 max-w-md">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94A3B8]" />
-              <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search documents by name, type, or keyword..." className="w-full pl-9 pr-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#1E293B] placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/30 focus:border-[#3B82F6]" />
+              <input type="text" value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }} placeholder="Search documents by name, type, or keyword..." className="w-full pl-9 pr-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#1E293B] placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/30 focus:border-[#3B82F6]" />
             </div>
-            <select value={catFilter} onChange={(e) => setCatFilter(e.target.value)} className="px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/30">
+            <select value={catFilter} onChange={(e) => { setCatFilter(e.target.value); setPage(1); }} className="px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/30">
               <option value="">All Categories</option>
               {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
-            <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/30">
+            <select value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); setPage(1); }} className="px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/30">
               <option value="">All Document Types</option>
               {DOC_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
-            <select value={whFilter} onChange={(e) => setWhFilter(e.target.value)} className="px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/30">
+            <select value={whFilter} onChange={(e) => { setWhFilter(e.target.value); setPage(1); }} className="px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/30">
               <option value="">All Warehouses</option>
               {WAREHOUSES.map((w) => <option key={w} value={w}>{w}</option>)}
             </select>
           </div>
-          <button onClick={() => { setCatFilter(""); setTypeFilter(""); setWhFilter(""); setQuery(""); toast("Filters cleared", "info"); }} className="flex items-center gap-2 px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC]"><SlidersHorizontal className="w-4 h-4" /> Clear</button>
+          <button onClick={() => { setCatFilter(""); setTypeFilter(""); setWhFilter(""); setQuery(""); setPage(1); toast("Filters cleared", "info"); }} className="flex items-center gap-2 px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC]"><SlidersHorizontal className="w-4 h-4" /> Clear</button>
         </div>
         {activeFilters.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 px-5 py-3">
@@ -559,7 +567,7 @@ export default function DocumentsPage() {
                 </button>
               </span>
             ))}
-            <button onClick={() => { setCatFilter(""); setTypeFilter(""); setWhFilter(""); }} className="text-[12px] font-medium text-[#64748B] hover:text-[#1E293B] hover:underline">
+            <button onClick={() => { setCatFilter(""); setTypeFilter(""); setWhFilter(""); setPage(1); }} className="text-[12px] font-medium text-[#64748B] hover:text-[#1E293B] hover:underline">
               Clear all
             </button>
           </div>
@@ -580,7 +588,7 @@ export default function DocumentsPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((d) => (
+                {pageRows.map((d) => (
                   <tr key={d.id} className="border-b border-[#E2E8F0] last:border-b-0 hover:bg-[#F8FAFC]/50 transition-colors">
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-3">
@@ -646,13 +654,17 @@ export default function DocumentsPage() {
 
           {/* Pagination */}
           <div className="flex items-center justify-between px-5 py-4 border-t border-[#E2E8F0]">
-            <span className="text-[13px] text-[#64748B]">Showing {filtered.length} of {docs.length} documents</span>
+            <span className="text-[13px] text-[#64748B]">
+              {filtered.length === 0
+                ? "Showing 0 of 0 documents"
+                : `Showing ${pageStart + 1}–${Math.min(pageStart + PAGE_SIZE, filtered.length)} of ${filtered.length.toLocaleString()} documents`}
+            </span>
             <div className="flex items-center gap-1">
-              <button disabled={true} className="w-8 h-8 flex items-center justify-center rounded-lg border border-[#E2E8F0] text-[#94A3B8] hover:bg-[#F8FAFC] disabled:opacity-40 disabled:cursor-not-allowed" aria-label="Previous page">
+              <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={currentPage === 1} className="w-8 h-8 flex items-center justify-center rounded-lg border border-[#E2E8F0] text-[#94A3B8] hover:bg-[#F8FAFC] disabled:opacity-40 disabled:cursor-not-allowed" aria-label="Previous page">
                 <ChevronLeft className="w-4 h-4" />
               </button>
-              <button onClick={() => toast("Page 1 of 1", "info")} className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#3B82F6] text-white text-[13px] font-medium">1</button>
-              <button disabled={true} className="w-8 h-8 flex items-center justify-center rounded-lg border border-[#E2E8F0] text-[#94A3B8] hover:bg-[#F8FAFC] disabled:opacity-40 disabled:cursor-not-allowed" aria-label="Next page">
+              <span className="px-3 text-[13px] font-medium text-[#1E293B] whitespace-nowrap">Page {currentPage} of {totalPages}</span>
+              <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="w-8 h-8 flex items-center justify-center rounded-lg border border-[#E2E8F0] text-[#94A3B8] hover:bg-[#F8FAFC] disabled:opacity-40 disabled:cursor-not-allowed" aria-label="Next page">
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>

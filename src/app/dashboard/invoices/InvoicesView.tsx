@@ -153,6 +153,25 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
   const [statusOpen, setStatusOpen] = useState(false);
   const [dateOpen, setDateOpen] = useState(false);
 
+  // advanced filters (More filters)
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [fMinAmount, setFMinAmount] = useState("");
+  const [fMaxAmount, setFMaxAmount] = useState("");
+  const [fIssuedFrom, setFIssuedFrom] = useState("");
+  const [fIssuedTo, setFIssuedTo] = useState("");
+  const [fStatus, setFStatus] = useState<"" | InvoiceStatus>("");
+  const advancedActive =
+    fMinAmount !== "" || fMaxAmount !== "" || fIssuedFrom !== "" || fIssuedTo !== "" || fStatus !== "";
+
+  function resetAdvanced() {
+    setFMinAmount("");
+    setFMaxAmount("");
+    setFIssuedFrom("");
+    setFIssuedTo("");
+    setFStatus("");
+    setPage(1);
+  }
+
   // sorting
   type SortKey = "id" | "orderId" | "status" | "issuedDate" | "dueDate" | "amount";
   const [sortKey, setSortKey] = useState<SortKey>("issuedDate");
@@ -224,6 +243,8 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
 
   const filtered = useMemo(() => {
     const tab = tabs.find((t) => t.label === active);
+    const min = fMinAmount === "" ? null : Number(fMinAmount);
+    const max = fMaxAmount === "" ? null : Number(fMaxAmount);
     return items.filter((inv) => {
       const matchesTab = !tab?.status || inv.status === tab.status;
       const term = query.trim().toLowerCase();
@@ -232,9 +253,16 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
         inv.id.toLowerCase().includes(term) ||
         inv.customer.toLowerCase().includes(term) ||
         (inv.orderId ?? "").toLowerCase().includes(term);
-      return matchesTab && matchesQuery;
+      const matchesMin = min === null || Number.isNaN(min) || inv.amount >= min;
+      const matchesMax = max === null || Number.isNaN(max) || inv.amount <= max;
+      const matchesFrom = !fIssuedFrom || inv.issuedDate >= fIssuedFrom;
+      const matchesTo = !fIssuedTo || inv.issuedDate <= fIssuedTo;
+      const matchesStatus = !fStatus || inv.status === fStatus;
+      return (
+        matchesTab && matchesQuery && matchesMin && matchesMax && matchesFrom && matchesTo && matchesStatus
+      );
     });
-  }, [items, active, query]);
+  }, [items, active, query, fMinAmount, fMaxAmount, fIssuedFrom, fIssuedTo, fStatus]);
 
   const sorted = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
@@ -579,9 +607,82 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
             </>
           )}
         </div>
-        <button onClick={() => toast("More filters coming soon")} className="inline-flex items-center gap-2 px-3 py-2 border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC]">
+        <button
+          onClick={() => setMoreOpen((v) => !v)}
+          className={`inline-flex items-center gap-2 px-3 py-2 border rounded-lg text-[13px] transition-colors ${
+            moreOpen || advancedActive
+              ? "border-[#3B82F6] bg-[#EFF6FF] text-[#3B82F6]"
+              : "border-[#E2E8F0] text-[#64748B] hover:bg-[#F8FAFC]"
+          }`}
+        >
           <SlidersHorizontal className="w-3.5 h-3.5" /> Filters
+          {advancedActive && (
+            <span className="ml-0.5 inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-[#3B82F6] text-white text-[10px] font-semibold">
+              {[fMinAmount, fMaxAmount, fIssuedFrom, fIssuedTo, fStatus].filter((v) => v !== "").length}
+            </span>
+          )}
+          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${moreOpen ? "rotate-180" : ""}`} />
         </button>
+
+        {moreOpen && (
+          <div className="w-full mt-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 pt-3 border-t border-[#E2E8F0]">
+            <Field label="Min amount (USD)">
+              <NumberInput
+                value={fMinAmount}
+                onChange={(e) => { setFMinAmount(e.target.value); setPage(1); }}
+                placeholder="0.00"
+                step="0.01"
+                min="0"
+              />
+            </Field>
+            <Field label="Max amount (USD)">
+              <NumberInput
+                value={fMaxAmount}
+                onChange={(e) => { setFMaxAmount(e.target.value); setPage(1); }}
+                placeholder="No max"
+                step="0.01"
+                min="0"
+              />
+            </Field>
+            <Field label="Issued from">
+              <TextInput type="date" value={fIssuedFrom} onChange={(e) => { setFIssuedFrom(e.target.value); setPage(1); }} />
+            </Field>
+            <Field label="Issued to">
+              <TextInput type="date" value={fIssuedTo} onChange={(e) => { setFIssuedTo(e.target.value); setPage(1); }} />
+            </Field>
+            <Field label="Status">
+              <Select
+                options={["Any status", ...STATUSES]}
+                value={fStatus === "" ? "Any status" : fStatus}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setFStatus(v === "Any status" ? "" : (v as InvoiceStatus));
+                  setPage(1);
+                }}
+              />
+            </Field>
+            <div className="lg:col-span-5 flex items-center justify-between gap-3">
+              <p className="text-[12px] text-[#64748B]">
+                {advancedActive ? `${filtered.length} invoice${filtered.length === 1 ? "" : "s"} match these filters` : "Narrow the list by amount, date, or status."}
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={resetAdvanced}
+                  disabled={!advancedActive}
+                  className="px-3 py-1.5 text-[13px] text-[#64748B] hover:text-[#1E293B] disabled:opacity-40"
+                >
+                  Clear filters
+                </button>
+                <button
+                  onClick={() => setMoreOpen(false)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#3B82F6] hover:bg-[#2563EB] rounded-lg text-[13px] font-medium text-white transition-colors"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Main: table + right rail */}

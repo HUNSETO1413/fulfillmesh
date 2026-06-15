@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import {
   Settings,
@@ -12,9 +12,12 @@ import {
   Plug,
   Shield,
   MoreVertical,
+  Download,
+  Loader2,
 } from "lucide-react";
 import { DateRangeMenu } from "@/components/dashboard/DateRangeMenu";
 import { useToast } from "@/components/dashboard/Toast";
+import { api, exportToJson } from "@/lib/client";
 
 const settingsNav = [
   { label: "General", icon: Settings, href: "/dashboard/settings" },
@@ -31,6 +34,43 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
   const pathname = usePathname();
   const { toast } = useToast();
   const [range, setRange] = useState("May 12 - May 18, 2025");
+
+  // "More options" dropdown
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setMenuOpen(false);
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClickOutside);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
+
+  async function exportAllSettings() {
+    setExporting(true);
+    try {
+      const data = await api.get<Record<string, unknown>>("/api/settings");
+      exportToJson("fulfillmesh-settings", data);
+      toast("Settings exported as JSON");
+      setMenuOpen(false);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not export settings", "error");
+    } finally {
+      setExporting(false);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -49,9 +89,41 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
           <button onClick={() => toast("No new settings notifications", "info")} className="flex items-center justify-center w-9 h-9 bg-white border border-[#E2E8F0] rounded-lg text-[#64748B] hover:bg-[#F8FAFC] transition-colors" aria-label="Notifications">
             <Bell className="w-[18px] h-[18px]" />
           </button>
-          <button onClick={() => toast("More options coming soon", "info")} className="flex items-center justify-center w-9 h-9 bg-white border border-[#E2E8F0] rounded-lg text-[#64748B] hover:bg-[#F8FAFC] transition-colors" aria-label="More options">
-            <MoreVertical className="w-[18px] h-[18px]" />
-          </button>
+          <div className="relative" ref={menuRef}>
+            <button
+              onClick={() => setMenuOpen((v) => !v)}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              className={`flex items-center justify-center w-9 h-9 bg-white border rounded-lg transition-colors ${
+                menuOpen ? "border-[#0057D8] text-[#0057D8]" : "border-[#E2E8F0] text-[#64748B] hover:bg-[#F8FAFC]"
+              }`}
+              aria-label="More options"
+            >
+              <MoreVertical className="w-[18px] h-[18px]" />
+            </button>
+            {menuOpen && (
+              <div role="menu" className="absolute right-0 mt-1 z-20 w-56 bg-white rounded-lg border border-[#E2E8F0] shadow-[0_10px_30px_rgba(0,0,0,0.12)] py-1">
+                <button
+                  role="menuitem"
+                  onClick={exportAllSettings}
+                  disabled={exporting}
+                  className="w-full flex items-center gap-2.5 text-left px-3 py-2 text-[13px] text-[#1E293B] hover:bg-[#F8FAFC] disabled:opacity-60"
+                >
+                  {exporting ? <Loader2 className="w-4 h-4 animate-spin text-[#94A3B8]" /> : <Download className="w-4 h-4 text-[#94A3B8]" />}
+                  {exporting ? "Exporting…" : "Export all settings"}
+                </button>
+                <a
+                  role="menuitem"
+                  href="/dashboard/settings/security"
+                  onClick={() => setMenuOpen(false)}
+                  className="w-full flex items-center gap-2.5 text-left px-3 py-2 text-[13px] text-[#1E293B] hover:bg-[#F8FAFC]"
+                >
+                  <Shield className="w-4 h-4 text-[#94A3B8]" />
+                  Security settings
+                </a>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import {
   BarChart3, Package, Truck, RotateCcw, Users, FileText,
   Download, ChevronDown, Bell, MoreHorizontal,
-  ChevronRight, CalendarClock, Copy, Loader2,
+  ChevronRight, CalendarClock, Copy, Loader2, Settings2,
 } from "lucide-react";
 import { DateRangeMenu } from "@/components/dashboard/DateRangeMenu";
 import { Modal } from "@/components/dashboard/Modal";
@@ -41,6 +41,20 @@ const initialReports: ReportRow[] = [
 const REPORT_TYPES = ["Sales Report", "Inventory Report", "Shipment Report", "Return Report", "Customer Report"];
 const GROUP_BY = ["Select an option", "Product", "Channel", "Warehouse", "Customer", "Date"];
 const FORMATS = ["PDF", "CSV", "XLSX"];
+
+type ReportSettings = {
+  defaultRange: string;
+  defaultFormat: "PDF" | "CSV" | "XLSX";
+  includeCharts: boolean;
+};
+
+const DEFAULT_REPORT_SETTINGS: ReportSettings = {
+  defaultRange: "May 12 – May 18, 2025",
+  defaultFormat: "PDF",
+  includeCharts: true,
+};
+
+const RANGE_PRESETS = ["May 12 – May 18, 2025", "Last 7 days", "Last 30 days", "This quarter", "Year to date"];
 
 const FREQUENCIES = ["Daily", "Weekly", "Monthly"] as const;
 const WEEK_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -165,17 +179,55 @@ export default function ReportsPage() {
   const [reports, setReports] = useState(initialReports);
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
 
-  useEffect(() => {
-    api.get<AnalyticsSummary>("/api/analytics")
-      .then(setSummary)
-      .catch(() => toast("Could not load report data", "error"));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
   const [rowMenu, setRowMenu] = useState<string | null>(null);
   const [type, setType] = useState("Sales Report");
   const [groupBy, setGroupBy] = useState("Select an option");
   const [format, setFormat] = useState("PDF");
   const [customBusy, setCustomBusy] = useState(false);
+
+  // report settings (persisted via /api/settings)
+  const [settings, setSettings] = useState<ReportSettings>(DEFAULT_REPORT_SETTINGS);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsDraft, setSettingsDraft] = useState<ReportSettings>(DEFAULT_REPORT_SETTINGS);
+  const [settingsBusy, setSettingsBusy] = useState(false);
+
+  useEffect(() => {
+    api.get<AnalyticsSummary>("/api/analytics")
+      .then(setSummary)
+      .catch(() => toast("Could not load report data", "error"));
+    api.get<{ reports?: Partial<ReportSettings> }>("/api/settings")
+      .then((data) => {
+        if (data?.reports) {
+          const merged = { ...DEFAULT_REPORT_SETTINGS, ...data.reports };
+          setSettings(merged);
+          setRange(merged.defaultRange);
+          setFormat(merged.defaultFormat);
+        }
+      })
+      .catch(() => { /* fall back to defaults */ });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function openSettings() {
+    setSettingsDraft(settings);
+    setSettingsOpen(true);
+  }
+
+  async function saveSettings() {
+    setSettingsBusy(true);
+    try {
+      await api.put("/api/settings", { reports: settingsDraft });
+      setSettings(settingsDraft);
+      setRange(settingsDraft.defaultRange);
+      setFormat(settingsDraft.defaultFormat);
+      toast("Report settings saved");
+      setSettingsOpen(false);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not save report settings", "error");
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
 
   // schedule modal
   const [scheduling, setScheduling] = useState<string | null>(null);
@@ -272,8 +324,8 @@ export default function ReportsPage() {
           <button onClick={() => toast("No new report notifications", "info")} className="w-8 h-8 flex items-center justify-center bg-white border border-border-soft rounded-lg text-text-muted hover:bg-soft-bg">
             <Bell className="w-4 h-4" />
           </button>
-          <button onClick={() => toast("Report settings coming soon", "info")} className="w-8 h-8 flex items-center justify-center bg-white border border-border-soft rounded-lg text-text-muted hover:bg-soft-bg">
-            <MoreHorizontal className="w-4 h-4" />
+          <button onClick={openSettings} aria-label="Report settings" className="w-8 h-8 flex items-center justify-center bg-white border border-border-soft rounded-lg text-text-muted hover:bg-soft-bg">
+            <Settings2 className="w-4 h-4" />
           </button>
         </div>
       </div>
@@ -468,6 +520,49 @@ export default function ReportsPage() {
             </p>
           </div>
         )}
+      </Modal>
+
+      {/* Report settings modal */}
+      <Modal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        title="Report Settings"
+        description="Defaults applied when generating and downloading reports."
+        size="sm"
+        footer={
+          <>
+            <SecondaryButton onClick={() => setSettingsOpen(false)}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={saveSettings} disabled={settingsBusy}>
+              {settingsBusy ? "Saving…" : "Save settings"}
+            </PrimaryButton>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Field label="Default date range">
+            <FormSelect
+              options={RANGE_PRESETS}
+              value={settingsDraft.defaultRange}
+              onChange={(e) => setSettingsDraft((d) => ({ ...d, defaultRange: e.target.value }))}
+            />
+          </Field>
+          <Field label="Default format">
+            <FormSelect
+              options={["PDF", "CSV", "XLSX"]}
+              value={settingsDraft.defaultFormat}
+              onChange={(e) => setSettingsDraft((d) => ({ ...d, defaultFormat: e.target.value as ReportSettings["defaultFormat"] }))}
+            />
+          </Field>
+          <label className="flex items-center justify-between gap-3 px-3 py-2.5 border border-border-soft rounded-lg cursor-pointer">
+            <span className="text-[13px] font-medium text-text-primary">Include charts in exports</span>
+            <input
+              type="checkbox"
+              checked={settingsDraft.includeCharts}
+              onChange={(e) => setSettingsDraft((d) => ({ ...d, includeCharts: e.target.checked }))}
+              className="w-4 h-4 rounded border-[#D1D5DB] text-action-blue focus:ring-action-blue cursor-pointer"
+            />
+          </label>
+        </div>
       </Modal>
     </div>
   );

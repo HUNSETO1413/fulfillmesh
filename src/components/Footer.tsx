@@ -39,11 +39,21 @@ const footerLinks = {
   },
 };
 
-function SocialIcon({ children, label }: { children: React.ReactNode; label: string }) {
+function SocialIcon({
+  children,
+  label,
+  href,
+}: {
+  children: React.ReactNode;
+  label: string;
+  href: string;
+}) {
   return (
     <a
-      href="#"
+      href={href}
       aria-label={label}
+      target="_blank"
+      rel="noopener noreferrer"
       className="text-text-muted hover:text-text-primary transition-colors flex items-center justify-center"
     >
       {children}
@@ -164,16 +174,16 @@ export default function Footer() {
         <div className="py-6 border-t border-border-soft flex flex-col sm:flex-row items-center justify-between gap-4">
           {/* Social Icons */}
           <div className="flex items-center gap-4">
-            <SocialIcon label="LinkedIn">
+            <SocialIcon label="LinkedIn" href="https://www.linkedin.com/company/fulfillmesh">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/></svg>
             </SocialIcon>
-            <SocialIcon label="Twitter">
+            <SocialIcon label="Twitter" href="https://twitter.com/fulfillmesh">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4l11.733 16h4.267l-11.733 -16h-4.267z"/><path d="M4 20l6.768 -6.768m2.46 -2.46l6.772 -6.772"/></svg>
             </SocialIcon>
-            <SocialIcon label="YouTube">
+            <SocialIcon label="YouTube" href="https://www.youtube.com/@fulfillmesh">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2.5 17a24.12 24.12 0 0 1 0-10 2 2 0 0 1 1.4-1.4 49.56 49.56 0 0 1 16.2 0A2 2 0 0 1 21.5 7a24.12 24.12 0 0 1 0 10 2 2 0 0 1-1.4 1.4 49.55 49.55 0 0 1-16.2 0A2 2 0 0 1 2.5 17"/><path d="m10 15 5-3-5-3z"/></svg>
             </SocialIcon>
-            <SocialIcon label="Facebook">
+            <SocialIcon label="Facebook" href="https://www.facebook.com/fulfillmesh">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>
             </SocialIcon>
           </div>

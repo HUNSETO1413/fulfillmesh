@@ -101,6 +101,9 @@ export default function AuditLogsPage() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
 
+  const PAGE_SIZE = 10;
+  const [page, setPage] = useState(1);
+
   // ---- Retention Settings modal ----
   const RETENTION_OPTIONS = ["30", "60", "90", "180", "365", "730"];
   const [retentionOpen, setRetentionOpen] = useState(false);
@@ -209,6 +212,11 @@ export default function AuditLogsPage() {
       return matchesQuery && matchesCategory && matchesActor && matchesStatus && matchesFrom && matchesTo;
     });
   }, [logs, query, categoryFilter, actorFilter, statusFilter, fromDate, toDate]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
+  const pageRows = filtered.slice(pageStart, pageStart + PAGE_SIZE);
 
   // ---- stats computed from loaded rows ----
   const totalEvents = logs.length;
@@ -379,29 +387,29 @@ export default function AuditLogsPage() {
       <div className="bg-white rounded-xl border border-border-soft p-3 shadow-[0_1px_3px_rgba(0,0,0,0.05)] flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[240px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-light" />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by actor, action, target, or category..." className="w-full pl-9 pr-4 py-2 border border-border-soft rounded-lg text-[13px] text-text-primary placeholder:text-text-light focus:outline-none focus:ring-2 focus:ring-action-blue/20" />
+          <input value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }} placeholder="Search by actor, action, target, or category..." className="w-full pl-9 pr-4 py-2 border border-border-soft rounded-lg text-[13px] text-text-primary placeholder:text-text-light focus:outline-none focus:ring-2 focus:ring-action-blue/20" />
         </div>
         <div className="inline-flex items-center gap-1.5 px-3 py-2 border border-border-soft rounded-lg bg-white text-[13px] text-text-muted">
           <Calendar className="w-4 h-4 text-text-light" />
-          <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="text-[13px] text-text-primary bg-transparent focus:outline-none" aria-label="From date" />
+          <input type="date" value={fromDate} onChange={(e) => { setFromDate(e.target.value); setPage(1); }} className="text-[13px] text-text-primary bg-transparent focus:outline-none" aria-label="From date" />
           <span className="text-text-light">–</span>
-          <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="text-[13px] text-text-primary bg-transparent focus:outline-none" aria-label="To date" />
+          <input type="date" value={toDate} onChange={(e) => { setToDate(e.target.value); setPage(1); }} className="text-[13px] text-text-primary bg-transparent focus:outline-none" aria-label="To date" />
         </div>
-        <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className={selectCls}>
+        <select value={categoryFilter} onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }} className={selectCls}>
           <option value="">All Categories</option>
           {categoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
-        <select value={actorFilter} onChange={(e) => setActorFilter(e.target.value)} className={selectCls}>
+        <select value={actorFilter} onChange={(e) => { setActorFilter(e.target.value); setPage(1); }} className={selectCls}>
           <option value="">All Actors</option>
           {actorOptions.map((u) => <option key={u} value={u}>{u}</option>)}
         </select>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={selectCls}>
+        <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} className={selectCls}>
           <option value="">All Statuses</option>
           <option value="Success">Success</option>
           <option value="Failed">Failed</option>
           <option value="Warning">Warning</option>
         </select>
-        <button onClick={() => { setQuery(""); setCategoryFilter(""); setActorFilter(""); setStatusFilter(""); setFromDate(""); setToDate(""); toast("Filters cleared", "info"); }} className="inline-flex items-center gap-2 px-3 py-2 text-[13px] text-text-muted border border-border-soft rounded-lg bg-white hover:bg-soft-bg whitespace-nowrap">
+        <button onClick={() => { setQuery(""); setCategoryFilter(""); setActorFilter(""); setStatusFilter(""); setFromDate(""); setToDate(""); setPage(1); toast("Filters cleared", "info"); }} className="inline-flex items-center gap-2 px-3 py-2 text-[13px] text-text-muted border border-border-soft rounded-lg bg-white hover:bg-soft-bg whitespace-nowrap">
           <SlidersHorizontal className="w-4 h-4 text-text-light" /> Clear
         </button>
       </div>
@@ -420,7 +428,7 @@ export default function AuditLogsPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((l) => (
+                {pageRows.map((l) => (
                   <tr key={l.id} className="border-b border-border-soft last:border-b-0 hover:bg-soft-bg/60 transition-colors">
                     <td className="px-5 py-3.5 whitespace-nowrap">
                       <div className="text-[13px] text-text-primary">{formatDate(l.createdAt)}</div>
@@ -459,11 +467,15 @@ export default function AuditLogsPage() {
           </div>
           {/* Pagination */}
           <div className="flex items-center justify-between px-5 py-4 border-t border-border-soft">
-            <p className="text-[13px] text-text-muted">Showing {filtered.length} of {logs.length} events</p>
+            <p className="text-[13px] text-text-muted">
+              {filtered.length === 0
+                ? "Showing 0 of 0 events"
+                : `Showing ${pageStart + 1}–${Math.min(pageStart + PAGE_SIZE, filtered.length)} of ${filtered.length.toLocaleString()} events`}
+            </p>
             <div className="flex items-center gap-1.5">
-              <button disabled={true} className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-light hover:bg-soft-bg disabled:opacity-40 disabled:cursor-not-allowed" aria-label="Previous page"><ChevronLeft className="w-4 h-4" /></button>
-              <button onClick={() => toast("Page 1 of 1", "info")} className="w-8 h-8 flex items-center justify-center rounded-lg bg-action-blue text-white text-[13px] font-medium">1</button>
-              <button disabled={true} className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-light hover:bg-soft-bg disabled:opacity-40 disabled:cursor-not-allowed" aria-label="Next page"><ChevronRight className="w-4 h-4" /></button>
+              <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={currentPage === 1} className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-light hover:bg-soft-bg disabled:opacity-40 disabled:cursor-not-allowed" aria-label="Previous page"><ChevronLeft className="w-4 h-4" /></button>
+              <span className="px-3 text-[13px] font-medium text-text-primary whitespace-nowrap">Page {currentPage} of {totalPages}</span>
+              <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-soft text-text-light hover:bg-soft-bg disabled:opacity-40 disabled:cursor-not-allowed" aria-label="Next page"><ChevronRight className="w-4 h-4" /></button>
             </div>
           </div>
         </Card>
