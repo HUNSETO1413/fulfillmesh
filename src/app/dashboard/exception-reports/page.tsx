@@ -3,9 +3,12 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Filter, Download, ChevronDown, ChevronLeft, ChevronRight, Search, AlertTriangle, AlertCircle, CheckCircle2, ShieldAlert, Clock, ArrowUpRight, ArrowDownRight, MoreHorizontal, Plus, Settings, UserPlus, FileDown, X } from "lucide-react";
 import { DateRangeMenu } from "@/components/dashboard/DateRangeMenu";
+import { Modal } from "@/components/dashboard/Modal";
+import { Field, Select as FormSelect, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
 import { api, exportToCsv } from "@/lib/client";
 import type { ExceptionReport } from "@/lib/analytics";
+import type { User } from "@/types";
 
 const TYPE_COLORS: Record<string, string> = {
   Quality: "#3B82F6",
@@ -24,7 +27,7 @@ function statusBucket(status: string): { sc: string; priority: string; pc: strin
 }
 
 type LogEntry = { at: string; text: string };
-type ExcRow = { id: string; type: string; desc: string; wh: string; priority: string; pc: string; status: string; sc: string; on: string; log: LogEntry[] };
+type ExcRow = { id: string; type: string; desc: string; wh: string; priority: string; pc: string; status: string; sc: string; on: string; assignee: string | null; log: LogEntry[] };
 
 const statusStyle: Record<string, string> = {
   open: "bg-[#FEF2F2] text-[#EF4444]",
@@ -94,6 +97,11 @@ export default function ExceptionReportsPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
 
+  // Assign-to-team modal
+  const [members, setMembers] = useState<User[]>([]);
+  const [assignTarget, setAssignTarget] = useState<ExcRow | null>(null);
+  const [assignChoice, setAssignChoice] = useState("");
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -114,6 +122,7 @@ export default function ExceptionReportsPage() {
               status: r.status,
               sc: b.sc,
               on: r.on,
+              assignee: null,
               log: [],
             };
           }),
@@ -127,6 +136,41 @@ export default function ExceptionReportsPage() {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Load assignable team members for the Assign-to-Team dialog.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get<{ data: User[]; total: number }>("/api/users");
+        if (!cancelled) setMembers(res.data.filter((u) => u.status === "Active"));
+      } catch {
+        /* members list stays empty; modal shows a fallback message */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Open the assignment modal for the first open exception (falling back to any).
+  function openAssign() {
+    const target = rows.find((r) => r.sc === "open") ?? rows[0] ?? null;
+    setAssignTarget(target);
+    setAssignChoice(target?.assignee ?? "");
+  }
+
+  function saveAssignment() {
+    if (!assignTarget || !assignChoice) {
+      toast("Select a team member to assign", "error");
+      return;
+    }
+    const id = assignTarget.id;
+    const stamp = nowStamp();
+    setRows((prev) => prev.map((r) => r.id === id
+      ? { ...r, assignee: assignChoice, log: [...r.log, { at: stamp, text: `Assigned to ${assignChoice}` }] }
+      : r));
+    setAssignTarget(null);
+    toast(`${id} assigned to ${assignChoice}`);
+  }
 
   // Source (warehouse/customer/supplier) filter options derived from the rows.
   const WH_FILTER = useMemo(
@@ -466,6 +510,7 @@ export default function ExceptionReportsPage() {
                               <p className="text-[12px] text-text-muted">Warehouse: <span className="text-text-primary font-medium">{r.wh}</span></p>
                               <p className="text-[12px] text-text-muted">Priority: <span className="font-medium" style={{ color: r.pc }}>{r.priority}</span></p>
                               <p className="text-[12px] text-text-muted">Current status: <span className="text-text-primary font-medium">{r.status}</span></p>
+                              <p className="text-[12px] text-text-muted">Assigned to: <span className="text-text-primary font-medium">{r.assignee ?? "Unassigned"}</span></p>
                             </div>
                             <div>
                               <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wide mb-2">Activity timeline</p>
@@ -762,7 +807,7 @@ export default function ExceptionReportsPage() {
             {[
               { label: "Create Exception", icon: Plus, onClick: () => toast("New exception form opened", "info") },
               { label: "Manage SLAs", icon: ShieldAlert, onClick: () => toast("SLA rules opened", "info") },
-              { label: "Assign to Team", icon: UserPlus, onClick: () => toast("Assignment dialog opened", "info") },
+              { label: "Assign to Team", icon: UserPlus, onClick: openAssign },
               { label: "Exception Settings", icon: Settings, onClick: () => toast("Exception settings opened", "info") },
               { label: "Download Report", icon: FileDown, onClick: exportExceptions },
             ].map((a) => {
@@ -793,6 +838,44 @@ export default function ExceptionReportsPage() {
           <Settings className="w-4 h-4" /> Configure Automation
         </button>
       </div>
+
+      {/* Assign to Team modal */}
+      <Modal
+        open={assignTarget !== null}
+        onClose={() => setAssignTarget(null)}
+        title="Assign exception to team"
+        description={assignTarget ? `Route ${assignTarget.id} to a team member for resolution.` : undefined}
+        size="sm"
+        footer={
+          <>
+            <SecondaryButton onClick={() => setAssignTarget(null)}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={saveAssignment}>Assign</PrimaryButton>
+          </>
+        }
+      >
+        {assignTarget && (
+          <div className="space-y-4">
+            <div className="rounded-lg border border-border-soft bg-soft-bg/60 px-3.5 py-3">
+              <p className="text-[12px] text-text-muted">{assignTarget.type} · {assignTarget.wh}</p>
+              <p className="text-[13px] text-text-primary mt-0.5">{assignTarget.desc}</p>
+            </div>
+            {members.length === 0 ? (
+              <p className="text-[13px] text-text-muted">No active team members are available to assign.</p>
+            ) : (
+              <Field label="Team member" required>
+                <FormSelect
+                  options={["", ...members.map((m) => `${m.name} · ${m.role}`)]}
+                  value={assignChoice}
+                  onChange={(e) => setAssignChoice(e.target.value)}
+                />
+              </Field>
+            )}
+            {assignTarget.assignee && (
+              <p className="text-[12px] text-text-muted">Currently assigned to <span className="font-medium text-text-primary">{assignTarget.assignee}</span>.</p>
+            )}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

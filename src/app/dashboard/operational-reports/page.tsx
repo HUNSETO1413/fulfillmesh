@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { CalendarClock, Download, Plus, ChevronDown, ChevronRight, ShoppingBag, Truck, CheckCircle2, Clock, DollarSign, ArrowUpRight, ArrowDownRight, BarChart3, Package, Ship, Warehouse, RotateCcw, Users, FileText, LineChart } from "lucide-react";
 import { DateRangeMenu } from "@/components/dashboard/DateRangeMenu";
 import { Modal } from "@/components/dashboard/Modal";
+import { Drawer, DrawerRow, DrawerSection } from "@/components/dashboard/Drawer";
 import { Field, TextInput, Select as FormSelect, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
 import { api, exportToCsv } from "@/lib/client";
@@ -159,6 +160,9 @@ export default function OperationalReportsPage() {
   const [chFilter, setChFilter] = useState("All Channels");
   const [otFilter, setOtFilter] = useState("All Order Types");
 
+  // insights drawer
+  const [insightsOpen, setInsightsOpen] = useState(false);
+
   // schedule modal
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [schedule, setSchedule] = useState<Schedule | null>(null);
@@ -221,6 +225,21 @@ export default function OperationalReportsPage() {
       })),
     [report],
   );
+
+  // Full set of insights derived from the already-loaded operational report.
+  const fullInsights = useMemo(() => {
+    const r = report;
+    const topWh = [...(r?.warehouses ?? [])].sort((a, b) => b.units - a.units)[0];
+    const busiestStatus = [...(r?.ordersByStatus ?? [])].sort((a, b) => b.count - a.count)[0];
+    return [
+      { dot: "#3B82F6", title: "Order volume", text: `${fmtInt(r?.totalOrders ?? 0)} orders processed across ${r?.ordersByStatus.length ?? 0} statuses in the current period.` },
+      { dot: "#10B981", title: "Fulfillment throughput", text: `${fmtInt(r?.shippedOrders ?? 0)} orders shipped, with on-time delivery holding at ${r?.onTimeDeliveryPct ?? 0}%.` },
+      { dot: "#F59E0B", title: "Warehouse tasks", text: `${fmtInt(r?.completedTasks ?? 0)} of ${fmtInt(r?.totalTasks ?? 0)} tasks completed (${r?.taskCompletionPct ?? 0}% completion rate).` },
+      { dot: "#8B5CF6", title: "Inventory health", text: `${r?.inventoryTurns ?? 0} inventory turns with ${fmtInt(r?.reservedUnits ?? 0)} units reserved against on-hand stock.` },
+      ...(busiestStatus ? [{ dot: "#EF4444", title: "Largest status bucket", text: `"${busiestStatus.status}" is the largest order status with ${fmtInt(busiestStatus.count)} orders.` }] : []),
+      ...(topWh ? [{ dot: "#06B6A4", title: "Top warehouse", text: `${topWh.warehouse} leads on volume with ${fmtInt(topWh.units)} units and ${topWh.onTimePct}% on-time delivery.` }] : []),
+    ];
+  }, [report]);
 
   function cycleGran() {
     setGran(GRANS[(GRANS.indexOf(gran) + 1) % GRANS.length]);
@@ -549,10 +568,58 @@ export default function OperationalReportsPage() {
                 <div key={i} className="flex gap-3"><span className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ backgroundColor: ins.dot }} /><p className="text-[13px] text-[#475569] leading-relaxed">{ins.text}</p></div>
               ))}
             </div>
-            <button onClick={() => toast("Opening full insights report", "info")} className="inline-block mt-4 text-[13px] font-medium text-action-blue hover:underline">View all insights →</button>
+            <button onClick={() => setInsightsOpen(true)} className="inline-block mt-4 text-[13px] font-medium text-action-blue hover:underline">View all insights →</button>
           </div>
         </div>
       </div>
+
+      {/* Full insights drawer */}
+      <Drawer
+        open={insightsOpen}
+        onClose={() => setInsightsOpen(false)}
+        title="Operational insights"
+        subtitle="Derived from live operational analytics for the current period."
+        footer={
+          <>
+            <SecondaryButton onClick={() => setInsightsOpen(false)}>Close</SecondaryButton>
+            <PrimaryButton
+              onClick={() => {
+                exportToCsv(
+                  "operational-insights",
+                  fullInsights.map((i) => ({ title: i.title, detail: i.text })),
+                  [
+                    { key: "title", header: "Insight" },
+                    { key: "detail", header: "Detail" },
+                  ],
+                );
+                toast(`Exported ${fullInsights.length} insights to CSV`);
+              }}
+            >
+              Export insights
+            </PrimaryButton>
+          </>
+        }
+      >
+        <DrawerSection title="Headline metrics">
+          <DrawerRow label="Total orders">{fmtInt(report?.totalOrders ?? 0)}</DrawerRow>
+          <DrawerRow label="Orders shipped">{fmtInt(report?.shippedOrders ?? 0)}</DrawerRow>
+          <DrawerRow label="On-time delivery">{report?.onTimeDeliveryPct ?? 0}%</DrawerRow>
+          <DrawerRow label="Task completion">{report?.taskCompletionPct ?? 0}%</DrawerRow>
+          <DrawerRow label="Inventory turns">{report?.inventoryTurns ?? 0}</DrawerRow>
+        </DrawerSection>
+        <DrawerSection title={`All insights (${fullInsights.length})`}>
+          <div className="space-y-3.5">
+            {fullInsights.map((ins, i) => (
+              <div key={i} className="flex gap-3">
+                <span className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ backgroundColor: ins.dot }} />
+                <p className="text-[13px] text-[#475569] leading-relaxed">
+                  <span className="font-medium text-[#1E293B]">{ins.title}.</span> {ins.text}
+                </p>
+              </div>
+            ))}
+          </div>
+        </DrawerSection>
+      </Drawer>
 
       {/* Schedule modal */}
       <Modal

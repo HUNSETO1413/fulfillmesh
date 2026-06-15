@@ -12,6 +12,7 @@ import type { AppNotification, Quote, QuoteStatus } from "@/types";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Modal } from "@/components/dashboard/Modal";
+import { Drawer } from "@/components/dashboard/Drawer";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { Field, TextInput, NumberInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
@@ -253,6 +254,10 @@ export default function QuotesView({ items }: { items: Quote[] }) {
 
   // delete
   const [deleting, setDeleting] = useState<Quote | null>(null);
+
+  // pending approvals drawer
+  const [approvalsOpen, setApprovalsOpen] = useState(false);
+  const pendingApprovals = useMemo(() => items.filter((q) => q.status === "Sent"), [items]);
 
   // computed stats from items
   const stats = useMemo(() => {
@@ -841,10 +846,42 @@ export default function QuotesView({ items }: { items: Quote[] }) {
                 <span className="text-[13px] font-semibold text-text-primary">$48,620.00</span>
               </div>
             </div>
-            <button onClick={() => toast("Opening pending approvals")} className="w-full mt-4 py-2.5 bg-[#3B82F6] text-white rounded-lg text-[13px] font-semibold hover:bg-[#2563EB] transition-colors shadow-[0_1px_3px_rgba(0,0,0,0.1)]">View All Approvals</button>
+            <button onClick={() => setApprovalsOpen(true)} className="w-full mt-4 py-2.5 bg-[#3B82F6] text-white rounded-lg text-[13px] font-semibold hover:bg-[#2563EB] transition-colors shadow-[0_1px_3px_rgba(0,0,0,0.1)]">View All Approvals</button>
           </div>
         </div>
       </div>
+
+      {/* Pending approvals drawer — lists RFQs awaiting approval (status "Sent") */}
+      <Drawer
+        open={approvalsOpen}
+        onClose={() => setApprovalsOpen(false)}
+        title="Pending Approvals"
+        subtitle={`${pendingApprovals.length} RFQ${pendingApprovals.length === 1 ? "" : "s"} awaiting your approval`}
+      >
+        {pendingApprovals.length === 0 ? (
+          <p className="text-[13px] text-text-muted">No RFQs are currently awaiting approval.</p>
+        ) : (
+          <div className="space-y-2">
+            {pendingApprovals.map((q) => (
+              <Link
+                key={q.id}
+                href={`/dashboard/quotes/${q.id}`}
+                onClick={() => setApprovalsOpen(false)}
+                className="flex items-center justify-between gap-3 p-3 rounded-lg border border-border-soft hover:bg-soft-bg transition-colors"
+              >
+                <div className="min-w-0">
+                  <p className="text-[13px] font-semibold text-[#3B82F6] font-mono">{q.id}</p>
+                  <p className="text-[12px] text-text-muted truncate">{q.customer} · {formatDate(q.createdDate)}</p>
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <StatusBadge status={q.status} />
+                  <span className="text-[13px] font-medium text-text-primary">{formatCurrency(q.total)}</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </Drawer>
 
       {/* Create / Edit modal */}
       <Modal

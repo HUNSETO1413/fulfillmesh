@@ -2,7 +2,10 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { Filter, Download, ChevronDown, ChevronRight, ShoppingBag, Truck, CheckCircle2, Clock, Target, ArrowUpRight, ArrowDownRight, Sparkles } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { DateRangeMenu } from "@/components/dashboard/DateRangeMenu";
+import { Modal } from "@/components/dashboard/Modal";
+import { PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
 import { api, exportToCsv } from "@/lib/client";
 import type { OrderPerformanceReport } from "@/lib/analytics";
@@ -96,6 +99,8 @@ const fmtPct = (n: number) => n.toFixed(1) + "%";
 /* ── component ── */
 export default function OrderPerformancePage() {
   const { toast } = useToast();
+  const router = useRouter();
+  const [predictiveOpen, setPredictiveOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("Overview");
   const [range, setRange] = useState("May 1 – May 31, 2025");
   const [gran, setGran] = useState<"Daily" | "Weekly" | "Monthly">("Daily");
@@ -519,14 +524,57 @@ export default function OrderPerformancePage() {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-3">
-          <button onClick={() => toast("Opening predictive analytics tour", "info")} className="rounded-lg border border-white/30 px-4 py-2.5 text-[13px] font-medium text-white hover:bg-white/10 transition-colors">
+          <button onClick={() => setPredictiveOpen(true)} className="rounded-lg border border-white/30 px-4 py-2.5 text-[13px] font-medium text-white hover:bg-white/10 transition-colors">
             Learn more
           </button>
-          <button onClick={() => toast("Redirecting to upgrade plans…", "info")} className="flex items-center gap-1.5 rounded-lg bg-white px-4 py-2.5 text-[13px] font-semibold text-navy hover:bg-white/90 transition-colors">
+          <button onClick={() => router.push("/pricing")} className="flex items-center gap-1.5 rounded-lg bg-white px-4 py-2.5 text-[13px] font-semibold text-navy hover:bg-white/90 transition-colors">
             Upgrade to Pro <ArrowUpRight className="h-4 w-4" />
           </button>
         </div>
       </div>
+
+      {/* Predictive analytics info modal */}
+      <Modal
+        open={predictiveOpen}
+        onClose={() => setPredictiveOpen(false)}
+        title="Predictive analytics"
+        description="See what Pro unlocks for order performance forecasting."
+        size="md"
+        footer={
+          <>
+            <SecondaryButton onClick={() => setPredictiveOpen(false)}>Maybe later</SecondaryButton>
+            <PrimaryButton onClick={() => { setPredictiveOpen(false); router.push("/pricing"); }}>View plans</PrimaryButton>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-[13px] text-[#475569] leading-relaxed">
+            Predictive analytics applies trend models to your live order, shipment and revenue
+            data to forecast demand and flag risks before they affect customers.
+          </p>
+          <div className="space-y-3">
+            {[
+              { icon: Sparkles, color: "#3B82F6", title: "Demand forecasting", text: "Project order volume by channel and warehouse weeks ahead." },
+              { icon: Target, color: "#10B981", title: "SLA risk alerts", text: "Get notified when on-time delivery is trending toward a breach." },
+              { icon: Clock, color: "#F59E0B", title: "Cycle-time anomalies", text: "Surface fulfillment slowdowns the moment they emerge." },
+              { icon: Truck, color: "#8B5CF6", title: "Capacity planning", text: "Right-size labor and inventory against predicted throughput." },
+            ].map((f) => {
+              const Icon = f.icon;
+              return (
+                <div key={f.title} className="flex items-start gap-3">
+                  <span className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: `${f.color}15` }}>
+                    <Icon className="w-4 h-4" style={{ color: f.color }} />
+                  </span>
+                  <div>
+                    <p className="text-[13px] font-semibold text-[#1E293B]">{f.title}</p>
+                    <p className="text-[12px] text-[#64748B] leading-relaxed">{f.text}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

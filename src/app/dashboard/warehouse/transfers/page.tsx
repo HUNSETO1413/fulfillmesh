@@ -160,6 +160,38 @@ export default function StockTransfersPage() {
   const [editing, setEditing] = useState<Row | null>(null);
   const [editDraft, setEditDraft] = useState<Draft>(emptyDraft);
   const [detailRow, setDetailRow] = useState<Row | null>(null);
+  const [reportOpen, setReportOpen] = useState(false);
+
+  /* ── Transfer report derived from loaded rows ──
+     Aggregates the in-memory transfer rows into status counts and parses the
+     "N SKUs"/"N units" display strings back into numbers for totals plus a
+     per-route breakdown, so the report mirrors exactly what is on the page. */
+  const transferReport = useMemo(() => {
+    const num = (s: string) => Number(s.replace(/[^\d]/g, "")) || 0;
+    const byStatus: { status: Status; count: number; units: number; skus: number }[] = STATUSES.map((status) => {
+      const group = rows.filter((r) => r.status === status);
+      return {
+        status,
+        count: group.length,
+        units: group.reduce((sum, r) => sum + num(r.units), 0),
+        skus: group.reduce((sum, r) => sum + num(r.items), 0),
+      };
+    });
+    const totalUnits = rows.reduce((sum, r) => sum + num(r.units), 0);
+    const totalSkus = rows.reduce((sum, r) => sum + num(r.items), 0);
+
+    const routeMap = new Map<string, { route: string; count: number; units: number }>();
+    for (const r of rows) {
+      const key = `${r.from} → ${r.to}`;
+      const g = routeMap.get(key) ?? { route: key, count: 0, units: 0 };
+      g.count += 1;
+      g.units += num(r.units);
+      routeMap.set(key, g);
+    }
+    const topRoutes = Array.from(routeMap.values()).sort((a, b) => b.units - a.units).slice(0, 5);
+
+    return { byStatus, totalUnits, totalSkus, totalTransfers: rows.length, topRoutes };
+  }, [rows]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -471,7 +503,7 @@ export default function StockTransfersPage() {
 
           {/* Transfer Summary */}
           <div className={card + " p-5"}>
-            <div className="flex items-center justify-between mb-3"><h3 className="text-[14px] font-semibold text-text-primary">Transfer Summary</h3><button onClick={() => toast("Opening transfer report", "info")} className="text-[12px] text-action-blue hover:underline">View report</button></div>
+            <div className="flex items-center justify-between mb-3"><h3 className="text-[14px] font-semibold text-text-primary">Transfer Summary</h3><button onClick={() => setReportOpen(true)} className="text-[12px] text-action-blue hover:underline">View report</button></div>
             <div className="space-y-3">
               {summary.map((s) => {
                 const Icon = s.icon;
@@ -654,6 +686,86 @@ export default function StockTransfersPage() {
             </DrawerSection>
           </>
         )}
+      </Drawer>
+
+      {/* Transfer report drawer — computed from loaded transfer rows */}
+      <Drawer
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
+        title="Transfer Report"
+        subtitle={`${transferReport.totalTransfers} transfers • ${transferReport.totalUnits.toLocaleString()} units`}
+        footer={
+          <>
+            <button
+              onClick={() => {
+                exportToCsv("transfer-report", transferReport.byStatus, [
+                  { key: "status", header: "Status" },
+                  { key: "count", header: "Transfers" },
+                  { key: "skus", header: "SKUs" },
+                  { key: "units", header: "Units" },
+                ]);
+                toast("Exported transfer report to CSV");
+              }}
+              className="px-4 py-2 text-[13px] font-medium text-action-blue border border-action-blue rounded-lg hover:bg-action-blue/5"
+            >
+              Export CSV
+            </button>
+            <button onClick={() => setReportOpen(false)} className="px-4 py-2 text-[13px] font-medium text-text-primary bg-white border border-border-soft rounded-lg hover:bg-soft-bg">Close</button>
+          </>
+        }
+      >
+        <DrawerSection title="Totals">
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-soft-bg rounded-lg p-3 text-center">
+              <p className="text-[18px] font-bold text-text-primary">{transferReport.totalTransfers}</p>
+              <p className="text-[10px] text-text-light mt-0.5">Transfers</p>
+            </div>
+            <div className="bg-soft-bg rounded-lg p-3 text-center">
+              <p className="text-[18px] font-bold text-action-blue">{transferReport.totalUnits.toLocaleString()}</p>
+              <p className="text-[10px] text-text-light mt-0.5">Units</p>
+            </div>
+            <div className="bg-soft-bg rounded-lg p-3 text-center">
+              <p className="text-[18px] font-bold text-teal">{transferReport.totalSkus.toLocaleString()}</p>
+              <p className="text-[10px] text-text-light mt-0.5">SKUs</p>
+            </div>
+          </div>
+        </DrawerSection>
+
+        <DrawerSection title="By Status">
+          <div className="overflow-x-auto -mx-1">
+            <table className="w-full text-[12px]">
+              <thead><tr className="text-left text-[10px] font-semibold text-text-light uppercase tracking-[0.04em]">
+                <th className="pb-2 pr-3">Status</th><th className="pb-2 pr-3 text-right">Transfers</th><th className="pb-2 pr-3 text-right">SKUs</th><th className="pb-2 text-right">Units</th>
+              </tr></thead>
+              <tbody>
+                {transferReport.byStatus.map((s) => (
+                  <tr key={s.status} className="border-t border-[#F3F4F6]">
+                    <td className="py-1.5 pr-3"><Badge text={s.status} /></td>
+                    <td className="py-1.5 pr-3 text-right text-text-primary font-medium">{s.count}</td>
+                    <td className="py-1.5 pr-3 text-right text-text-muted">{s.skus.toLocaleString()}</td>
+                    <td className="py-1.5 text-right text-text-muted">{s.units.toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </DrawerSection>
+
+        <DrawerSection title="Top Routes by Volume">
+          {transferReport.topRoutes.length === 0 ? (
+            <p className="text-[13px] text-text-muted py-2">No transfer data available.</p>
+          ) : (
+            <div className="space-y-3">
+              {transferReport.topRoutes.map((r) => (
+                <div key={r.route} className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-soft-bg flex items-center justify-center shrink-0"><ArrowLeftRight className="w-4 h-4 text-action-blue" /></div>
+                  <div className="flex-1 min-w-0"><p className="text-[12px] font-medium text-text-primary truncate">{r.route}</p><p className="text-[11px] text-text-light">{r.count} transfer{r.count === 1 ? "" : "s"}</p></div>
+                  <span className="text-[12px] font-semibold text-text-primary shrink-0">{r.units.toLocaleString()} units</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </DrawerSection>
       </Drawer>
 
       {/* Cancel confirm */}

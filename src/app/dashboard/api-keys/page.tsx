@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Key, Activity, AlertTriangle, Gauge, Plus, Copy, Eye, EyeOff,
   Trash2, ExternalLink, BookOpen, Shield, CheckCircle2, Clock,
@@ -8,6 +9,7 @@ import {
   ChevronRight, Loader,
 } from "lucide-react";
 import { Modal } from "@/components/dashboard/Modal";
+import { Drawer, DrawerRow, DrawerSection } from "@/components/dashboard/Drawer";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { Field, TextInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
@@ -58,6 +60,7 @@ function Card({ children, className = "" }: { children: React.ReactNode; classNa
 
 export default function ApiKeysPage() {
   const { toast } = useToast();
+  const router = useRouter();
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(true);
   // Full secret values are only known for keys generated this session (the server
@@ -82,6 +85,12 @@ export default function ApiKeysPage() {
 
   // delete
   const [deleting, setDeleting] = useState<ApiKey | null>(null);
+
+  // key detail drawer
+  const [detailKey, setDetailKey] = useState<ApiKey | null>(null);
+
+  // full request log drawer
+  const [requestsOpen, setRequestsOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -205,7 +214,7 @@ export default function ApiKeysPage() {
         </div>
         <div className="flex items-center gap-3">
           <button
-            onClick={() => toast("Opening API documentation…", "info")}
+            onClick={() => router.push("/resources/api-documentation")}
             className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-[#E2E8F0] bg-white text-[#64748B] text-[13px] font-medium hover:bg-[#F8FAFC] shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
           >
             <BookOpen className="w-4 h-4 text-[#94A3B8]" /> View Docs
@@ -362,7 +371,7 @@ export default function ApiKeysPage() {
                   </td>
                   <td className="px-5 py-3.5 text-right">
                     <div className="flex items-center justify-end gap-1">
-                      <button onClick={() => toast(`Opening usage details for "${k.name}"…`, "info")} className="p-1.5 rounded hover:bg-[#F8FAFC] text-[#94A3B8] hover:text-[#1E293B]" aria-label="View details"><ExternalLink className="w-4 h-4" /></button>
+                      <button onClick={() => setDetailKey(k)} className="p-1.5 rounded hover:bg-[#F8FAFC] text-[#94A3B8] hover:text-[#1E293B]" aria-label="View details"><ExternalLink className="w-4 h-4" /></button>
                       <button onClick={() => setDeleting(k)} className="p-1.5 rounded hover:bg-[#EF4444]/10 text-[#94A3B8] hover:text-[#EF4444]" aria-label={`Revoke ${k.name}`}><Trash2 className="w-4 h-4" /></button>
                     </div>
                   </td>
@@ -427,7 +436,7 @@ export default function ApiKeysPage() {
           <Card className="p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-[14px] font-semibold text-[#1E293B]">Recent Requests</h3>
-              <button onClick={() => toast("Opening full request log…", "info")} className="text-[12px] font-medium text-[#3B82F6] hover:underline">View all</button>
+              <button onClick={() => setRequestsOpen(true)} className="text-[12px] font-medium text-[#3B82F6] hover:underline">View all</button>
             </div>
             <div className="space-y-3">
               {recentRequests.map((r, i) => (
@@ -463,7 +472,7 @@ export default function ApiKeysPage() {
                 <Webhook className="w-3.5 h-3.5 text-[#10B981]" /> Webhook Support
               </div>
             </div>
-            <button onClick={() => toast("Opening API documentation…", "info")} className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 text-[13px] font-medium text-white bg-[#0057D8] rounded-lg hover:bg-[#0047B3]">
+            <button onClick={() => router.push("/resources/api-documentation")} className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 text-[13px] font-medium text-white bg-[#0057D8] rounded-lg hover:bg-[#0047B3]">
               <ExternalLink className="w-4 h-4" /> View Documentation
             </button>
           </Card>
@@ -481,7 +490,7 @@ export default function ApiKeysPage() {
             <p className="text-[12px] text-[#B8C7DA] mt-0.5">Follow best practices for key rotation, IP whitelisting, and access control to protect your data.</p>
           </div>
         </div>
-        <button onClick={() => toast("Opening the security guide…", "info")} className="inline-flex items-center gap-2 px-5 py-2.5 bg-white rounded-lg text-[13px] font-semibold text-navy hover:bg-white/90 shrink-0">
+        <button onClick={() => router.push("/resources/help-center")} className="inline-flex items-center gap-2 px-5 py-2.5 bg-white rounded-lg text-[13px] font-semibold text-navy hover:bg-white/90 shrink-0">
           <BookOpen className="w-4 h-4" /> Security Guide
         </button>
       </div>
@@ -545,6 +554,70 @@ export default function ApiKeysPage() {
         confirmLabel="Revoke key"
         destructive
       />
+
+      {/* Key details drawer */}
+      <Drawer
+        open={!!detailKey}
+        onClose={() => setDetailKey(null)}
+        title={detailKey?.name ?? "API Key"}
+        subtitle={detailKey ? `${detailKey.env} environment` : undefined}
+        footer={<SecondaryButton onClick={() => setDetailKey(null)}>Close</SecondaryButton>}
+      >
+        {detailKey && (
+          <div>
+            <DrawerSection title="Overview">
+              <DrawerRow label="Name">{detailKey.name}</DrawerRow>
+              <DrawerRow label="Environment">{detailKey.env}</DrawerRow>
+              <DrawerRow label="Status">
+                <span className={`inline-flex px-2.5 py-0.5 text-[12px] font-medium rounded-md ${detailKey.status === "Active" ? "bg-[#10B981]/10 text-[#10B981]" : "bg-[#94A3B8]/10 text-[#94A3B8]"}`}>
+                  {detailKey.status}
+                </span>
+              </DrawerRow>
+              <DrawerRow label="Key">
+                <code className="text-[12px] bg-[#F1F5F9] px-2 py-0.5 rounded font-mono text-[#64748B] break-all">
+                  {(showKeys[detailKey.id] && fullSecrets[detailKey.id]) || detailKey.prefix}
+                </code>
+              </DrawerRow>
+            </DrawerSection>
+            <DrawerSection title="Permissions">
+              <div className="flex flex-wrap gap-1.5">
+                {detailKey.scopes.length === 0 && <span className="text-[13px] text-[#94A3B8]">No scopes</span>}
+                {detailKey.scopes.map((p) => (
+                  <span key={p} className="inline-flex px-2 py-0.5 rounded text-[11px] font-medium bg-[#0057D8]/10 text-[#0057D8]">{p}</span>
+                ))}
+              </div>
+            </DrawerSection>
+            <DrawerSection title="Activity">
+              <DrawerRow label="Created">{detailKey.createdAt}</DrawerRow>
+              <DrawerRow label="Last Used">{detailKey.lastUsed ?? "Never"}</DrawerRow>
+            </DrawerSection>
+          </div>
+        )}
+      </Drawer>
+
+      {/* Full request log drawer */}
+      <Drawer
+        open={requestsOpen}
+        onClose={() => setRequestsOpen(false)}
+        title="Recent API Requests"
+        subtitle={`${recentRequests.length} request${recentRequests.length === 1 ? "" : "s"} logged`}
+        footer={<SecondaryButton onClick={() => setRequestsOpen(false)}>Close</SecondaryButton>}
+      >
+        <div className="space-y-2.5">
+          {recentRequests.map((r, i) => (
+            <div key={i} className="flex items-center gap-2 text-[12px] border-b border-[#F3F4F6] last:border-b-0 pb-2.5 last:pb-0">
+              <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold font-mono ${
+                r.method === "GET" ? "bg-[#3B82F6]/10 text-[#3B82F6]" :
+                r.method === "POST" ? "bg-[#10B981]/10 text-[#10B981]" :
+                "bg-[#F59E0B]/10 text-[#F59E0B]"
+              }`}>{r.method}</span>
+              <code className="text-[11px] text-[#64748B] font-mono flex-1 truncate">{r.path}</code>
+              <span className={`text-[11px] font-medium ${r.status >= 400 ? "text-[#EF4444]" : "text-[#10B981]"}`}>{r.status}</span>
+              <span className="text-[10px] text-[#94A3B8]">{r.time}</span>
+            </div>
+          ))}
+        </div>
+      </Drawer>
     </div>
   );
 }

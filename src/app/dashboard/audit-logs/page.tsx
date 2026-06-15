@@ -111,6 +111,12 @@ export default function AuditLogsPage() {
   // ---- Full Event Types drawer ----
   const [typesOpen, setTypesOpen] = useState(false);
 
+  // ---- All Users drawer ----
+  const [usersOpen, setUsersOpen] = useState(false);
+
+  // ---- All Security Events drawer ----
+  const [allSecurityOpen, setAllSecurityOpen] = useState(false);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -257,6 +263,15 @@ export default function AuditLogsPage() {
       .map(([name, count]) => ({ name, count, color: avatarColor(name) }));
   }, [logs]);
 
+  // ---- All distinct actors with their event counts (for the All Users drawer) ----
+  const allUsers = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const l of logs) counts.set(l.actor, (counts.get(l.actor) ?? 0) + 1);
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, count]) => ({ name, count, color: avatarColor(name) }));
+  }, [logs]);
+
   // ---- Recent security/failed events ----
   const securityEvents = useMemo(() => {
     return logs
@@ -267,6 +282,22 @@ export default function AuditLogsPage() {
       .map((l) => ({
         title: l.action,
         sub: l.target ?? l.ip ?? l.actor,
+        time: `${formatDate(l.createdAt)} ${formatTime(l.createdAt)}`,
+      }));
+  }, [logs]);
+
+  // ---- Full list of security/failed events (for the View all drawer) ----
+  const allSecurityEvents = useMemo(() => {
+    return logs
+      .filter((l) => l.category.toLowerCase() === "security" || l.status !== "Success")
+      .slice()
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .map((l) => ({
+        id: l.id,
+        title: l.action,
+        actor: l.actor,
+        sub: l.target ?? l.ip ?? l.actor,
+        status: l.status,
         time: `${formatDate(l.createdAt)} ${formatTime(l.createdAt)}`,
       }));
   }, [logs]);
@@ -513,14 +544,14 @@ export default function AuditLogsPage() {
                 </div>
               ))}
             </div>
-            <button onClick={() => toast("Opening all users…", "info")} className="mt-3 text-[12px] font-medium text-action-blue hover:underline">View all users</button>
+            <button onClick={() => setUsersOpen(true)} className="mt-3 text-[12px] font-medium text-action-blue hover:underline">View all users</button>
           </Card>
 
           {/* Recent Security Events */}
           <Card className="p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-[14px] font-semibold text-text-primary">Recent Security Events</h3>
-              <button onClick={() => toast("Opening full list…", "info")} className="text-[12px] font-medium text-action-blue hover:underline">View all</button>
+              <button onClick={() => setAllSecurityOpen(true)} className="text-[12px] font-medium text-action-blue hover:underline">View all</button>
             </div>
             <div className="space-y-4">
               {securityEvents.length === 0 && <p className="text-[13px] text-text-light">No recent security events.</p>}
@@ -662,6 +693,56 @@ export default function AuditLogsPage() {
               <span className="font-medium text-text-primary whitespace-nowrap">
                 {e.count.toLocaleString()} ({((e.count / allEventTypesTotal) * 100).toFixed(1)}%)
               </span>
+            </div>
+          ))}
+        </div>
+      </Drawer>
+
+      {/* All Users */}
+      <Drawer
+        open={usersOpen}
+        onClose={() => setUsersOpen(false)}
+        title="All Users"
+        subtitle={`${allUsers.length} distinct actor${allUsers.length === 1 ? "" : "s"} across ${totalEvents.toLocaleString()} events`}
+        footer={<PrimaryButton onClick={() => setUsersOpen(false)}>Close</PrimaryButton>}
+      >
+        <div className="space-y-3">
+          {allUsers.length === 0 && <p className="text-[13px] text-text-light">No events yet.</p>}
+          {allUsers.map((u) => (
+            <div key={u.name} className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-semibold shrink-0" style={{ backgroundColor: u.color }}>
+                {initials(u.name)}
+              </div>
+              <span className="text-[13px] font-medium text-text-primary flex-1 truncate">{u.name}</span>
+              <span className="text-[13px] text-text-muted whitespace-nowrap">{u.count.toLocaleString()} event{u.count === 1 ? "" : "s"}</span>
+            </div>
+          ))}
+        </div>
+      </Drawer>
+
+      {/* All Security Events */}
+      <Drawer
+        open={allSecurityOpen}
+        onClose={() => setAllSecurityOpen(false)}
+        title="Security Events"
+        subtitle={`${allSecurityEvents.length} security or failed event${allSecurityEvents.length === 1 ? "" : "s"}`}
+        footer={<PrimaryButton onClick={() => setAllSecurityOpen(false)}>Close</PrimaryButton>}
+      >
+        <div className="space-y-4">
+          {allSecurityEvents.length === 0 && <p className="text-[13px] text-text-light">No security events.</p>}
+          {allSecurityEvents.map((e) => (
+            <div key={e.id} className="flex items-start gap-3 border-b border-[#F3F4F6] last:border-b-0 pb-4 last:pb-0">
+              <span className="w-7 h-7 rounded-lg bg-[#EF4444]/10 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-3.5 h-3.5 text-[#EF4444]" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <p className="text-[13px] font-medium text-text-primary truncate">{e.title}</p>
+                  <span className={`inline-flex px-2 py-0.5 text-[11px] font-medium rounded-md shrink-0 ${statusStyle(e.status)}`}>{e.status}</span>
+                </div>
+                <p className="text-[12px] text-text-light mt-0.5 truncate">{e.actor} · {e.sub}</p>
+                <p className="text-[11px] text-text-light">{e.time}</p>
+              </div>
             </div>
           ))}
         </div>

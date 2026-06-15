@@ -29,8 +29,9 @@ import {
   Loader,
 } from "lucide-react";
 import { Modal } from "@/components/dashboard/Modal";
+import { Drawer } from "@/components/dashboard/Drawer";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
-import { Field, TextInput, TextArea, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
+import { Field, TextInput, TextArea, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
 import { api } from "@/lib/client";
 import type { Message as MessageRecord } from "@/types";
@@ -125,6 +126,56 @@ const SIMULATED_REPLIES = [
 
 type ComposeDraft = { recipient: string; subject: string; body: string };
 
+interface MessageSettings {
+  defaultChannel: string;
+  sendOnEnter: boolean;
+  showReadReceipts: boolean;
+  autoArchiveResolved: boolean;
+}
+const defaultMsgSettings: MessageSettings = {
+  defaultChannel: "Email",
+  sendOnEnter: true,
+  showReadReceipts: true,
+  autoArchiveResolved: false,
+};
+
+interface NotificationSettings {
+  desktopAlerts: boolean;
+  emailDigest: boolean;
+  mentionsOnly: boolean;
+  soundEnabled: boolean;
+}
+const defaultNotifSettings: NotificationSettings = {
+  desktopAlerts: true,
+  emailDigest: false,
+  mentionsOnly: false,
+  soundEnabled: true,
+};
+
+const MESSAGE_CHANNELS = ["Email", "SMS", "In-app", "Slack"];
+
+// A small reusable toggle row for settings modals.
+function ToggleRow({ label, description, checked, onChange }: { label: string; description: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-2">
+      <div className="min-w-0">
+        <p className="text-[13px] font-medium text-text-primary">{label}</p>
+        <p className="text-[12px] text-text-light">{description}</p>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        onClick={() => onChange(!checked)}
+        className={`relative shrink-0 w-10 h-6 rounded-full transition-colors ${checked ? "bg-action-blue" : "bg-[#D1D5DB]"}`}
+      >
+        <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${checked ? "translate-x-4" : ""}`} />
+      </button>
+    </div>
+  );
+}
+
 export default function MessagesPage() {
   const { toast } = useToast();
   const [selected, setSelected] = useState("");
@@ -143,6 +194,16 @@ export default function MessagesPage() {
   // Compose modal
   const [composeOpen, setComposeOpen] = useState(false);
   const [compose, setCompose] = useState<ComposeDraft>({ recipient: "", subject: "", body: "" });
+
+  // Settings modals
+  const [msgSettingsOpen, setMsgSettingsOpen] = useState(false);
+  const [msgSettings, setMsgSettings] = useState<MessageSettings>(defaultMsgSettings);
+  const [notifSettingsOpen, setNotifSettingsOpen] = useState(false);
+  const [notifSettings, setNotifSettings] = useState<NotificationSettings>(defaultNotifSettings);
+  const [savingSettings, setSavingSettings] = useState(false);
+
+  // Shared files drawer
+  const [filesOpen, setFilesOpen] = useState(false);
 
   // Track the active thread for simulated replies, and clean up pending timers.
   const selectedRef = useRef(selected);
@@ -322,6 +383,50 @@ export default function MessagesPage() {
       .catch(() => toast("Failed to send message", "error"));
   }
 
+  // Persist message channel preferences to the settings API.
+  function saveMessageSettings() {
+    setSavingSettings(true);
+    api.put("/api/settings", { messages: { ...msgSettings } })
+      .then(() => { toast("Message settings saved"); setMsgSettingsOpen(false); })
+      .catch(() => toast("Failed to save message settings", "error"))
+      .finally(() => setSavingSettings(false));
+  }
+
+  // Persist notification toggles to the settings API.
+  function saveNotificationSettings() {
+    setSavingSettings(true);
+    api.put("/api/settings", { messages: { notifications: { ...notifSettings } } })
+      .then(() => { toast("Notification settings saved"); setNotifSettingsOpen(false); })
+      .catch(() => toast("Failed to save notification settings", "error"))
+      .finally(() => setSavingSettings(false));
+  }
+
+  // Generate and download a small text stub for a shared file (real client download).
+  function downloadSharedFile(file: { name: string; meta: string }) {
+    const stub = [
+      `FulfillMesh — Shared File`,
+      `==========================`,
+      ``,
+      `File name: ${file.name}`,
+      `Details:   ${file.meta}`,
+      `Conversation: ${activeConvo?.name ?? "—"}${activeConvo?.subject ? ` (${activeConvo.subject})` : ""}`,
+      `Generated: ${nowStamp()}`,
+      ``,
+      `This is a generated placeholder for the shared document.`,
+      `In production this download streams the original file contents.`,
+    ].join("\n");
+    const base = file.name.replace(/\.[^.]+$/, "");
+    const blob = new Blob([stub], { type: "text/plain;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `${base}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
+    toast(`Downloaded ${base}.txt`);
+  }
+
   function handleComposerKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -349,7 +454,7 @@ export default function MessagesPage() {
           <p className="text-[14px] text-text-body mt-1">Communicate with your team and partners in real time.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={() => toast("Opening message settings…", "info")} className="flex items-center gap-2 px-3.5 py-2 bg-white border border-border-soft rounded-lg text-[13px] font-medium text-text-muted shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-soft-bg transition-colors">
+          <button onClick={() => setMsgSettingsOpen(true)} className="flex items-center gap-2 px-3.5 py-2 bg-white border border-border-soft rounded-lg text-[13px] font-medium text-text-muted shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-soft-bg transition-colors">
             <Settings className="w-4 h-4" /> Settings
           </button>
           <button onClick={openCompose} className="flex items-center gap-2 px-4 py-2 bg-action-blue rounded-lg text-[13px] font-medium text-white hover:bg-[#0048B5] shadow-[0_1px_2px_rgba(0,0,0,0.05)] transition-colors">
@@ -550,11 +655,11 @@ export default function MessagesPage() {
             <div className="p-4 border-b border-border-soft">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-[13px] font-semibold text-text-primary">Shared Files (2)</h3>
-                <button onClick={() => toast("Opening shared files…", "info")} className="text-[11px] font-medium text-action-blue hover:underline">View all</button>
+                <button onClick={() => setFilesOpen(true)} className="text-[11px] font-medium text-action-blue hover:underline">View all</button>
               </div>
               <div className="space-y-2">
                 {sharedFiles.map((f) => (
-                  <button key={f.name} onClick={() => toast(`Downloading ${f.name}…`)} className="w-full text-left flex items-center gap-2.5 p-2 rounded-lg hover:bg-white transition-colors">
+                  <button key={f.name} onClick={() => downloadSharedFile(f)} className="w-full text-left flex items-center gap-2.5 p-2 rounded-lg hover:bg-white transition-colors">
                     <div className="w-8 h-8 rounded-lg bg-action-blue/10 flex items-center justify-center shrink-0"><FileText className="w-4 h-4 text-action-blue" /></div>
                     <div className="min-w-0">
                       <p className="text-[12px] font-medium text-text-primary truncate">{f.name}</p>
@@ -612,7 +717,7 @@ export default function MessagesPage() {
             <p className="text-[12px] text-text-on-dark-muted mt-0.5">Enable notifications to never miss important updates from your team.</p>
           </div>
         </div>
-        <button onClick={() => toast("Opening notification settings…", "info")} className="shrink-0 px-4 py-2.5 bg-[#3B82F6] rounded-lg text-[13px] font-semibold text-white hover:bg-[#2563EB] transition-colors">
+        <button onClick={() => setNotifSettingsOpen(true)} className="shrink-0 px-4 py-2.5 bg-[#3B82F6] rounded-lg text-[13px] font-semibold text-white hover:bg-[#2563EB] transition-colors">
           Manage Notifications
         </button>
       </div>
@@ -666,6 +771,83 @@ export default function MessagesPage() {
         confirmLabel="Delete"
         destructive
       />
+
+      {/* Message settings modal */}
+      <Modal
+        open={msgSettingsOpen}
+        onClose={() => setMsgSettingsOpen(false)}
+        title="Message Settings"
+        description="Control how messages are composed and delivered across channels."
+        footer={
+          <>
+            <SecondaryButton onClick={() => setMsgSettingsOpen(false)}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={saveMessageSettings} disabled={savingSettings}>{savingSettings ? "Saving…" : "Save settings"}</PrimaryButton>
+          </>
+        }
+      >
+        <div className="space-y-2">
+          <Field label="Default channel">
+            <Select
+              options={MESSAGE_CHANNELS}
+              value={msgSettings.defaultChannel}
+              onChange={(e) => setMsgSettings((s) => ({ ...s, defaultChannel: e.target.value }))}
+            />
+          </Field>
+          <div className="pt-1 divide-y divide-border-soft">
+            <ToggleRow label="Send on Enter" description="Press Enter to send; Shift+Enter for a new line." checked={msgSettings.sendOnEnter} onChange={(v) => setMsgSettings((s) => ({ ...s, sendOnEnter: v }))} />
+            <ToggleRow label="Read receipts" description="Let partners see when you have read their message." checked={msgSettings.showReadReceipts} onChange={(v) => setMsgSettings((s) => ({ ...s, showReadReceipts: v }))} />
+            <ToggleRow label="Auto-archive resolved" description="Archive a thread automatically once it is marked resolved." checked={msgSettings.autoArchiveResolved} onChange={(v) => setMsgSettings((s) => ({ ...s, autoArchiveResolved: v }))} />
+          </div>
+        </div>
+      </Modal>
+
+      {/* Notification settings modal */}
+      <Modal
+        open={notifSettingsOpen}
+        onClose={() => setNotifSettingsOpen(false)}
+        title="Notification Settings"
+        description="Choose how you want to be notified about new activity."
+        footer={
+          <>
+            <SecondaryButton onClick={() => setNotifSettingsOpen(false)}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={saveNotificationSettings} disabled={savingSettings}>{savingSettings ? "Saving…" : "Save preferences"}</PrimaryButton>
+          </>
+        }
+      >
+        <div className="divide-y divide-border-soft">
+          <ToggleRow label="Desktop alerts" description="Show a browser notification for new messages." checked={notifSettings.desktopAlerts} onChange={(v) => setNotifSettings((s) => ({ ...s, desktopAlerts: v }))} />
+          <ToggleRow label="Email digest" description="Receive a daily summary of unread conversations." checked={notifSettings.emailDigest} onChange={(v) => setNotifSettings((s) => ({ ...s, emailDigest: v }))} />
+          <ToggleRow label="Mentions only" description="Only notify me when I'm directly mentioned." checked={notifSettings.mentionsOnly} onChange={(v) => setNotifSettings((s) => ({ ...s, mentionsOnly: v }))} />
+          <ToggleRow label="Notification sound" description="Play a sound when a new message arrives." checked={notifSettings.soundEnabled} onChange={(v) => setNotifSettings((s) => ({ ...s, soundEnabled: v }))} />
+        </div>
+      </Modal>
+
+      {/* Shared files drawer */}
+      <Drawer
+        open={filesOpen}
+        onClose={() => setFilesOpen(false)}
+        title="Shared Files"
+        subtitle={activeConvo ? `Files in conversation with ${activeConvo.name}` : "Shared files"}
+        footer={<SecondaryButton onClick={() => setFilesOpen(false)}>Close</SecondaryButton>}
+      >
+        <div className="space-y-2">
+          {sharedFiles.map((f) => (
+            <div key={f.name} className="flex items-center gap-3 p-3 rounded-lg border border-border-soft hover:bg-soft-bg transition-colors">
+              <div className="w-9 h-9 rounded-lg bg-action-blue/10 flex items-center justify-center shrink-0"><FileText className="w-4.5 h-4.5 text-action-blue" /></div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-medium text-text-primary truncate">{f.name}</p>
+                <p className="text-[11px] text-text-light">{f.meta}</p>
+              </div>
+              <button onClick={() => downloadSharedFile(f)} className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border-soft text-[12px] font-medium text-action-blue hover:bg-white transition-colors">
+                <FileText className="w-3.5 h-3.5" /> Download
+              </button>
+            </div>
+          ))}
+          {sharedFiles.length === 0 && (
+            <p className="text-[13px] text-text-light text-center py-8">No shared files in this conversation.</p>
+          )}
+        </div>
+      </Drawer>
     </div>
   );
 }

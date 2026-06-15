@@ -10,6 +10,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { Modal } from "@/components/dashboard/Modal";
+import { Drawer } from "@/components/dashboard/Drawer";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { Field, TextInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
@@ -106,6 +107,31 @@ const popular = [
   { name: "QuickBooks Online", desc: "Sync invoices and payments", action: "Manage", iconBg: "bg-[#00B894]/10", iconColor: "text-[#00B894]", icon: Calculator },
 ];
 
+// Recent integration activity log surfaced in the logs/activity drawer.
+interface ActivityEntry { time: string; integration: string; event: string; status: "Success" | "Failed" | "Info" }
+const activityLog: ActivityEntry[] = [
+  { time: "May 31, 2026 09:14 AM", integration: "Shopify", event: "Orders synced (42 records)", status: "Success" },
+  { time: "May 31, 2026 09:08 AM", integration: "Shopify", event: "Inventory updated for 35 SKUs", status: "Success" },
+  { time: "May 31, 2026 08:55 AM", integration: "Amazon Seller Central", event: "Order import retry after timeout", status: "Failed" },
+  { time: "May 31, 2026 08:42 AM", integration: "Shopify", event: "Product created: Wireless Headphones", status: "Success" },
+  { time: "May 31, 2026 08:30 AM", integration: "ShipStation", event: "Webhook received: shipment/created", status: "Success" },
+  { time: "May 31, 2026 08:15 AM", integration: "QuickBooks Online", event: "Invoice sync completed (18 invoices)", status: "Success" },
+  { time: "May 31, 2026 07:50 AM", integration: "Amazon Seller Central", event: "Rate limit reached — throttling requests", status: "Info" },
+  { time: "May 31, 2026 07:30 AM", integration: "ShipStation", event: "Tracking numbers pushed (27 orders)", status: "Success" },
+];
+
+// Field-level mapping shown in the Data Mapping modal.
+interface FieldMapping { source: string; target: string; direction: "Inbound" | "Outbound"; transform: string }
+const dataMapping: FieldMapping[] = [
+  { source: "order.id", target: "order.externalId", direction: "Inbound", transform: "Direct" },
+  { source: "order.line_items[]", target: "order.items[]", direction: "Inbound", transform: "Array map" },
+  { source: "order.total_price", target: "order.total", direction: "Inbound", transform: "Currency → cents" },
+  { source: "customer.email", target: "customer.email", direction: "Inbound", transform: "Lowercase" },
+  { source: "product.sku", target: "variant.sku", direction: "Outbound", transform: "Direct" },
+  { source: "inventory.available", target: "inventory_quantity", direction: "Outbound", transform: "Clamp ≥ 0" },
+  { source: "fulfillment.tracking", target: "fulfillment.tracking_number", direction: "Outbound", transform: "Direct" },
+];
+
 const quickActions = [
   { label: "Browse Integration Marketplace", icon: Store },
   { label: "Manage API Keys", icon: KeyRound },
@@ -146,6 +172,10 @@ export default function IntegrationsPage() {
   const [configs, setConfigs] = useState<Record<string, IntegrationConfig>>({});
   const [configuring, setConfiguring] = useState<IntegrationRow | null>(null);
   const [configDraft, setConfigDraft] = useState<IntegrationConfig>(emptyConfig);
+
+  // Activity log drawer + data mapping modal
+  const [logsOpen, setLogsOpen] = useState(false);
+  const [mappingOpen, setMappingOpen] = useState(false);
 
   // Sync-in-progress indicator (keyed by integration id)
   const [syncing, setSyncing] = useState<Set<string>>(new Set());
@@ -272,7 +302,7 @@ export default function IntegrationsPage() {
           <p className="text-[14px] text-text-muted mt-0.5">Connect FulfillMesh with your favorite tools and services to automate workflows and sync data.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={() => toast("Opening integration logs…", "info")} className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-border-soft bg-white text-text-body text-[13px] font-medium hover:bg-soft-bg shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+          <button onClick={() => setLogsOpen(true)} className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-border-soft bg-white text-text-body text-[13px] font-medium hover:bg-soft-bg shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
             <ScrollText className="w-4 h-4 text-text-light" /> View Logs
           </button>
           <button onClick={() => toast("Browse the integration marketplace", "info")} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-action-blue text-white text-[13px] font-medium hover:bg-[#0047B3] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
@@ -546,7 +576,7 @@ export default function IntegrationsPage() {
                 </div>
               ))}
             </div>
-            <button onClick={() => toast("Opening full activity log…", "info")} className="mt-3 text-[12px] font-medium text-action-blue hover:underline">View all activity</button>
+            <button onClick={() => setLogsOpen(true)} className="mt-3 text-[12px] font-medium text-action-blue hover:underline">View all activity</button>
           </div>
 
           {/* Right: data flow */}
@@ -573,7 +603,7 @@ export default function IntegrationsPage() {
                 </div>
               ))}
             </div>
-            <button onClick={() => toast("Opening data mapping…", "info")} className="w-full mt-4 px-3 py-2 text-[13px] font-medium text-text-body border border-border-soft rounded-lg hover:bg-soft-bg transition-colors">View Data Mapping</button>
+            <button onClick={() => setMappingOpen(true)} className="w-full mt-4 px-3 py-2 text-[13px] font-medium text-text-body border border-border-soft rounded-lg hover:bg-soft-bg transition-colors">View Data Mapping</button>
           </div>
         </div>
       </div>
@@ -653,6 +683,67 @@ export default function IntegrationsPage() {
         confirmLabel="Disconnect"
         destructive
       />
+
+      {/* Integration activity log drawer */}
+      <Drawer
+        open={logsOpen}
+        onClose={() => setLogsOpen(false)}
+        title="Integration Activity Log"
+        subtitle={`${activityLog.length} recent sync events across your integrations`}
+        footer={<SecondaryButton onClick={() => setLogsOpen(false)}>Close</SecondaryButton>}
+      >
+        <div className="space-y-2">
+          {activityLog.map((a, i) => {
+            const tone = a.status === "Success"
+              ? "bg-[#00B894]/10 text-[#00B894]"
+              : a.status === "Failed"
+              ? "bg-[#EF4444]/10 text-[#EF4444]"
+              : "bg-[#F59E0B]/10 text-[#F59E0B]";
+            return (
+              <div key={i} className="flex items-start justify-between gap-3 p-3 rounded-lg border border-border-soft">
+                <div className="min-w-0">
+                  <p className="text-[13px] font-medium text-text-primary">{a.event}</p>
+                  <p className="text-[11px] text-text-light mt-0.5">{a.integration} · {a.time}</p>
+                </div>
+                <span className={`shrink-0 inline-flex px-2 py-0.5 text-[11px] font-medium rounded ${tone}`}>{a.status}</span>
+              </div>
+            );
+          })}
+        </div>
+      </Drawer>
+
+      {/* Data mapping modal */}
+      <Modal
+        open={mappingOpen}
+        onClose={() => setMappingOpen(false)}
+        title="Data Mapping"
+        description="Field-level mapping between the connected integration and FulfillMesh."
+        footer={<PrimaryButton onClick={() => setMappingOpen(false)}>Done</PrimaryButton>}
+      >
+        <div className="overflow-x-auto -mx-1">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-border-soft">
+                {["Source field", "Target field", "Direction", "Transform"].map((h) => (
+                  <th key={h} className="text-left text-[11px] font-semibold text-text-muted uppercase tracking-wider px-2 py-2 whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {dataMapping.map((m, i) => (
+                <tr key={i} className="border-b border-border-soft last:border-b-0">
+                  <td className="px-2 py-2 text-[12px] font-mono text-text-primary whitespace-nowrap">{m.source}</td>
+                  <td className="px-2 py-2 text-[12px] font-mono text-text-primary whitespace-nowrap">{m.target}</td>
+                  <td className="px-2 py-2">
+                    <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium ${m.direction === "Inbound" ? "bg-[#00B894]/10 text-[#00B894]" : "bg-action-blue/10 text-action-blue"}`}>{m.direction}</span>
+                  </td>
+                  <td className="px-2 py-2 text-[12px] text-text-muted whitespace-nowrap">{m.transform}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Modal>
     </div>
   );
 }

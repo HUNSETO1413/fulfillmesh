@@ -26,8 +26,14 @@ import {
   Copy,
   X,
   Loader,
+  Plus,
+  Check,
+  HardDrive,
+  RotateCcw,
+  Inbox,
 } from "lucide-react";
 import { Modal } from "@/components/dashboard/Modal";
+import { Drawer } from "@/components/dashboard/Drawer";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { Field, TextInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
@@ -157,6 +163,27 @@ function stripExtension(name: string): string {
   return i > 0 ? name.slice(0, i) : name;
 }
 
+// Parse a human-readable size string (e.g. "2.4 MB", "812 KB") into bytes.
+function parseSizeToBytes(size: string): number {
+  const m = size.trim().match(/^([\d.]+)\s*(KB|MB|GB|B)?$/i);
+  if (!m) return 0;
+  const value = parseFloat(m[1]);
+  if (isNaN(value)) return 0;
+  switch ((m[2] ?? "B").toUpperCase()) {
+    case "GB": return value * 1024 * 1024 * 1024;
+    case "MB": return value * 1024 * 1024;
+    case "KB": return value * 1024;
+    default: return value;
+  }
+}
+
+function formatBytesLong(bytes: number): string {
+  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes} B`;
+}
+
 function shareLinkFor(doc: Doc): string {
   const slug = doc.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
   return `https://app.fulfillmesh.com/share/${slug}-${doc.id}`;
@@ -182,6 +209,27 @@ export default function DocumentsPage() {
   const [sharing, setSharing] = useState<Doc | null>(null);
   const [copied, setCopied] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Secondary panels
+  const [linksOpen, setLinksOpen] = useState(false);
+  const [recycleOpen, setRecycleOpen] = useState(false);
+  const [categoriesOpen, setCategoriesOpen] = useState(false);
+  const [docSettingsOpen, setDocSettingsOpen] = useState(false);
+  const [uploadsOpen, setUploadsOpen] = useState(false);
+  const [storageOpen, setStorageOpen] = useState(false);
+  const [copiedLink, setCopiedLink] = useState<string | null>(null);
+
+  // Manage Categories modal working state
+  const [catList, setCatList] = useState<string[]>([]);
+  const [newCat, setNewCat] = useState("");
+  const [savingCats, setSavingCats] = useState(false);
+
+  // Document settings (default view / sort) — self-contained, persisted to settings KV.
+  const [docSettings, setDocSettings] = useState({ defaultView: "List", defaultSort: "Date (newest)" });
+  const [savingSettings, setSavingSettings] = useState(false);
+
+  // Soft-delete recycle bin (client-side restore affordance).
+  const [recycled, setRecycled] = useState<Doc[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -256,6 +304,7 @@ export default function DocumentsPage() {
     if (!deleting) return;
     const target = deleting;
     setDocs((cur) => cur.filter((d) => d.id !== target.id));
+    setRecycled((cur) => [target, ...cur.filter((d) => d.id !== target.id)]);
     setDeleting(null);
     api.del(`/api/documents/${target.id}`)
       .then(() => toast(`"${target.name}" deleted`))
@@ -309,6 +358,101 @@ export default function DocumentsPage() {
     }
   }
 
+  async function copyLink(link: string) {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopiedLink(link);
+      window.setTimeout(() => setCopiedLink((c) => (c === link ? null : c)), 1500);
+      toast("Share link copied to clipboard");
+    } catch {
+      toast("Could not copy link — copy it manually", "error");
+    }
+  }
+
+  // Distinct categories currently in use across the loaded documents.
+  const usedCategories = useMemo(() => {
+    const set = new Set<string>();
+    for (const d of docs) set.add(d.category);
+    return Array.from(set).sort();
+  }, [docs]);
+
+  function openCategories() {
+    setNewCat("");
+    // Seed the editor with the union of used + known categories.
+    setCatList(Array.from(new Set([...usedCategories, ...CATEGORIES])).sort());
+    setCategoriesOpen(true);
+  }
+
+  function addCategory() {
+    const name = newCat.trim();
+    if (!name) return;
+    if (catList.some((c) => c.toLowerCase() === name.toLowerCase())) {
+      toast("That category already exists", "error");
+      return;
+    }
+    setCatList((cur) => [...cur, name]);
+    setNewCat("");
+  }
+
+  function renameCategory(index: number, value: string) {
+    setCatList((cur) => cur.map((c, i) => (i === index ? value : c)));
+  }
+
+  function removeCategory(index: number) {
+    setCatList((cur) => cur.filter((_, i) => i !== index));
+  }
+
+  async function saveCategories() {
+    const cleaned = catList.map((c) => c.trim()).filter(Boolean);
+    if (cleaned.length === 0) { toast("Add at least one category", "error"); return; }
+    setSavingCats(true);
+    try {
+      await api.put("/api/settings", { documents: { categories: cleaned } });
+      toast("Categories saved");
+      setCategoriesOpen(false);
+    } catch {
+      toast("Failed to save categories", "error");
+    } finally {
+      setSavingCats(false);
+    }
+  }
+
+  async function saveDocSettings() {
+    setSavingSettings(true);
+    try {
+      await api.put("/api/settings", { documents: { defaultView: docSettings.defaultView, defaultSort: docSettings.defaultSort } });
+      toast("Document settings saved");
+      setDocSettingsOpen(false);
+    } catch {
+      toast("Failed to save settings", "error");
+    } finally {
+      setSavingSettings(false);
+    }
+  }
+
+  function restoreFromRecycle(d: Doc) {
+    setRecycled((cur) => cur.filter((x) => x.id !== d.id));
+    setDocs((cur) => (cur.some((x) => x.id === d.id) ? cur : [d, ...cur]));
+    toast(`"${d.name}" restored`);
+  }
+
+  // Storage usage computed from the loaded documents.
+  const storageStats = useMemo(() => {
+    const totalBytes = docs.reduce((sum, d) => sum + parseSizeToBytes(d.size), 0);
+    const byCat = new Map<string, number>();
+    const byType = new Map<string, number>();
+    for (const d of docs) {
+      const b = parseSizeToBytes(d.size);
+      byCat.set(d.category, (byCat.get(d.category) ?? 0) + b);
+      byType.set(d.type, (byType.get(d.type) ?? 0) + b);
+    }
+    const toRows = (m: Map<string, number>) =>
+      Array.from(m.entries())
+        .map(([label, bytes]) => ({ label, bytes, pct: totalBytes > 0 ? Math.round((bytes / totalBytes) * 100) : 0 }))
+        .sort((a, b) => b.bytes - a.bytes);
+    return { totalBytes, byCategory: toRows(byCat), byType: toRows(byType) };
+  }, [docs]);
+
   const activeFilters: { label: string; clear: () => void }[] = [
     ...(catFilter ? [{ label: `Category: ${catFilter}`, clear: () => setCatFilter("") }] : []),
     ...(typeFilter ? [{ label: `Type: ${typeFilter}`, clear: () => setTypeFilter("") }] : []),
@@ -328,8 +472,8 @@ export default function DocumentsPage() {
       case "upload": openUpload(); break;
       case "folder": toast("New folder created", "success"); break;
       case "request": toast("Document request sent", "info"); break;
-      case "links": toast("Opening shared links…", "info"); break;
-      case "recycle": toast("Opening recycle bin…", "info"); break;
+      case "links": setLinksOpen(true); break;
+      case "recycle": setRecycleOpen(true); break;
     }
   }
 
@@ -353,8 +497,8 @@ export default function DocumentsPage() {
           <p className="text-[14px] text-[#64748B] mt-1">Store, manage, and share important documents securely.</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => toast("Managing categories…", "info")} className="flex items-center gap-2 px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC]"><Folder className="w-4 h-4" /> Categories</button>
-          <button onClick={() => toast("Opening document settings…", "info")} className="flex items-center gap-2 px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC]"><Settings className="w-4 h-4" /> Settings</button>
+          <button onClick={openCategories} className="flex items-center gap-2 px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC]"><Folder className="w-4 h-4" /> Categories</button>
+          <button onClick={() => setDocSettingsOpen(true)} className="flex items-center gap-2 px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC]"><Settings className="w-4 h-4" /> Settings</button>
           <button onClick={openUpload} className="flex items-center gap-2 px-4 py-2 bg-[#3B82F6] rounded-lg text-[13px] font-medium text-white hover:bg-[#2563EB]"><Upload className="w-4 h-4" /> Upload Document</button>
         </div>
       </div>
@@ -523,7 +667,7 @@ export default function DocumentsPage() {
                 <p className="text-[12px] text-[#64748B] mt-0.5">Create categories and folders to streamline access.</p>
               </div>
             </div>
-            <button onClick={() => toast("Managing categories…", "info")} className="flex items-center gap-2 px-4 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] font-medium text-[#64748B] hover:bg-white"><Folder className="w-4 h-4" /> Manage Categories</button>
+            <button onClick={openCategories} className="flex items-center gap-2 px-4 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] font-medium text-[#64748B] hover:bg-white"><Folder className="w-4 h-4" /> Manage Categories</button>
           </div>
         </div>
 
@@ -562,7 +706,7 @@ export default function DocumentsPage() {
           <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-[0_1px_3px_rgba(0,0,0,0.1)] p-5">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-[14px] font-semibold text-[#1E293B]">Recent Uploads</h3>
-              <button onClick={() => toast("Opening all uploads…", "info")} className="text-[12px] font-medium text-[#3B82F6] hover:underline">View all</button>
+              <button onClick={() => setUploadsOpen(true)} className="text-[12px] font-medium text-[#3B82F6] hover:underline">View all</button>
             </div>
             <div className="space-y-3">
               {recentUploads.map((u) => {
@@ -596,7 +740,7 @@ export default function DocumentsPage() {
                 </div>
               ))}
             </div>
-            <button onClick={() => toast("Opening storage management…", "info")} className="w-full py-2 bg-[#3B82F6] rounded-lg text-[13px] font-medium text-white hover:bg-[#2563EB]">Manage Storage</button>
+            <button onClick={() => setStorageOpen(true)} className="w-full py-2 bg-[#3B82F6] rounded-lg text-[13px] font-medium text-white hover:bg-[#2563EB]">Manage Storage</button>
           </div>
 
           {/* Quick Actions */}
@@ -690,6 +834,241 @@ export default function DocumentsPage() {
         confirmLabel="Delete"
         destructive
       />
+
+      {/* Shared links modal */}
+      <Modal
+        open={linksOpen}
+        onClose={() => setLinksOpen(false)}
+        title="Shared links"
+        description="Every document below has a public view link. Copy a link to share it."
+        size="lg"
+        footer={<SecondaryButton onClick={() => setLinksOpen(false)}>Done</SecondaryButton>}
+      >
+        {docs.length === 0 ? (
+          <div className="py-8 text-center text-[13px] text-[#64748B]">No documents to share yet.</div>
+        ) : (
+          <div className="border border-[#E2E8F0] rounded-lg divide-y divide-[#E2E8F0] max-h-[420px] overflow-y-auto">
+            {docs.map((d) => {
+              const link = shareLinkFor(d);
+              return (
+                <div key={d.id} className="flex items-center gap-3 px-3 py-2.5">
+                  <TypeIcon type={d.type} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px] font-medium text-[#1E293B] truncate">{d.name}</p>
+                    <p className="text-[11px] text-[#94A3B8] truncate">{link}</p>
+                  </div>
+                  <button
+                    onClick={() => copyLink(link)}
+                    className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-[#E2E8F0] rounded-lg text-[12px] font-medium text-[#64748B] hover:bg-[#F8FAFC]"
+                  >
+                    {copiedLink === link ? <><Check className="w-3.5 h-3.5 text-[#10B981]" /> Copied</> : <><Copy className="w-3.5 h-3.5" /> Copy link</>}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Modal>
+
+      {/* Recycle bin modal */}
+      <Modal
+        open={recycleOpen}
+        onClose={() => setRecycleOpen(false)}
+        title="Recycle bin"
+        description="Documents you delete in this session can be restored here."
+        footer={<SecondaryButton onClick={() => setRecycleOpen(false)}>Close</SecondaryButton>}
+      >
+        {recycled.length === 0 ? (
+          <div className="py-10 text-center">
+            <div className="w-12 h-12 rounded-full bg-[#F1F5F9] flex items-center justify-center mx-auto mb-3"><Trash2 className="w-5 h-5 text-[#94A3B8]" /></div>
+            <p className="text-[13px] font-medium text-[#1E293B]">The recycle bin is empty</p>
+            <p className="text-[12px] text-[#94A3B8] mt-1">Deleted documents will appear here so you can restore them.</p>
+          </div>
+        ) : (
+          <div className="border border-[#E2E8F0] rounded-lg divide-y divide-[#E2E8F0] max-h-[420px] overflow-y-auto">
+            {recycled.map((d) => (
+              <div key={d.id} className="flex items-center gap-3 px-3 py-2.5">
+                <TypeIcon type={d.type} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[13px] font-medium text-[#1E293B] truncate">{d.name}</p>
+                  <p className="text-[11px] text-[#94A3B8] truncate">{d.desc} · {d.size}</p>
+                </div>
+                <button
+                  onClick={() => restoreFromRecycle(d)}
+                  className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-[#E2E8F0] rounded-lg text-[12px] font-medium text-[#64748B] hover:bg-[#F8FAFC]"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" /> Restore
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
+
+      {/* Manage categories modal */}
+      <Modal
+        open={categoriesOpen}
+        onClose={() => setCategoriesOpen(false)}
+        title="Manage Categories"
+        description="Add or rename categories used to organize your documents."
+        footer={
+          <>
+            <SecondaryButton onClick={() => setCategoriesOpen(false)}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={saveCategories} disabled={savingCats}>{savingCats ? "Saving…" : "Save categories"}</PrimaryButton>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div className="border border-[#E2E8F0] rounded-lg divide-y divide-[#E2E8F0] max-h-[320px] overflow-y-auto">
+            {catList.map((c, i) => {
+              const inUse = usedCategories.includes(c);
+              return (
+                <div key={i} className="flex items-center gap-2 px-3 py-2">
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: CAT_COLORS[c] ?? "#94A3B8" }} />
+                  <TextInput value={c} onChange={(e) => renameCategory(i, e.target.value)} aria-label={`Category ${i + 1}`} />
+                  {inUse && <span className="shrink-0 text-[11px] text-[#94A3B8]">in use</span>}
+                  <button
+                    onClick={() => removeCategory(i)}
+                    className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-[#94A3B8] hover:text-[#EF4444] hover:bg-[#FEF2F2]"
+                    aria-label={`Remove ${c}`}
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              );
+            })}
+            {catList.length === 0 && <div className="px-3 py-4 text-center text-[12px] text-[#94A3B8]">No categories yet — add one below.</div>}
+          </div>
+          <div className="flex items-center gap-2">
+            <TextInput
+              value={newCat}
+              onChange={(e) => setNewCat(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCategory(); } }}
+              placeholder="New category name"
+            />
+            <PrimaryButton onClick={addCategory} className="shrink-0 flex items-center gap-1.5"><Plus className="w-3.5 h-3.5" /> Add</PrimaryButton>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Document settings modal */}
+      <Modal
+        open={docSettingsOpen}
+        onClose={() => setDocSettingsOpen(false)}
+        title="Document settings"
+        description="Choose how documents are displayed by default."
+        footer={
+          <>
+            <SecondaryButton onClick={() => setDocSettingsOpen(false)}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={saveDocSettings} disabled={savingSettings}>{savingSettings ? "Saving…" : "Save settings"}</PrimaryButton>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Field label="Default view">
+            <Select
+              options={["List", "Grid", "Compact"]}
+              value={docSettings.defaultView}
+              onChange={(e) => setDocSettings((s) => ({ ...s, defaultView: e.target.value }))}
+            />
+          </Field>
+          <Field label="Default sort">
+            <Select
+              options={["Date (newest)", "Date (oldest)", "Name (A–Z)", "Size (largest)"]}
+              value={docSettings.defaultSort}
+              onChange={(e) => setDocSettings((s) => ({ ...s, defaultSort: e.target.value }))}
+            />
+          </Field>
+        </div>
+      </Modal>
+
+      {/* All uploads drawer */}
+      <Drawer
+        open={uploadsOpen}
+        onClose={() => setUploadsOpen(false)}
+        title="All uploads"
+        subtitle={`${docs.length} document${docs.length === 1 ? "" : "s"} stored`}
+        footer={<SecondaryButton onClick={() => setUploadsOpen(false)}>Close</SecondaryButton>}
+      >
+        {docs.length === 0 ? (
+          <div className="py-10 text-center">
+            <div className="w-12 h-12 rounded-full bg-[#F1F5F9] flex items-center justify-center mx-auto mb-3"><Inbox className="w-5 h-5 text-[#94A3B8]" /></div>
+            <p className="text-[13px] text-[#64748B]">No uploads yet.</p>
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {docs.map((d) => (
+              <div key={d.id} className="flex items-center gap-3 py-2 border-b border-[#F3F4F6] last:border-b-0">
+                <TypeIcon type={d.type} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[13px] font-medium text-[#1E293B] truncate">{d.name}</p>
+                  <p className="text-[11px] text-[#94A3B8] truncate">{d.warehouse} · {d.category} · {d.date}</p>
+                </div>
+                <button
+                  onClick={() => downloadDoc(d)}
+                  className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-[#94A3B8] hover:text-[#3B82F6] hover:bg-[#F8FAFC]"
+                  aria-label={`Download ${d.name}`}
+                >
+                  <Download className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Drawer>
+
+      {/* Storage management modal */}
+      <Modal
+        open={storageOpen}
+        onClose={() => setStorageOpen(false)}
+        title="Storage management"
+        description="Usage computed from your loaded documents."
+        footer={<SecondaryButton onClick={() => setStorageOpen(false)}>Close</SecondaryButton>}
+      >
+        <div className="space-y-5">
+          <div className="flex items-center gap-3 p-4 bg-[#F8FAFC] rounded-lg border border-[#E2E8F0]">
+            <div className="w-10 h-10 rounded-lg bg-[#3B82F6]/10 flex items-center justify-center shrink-0"><HardDrive className="w-5 h-5 text-[#3B82F6]" /></div>
+            <div>
+              <p className="text-[12px] text-[#64748B]">Total used by {docs.length} document{docs.length === 1 ? "" : "s"}</p>
+              <p className="text-[20px] font-bold text-[#1E293B]">{formatBytesLong(storageStats.totalBytes)}</p>
+            </div>
+          </div>
+
+          <div>
+            <h4 className="text-[13px] font-semibold text-[#1E293B] mb-2">By category</h4>
+            {storageStats.byCategory.length === 0 ? (
+              <p className="text-[12px] text-[#94A3B8]">No documents to measure.</p>
+            ) : (
+              <div className="space-y-2.5">
+                {storageStats.byCategory.map((r) => (
+                  <div key={r.label} className="flex items-center gap-2">
+                    <span className="text-[12px] text-[#64748B] w-20 shrink-0 truncate">{r.label}</span>
+                    <div className="flex-1 h-2 bg-[#F1F5F9] rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width: `${r.pct}%`, backgroundColor: CAT_COLORS[r.label] ?? "#3B82F6" }} /></div>
+                    <span className="text-[12px] font-medium text-[#1E293B] w-20 text-right shrink-0">{formatBytesLong(r.bytes)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <h4 className="text-[13px] font-semibold text-[#1E293B] mb-2">By file type</h4>
+            {storageStats.byType.length === 0 ? (
+              <p className="text-[12px] text-[#94A3B8]">No documents to measure.</p>
+            ) : (
+              <div className="space-y-2.5">
+                {storageStats.byType.map((r) => (
+                  <div key={r.label} className="flex items-center gap-2">
+                    <span className="text-[12px] text-[#64748B] w-20 shrink-0 truncate">{r.label}</span>
+                    <div className="flex-1 h-2 bg-[#F1F5F9] rounded-full overflow-hidden"><div className="h-full rounded-full bg-[#10B981]" style={{ width: `${r.pct}%` }} /></div>
+                    <span className="text-[12px] font-medium text-[#1E293B] w-20 text-right shrink-0">{formatBytesLong(r.bytes)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

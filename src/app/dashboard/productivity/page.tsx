@@ -3,6 +3,8 @@
 import { useState, useMemo, useEffect } from "react";
 import { Filter, Download, ChevronDown, ChevronRight, Users, CheckSquare, Activity, Target, Zap, ArrowUpRight, Loader2 } from "lucide-react";
 import { DateRangeMenu } from "@/components/dashboard/DateRangeMenu";
+import { Drawer, DrawerRow, DrawerSection } from "@/components/dashboard/Drawer";
+import { PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
 import { api, exportToCsv } from "@/lib/client";
 import type { ProductivityReport } from "@/lib/analytics";
@@ -38,6 +40,7 @@ export default function ProductivityPage() {
   const [range, setRange] = useState("May 1 – May 31, 2025");
   const [report, setReport] = useState<ProductivityReport | null>(null);
   const [loading, setLoading] = useState(true);
+  const [insightsOpen, setInsightsOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -112,6 +115,21 @@ export default function ProductivityPage() {
       { name: "Completed", value: fmtInt(r?.completedTasks ?? 0), pct: r && r.totalTasks > 0 ? Math.round((r.completedTasks / r.totalTasks) * 100) : 0, color: "#3B82F6" },
       { name: "In Progress", value: fmtInt(r?.inProgressTasks ?? 0), pct: r && r.totalTasks > 0 ? Math.round((r.inProgressTasks / r.totalTasks) * 100) : 0, color: "#8B5CF6" },
       { name: "Pending", value: fmtInt(r?.pendingTasks ?? 0), pct: r && r.totalTasks > 0 ? Math.round((r.pendingTasks / r.totalTasks) * 100) : 0, color: "#F59E0B" },
+    ];
+  }, [report]);
+
+  // Full insights derived from the already-loaded productivity report.
+  const fullInsights = useMemo(() => {
+    const r = report;
+    const topType = [...(r?.byType ?? [])].sort((a, b) => b.tasks - a.tasks)[0];
+    const topWh = [...(r?.byWarehouse ?? [])].sort((a, b) => b.completionPct - a.completionPct)[0];
+    const topPerformer = (r?.byAssignee ?? [])[0];
+    return [
+      { dot: "#10B981", title: "Overall completion", text: `${fmtInt(r?.completedTasks ?? 0)} of ${fmtInt(r?.totalTasks ?? 0)} tasks completed — a ${r?.completionPct ?? 0}% completion rate.` },
+      { dot: "#F59E0B", title: "Work in flight", text: `${fmtInt(r?.inProgressTasks ?? 0)} tasks in progress with ${fmtInt(r?.pendingTasks ?? 0)} still pending.` },
+      ...(topType ? [{ dot: "#3B82F6", title: "Busiest activity", text: `"${topType.name}" accounts for ${topType.pct}% of all tasks (${fmtInt(topType.tasks)} tasks, ${topType.completionPct}% complete).` }] : []),
+      ...(topWh ? [{ dot: "#8B5CF6", title: "Top warehouse", text: `${topWh.name} leads on completion rate at ${topWh.completionPct}% across ${fmtInt(topWh.tasks)} tasks.` }] : []),
+      ...(topPerformer ? [{ dot: "#EC4899", title: "Top performer", text: `${topPerformer.name} completed ${topPerformer.completed} of ${topPerformer.tasks} assigned tasks.` }] : []),
     ];
   }, [report]);
 
@@ -445,7 +463,7 @@ export default function ProductivityPage() {
               </div>
             ))}
           </div>
-          <button onClick={() => toast("Opening full insights report", "info")} className="inline-block mt-4 text-[13px] font-medium text-[#3B82F6] hover:underline">View all insights →</button>
+          <button onClick={() => setInsightsOpen(true)} className="inline-block mt-4 text-[13px] font-medium text-[#3B82F6] hover:underline">View all insights →</button>
         </div>
       </div>
 
@@ -464,6 +482,54 @@ export default function ProductivityPage() {
           <Activity className="w-4 h-4" />Schedule Report
         </button>
       </div>
+
+      {/* Full insights drawer */}
+      <Drawer
+        open={insightsOpen}
+        onClose={() => setInsightsOpen(false)}
+        title="Productivity insights"
+        subtitle="Derived from live productivity analytics for the current period."
+        footer={
+          <>
+            <SecondaryButton onClick={() => setInsightsOpen(false)}>Close</SecondaryButton>
+            <PrimaryButton
+              onClick={() => {
+                exportToCsv(
+                  "productivity-insights",
+                  fullInsights.map((i) => ({ title: i.title, detail: i.text })),
+                  [
+                    { key: "title", header: "Insight" },
+                    { key: "detail", header: "Detail" },
+                  ],
+                );
+                toast(`Exported ${fullInsights.length} insights to CSV`);
+              }}
+            >
+              Export insights
+            </PrimaryButton>
+          </>
+        }
+      >
+        <DrawerSection title="Headline metrics">
+          <DrawerRow label="Total tasks">{fmtInt(report?.totalTasks ?? 0)}</DrawerRow>
+          <DrawerRow label="Completed">{fmtInt(report?.completedTasks ?? 0)}</DrawerRow>
+          <DrawerRow label="In progress">{fmtInt(report?.inProgressTasks ?? 0)}</DrawerRow>
+          <DrawerRow label="Pending">{fmtInt(report?.pendingTasks ?? 0)}</DrawerRow>
+          <DrawerRow label="Completion rate">{report?.completionPct ?? 0}%</DrawerRow>
+        </DrawerSection>
+        <DrawerSection title={`All insights (${fullInsights.length})`}>
+          <div className="space-y-3.5">
+            {fullInsights.map((ins, i) => (
+              <div key={i} className="flex gap-3">
+                <span className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ backgroundColor: ins.dot }} />
+                <p className="text-[13px] text-[#475569] leading-relaxed">
+                  <span className="font-medium text-[#1E293B]">{ins.title}.</span> {ins.text}
+                </p>
+              </div>
+            ))}
+          </div>
+        </DrawerSection>
+      </Drawer>
     </div>
   );
 }

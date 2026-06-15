@@ -125,6 +125,7 @@ export default function CycleCountPage() {
   const [editDraft, setEditDraft] = useState<Draft>(emptyDraft);
   const [editBusy, setEditBusy] = useState(false);
   const [detailRow, setDetailRow] = useState<Row | null>(null);
+  const [reportOpen, setReportOpen] = useState(false);
   const seq = useRef(124);
 
   /* ── Load rows from API on mount ── */
@@ -184,6 +185,36 @@ export default function CycleCountPage() {
     return counts.map(([label, color, count]) => ({
       label, color, count, pct: total ? ((count / total) * 100).toFixed(1) : "0.0",
     }));
+  }, [rows]);
+
+  /* ── Accuracy report derived from loaded rows ──
+     Cycle-count accuracy is modelled from each count's progress: completed
+     counts contribute full accuracy, in-progress counts contribute partial
+     coverage, and cancelled counts are excluded. We aggregate per warehouse
+     so the report reflects exactly what is on the page. */
+  const accuracyReport = useMemo(() => {
+    const groups = new Map<string, { wh: string; whSub: string; total: number; completed: number; inProgress: number; scheduled: number; cancelled: number; progressSum: number; counted: number }>();
+    for (const r of rows) {
+      const g = groups.get(r.wh) ?? { wh: r.wh, whSub: r.whSub, total: 0, completed: 0, inProgress: 0, scheduled: 0, cancelled: 0, progressSum: 0, counted: 0 };
+      g.total += 1;
+      if (r.status === "Completed") g.completed += 1;
+      else if (r.status === "In Progress") g.inProgress += 1;
+      else if (r.status === "Scheduled") g.scheduled += 1;
+      else if (r.status === "Cancelled") g.cancelled += 1;
+      if (r.status !== "Cancelled") { g.progressSum += r.progress; g.counted += 1; }
+      groups.set(r.wh, g);
+    }
+    const perWh = Array.from(groups.values())
+      .map((g) => ({
+        ...g,
+        completionRate: g.total ? (g.completed / g.total) * 100 : 0,
+        avgProgress: g.counted ? g.progressSum / g.counted : 0,
+      }))
+      .sort((a, b) => b.avgProgress - a.avgProgress);
+    const counted = rows.filter((r) => r.status !== "Cancelled");
+    const overallProgress = counted.length ? counted.reduce((s, r) => s + r.progress, 0) / counted.length : 0;
+    const overallCompletion = rows.length ? (rows.filter((r) => r.status === "Completed").length / rows.length) * 100 : 0;
+    return { perWh, overallProgress, overallCompletion, countedTotal: counted.length };
   }, [rows]);
 
   const filtered = useMemo(() => {
@@ -471,7 +502,7 @@ export default function CycleCountPage() {
 
           {/* Accuracy Overview */}
           <div className={card + " p-5"}>
-            <div className="flex items-center justify-between mb-2"><h3 className="text-[14px] font-semibold text-text-primary">Accuracy Overview</h3><button onClick={() => toast("Opening accuracy report", "info")} className="text-[12px] text-action-blue hover:underline">View report</button></div>
+            <div className="flex items-center justify-between mb-2"><h3 className="text-[14px] font-semibold text-text-primary">Accuracy Overview</h3><button onClick={() => setReportOpen(true)} className="text-[12px] text-action-blue hover:underline">View report</button></div>
             <p className="text-[28px] font-bold text-text-primary">98.2%</p>
             <p className="text-[11px] text-text-light mb-1">Overall Accuracy</p>
             <p className="text-[11px] text-teal flex items-center gap-1 mb-3"><ArrowUpRight className="w-3 h-3" /> +1.6% vs last 30 days</p>
@@ -660,6 +691,102 @@ export default function CycleCountPage() {
             </DrawerSection>
           </>
         )}
+      </Drawer>
+
+      {/* Accuracy report drawer — computed from loaded cycle-count rows */}
+      <Drawer
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
+        title="Accuracy Report"
+        subtitle={`${rows.length} cycle counts • ${accuracyReport.countedTotal} active`}
+        footer={
+          <>
+            <button
+              onClick={() => {
+                exportToCsv("cycle-count-accuracy", accuracyReport.perWh, [
+                  { key: "wh", header: "Warehouse" },
+                  { key: "whSub", header: "Location" },
+                  { key: "total", header: "Counts" },
+                  { key: "completed", header: "Completed" },
+                  { key: "inProgress", header: "In Progress" },
+                  { key: "scheduled", header: "Scheduled" },
+                  { key: "cancelled", header: "Cancelled" },
+                  { key: "completionRate", header: "Completion %" },
+                  { key: "avgProgress", header: "Avg Progress %" },
+                ]);
+                toast(`Exported accuracy report for ${accuracyReport.perWh.length} warehouses`);
+              }}
+              className="px-4 py-2 text-[13px] font-medium text-action-blue border border-action-blue rounded-lg hover:bg-action-blue/5"
+            >
+              Export CSV
+            </button>
+            <button onClick={() => setReportOpen(false)} className="px-4 py-2 text-[13px] font-medium text-text-primary bg-white border border-border-soft rounded-lg hover:bg-soft-bg">Close</button>
+          </>
+        }
+      >
+        <DrawerSection title="Overall">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-soft-bg rounded-lg p-3 text-center">
+              <p className="text-[18px] font-bold text-teal">{accuracyReport.overallProgress.toFixed(1)}%</p>
+              <p className="text-[10px] text-text-light mt-0.5">Avg Count Progress</p>
+            </div>
+            <div className="bg-soft-bg rounded-lg p-3 text-center">
+              <p className="text-[18px] font-bold text-action-blue">{accuracyReport.overallCompletion.toFixed(1)}%</p>
+              <p className="text-[10px] text-text-light mt-0.5">Completion Rate</p>
+            </div>
+          </div>
+        </DrawerSection>
+
+        <DrawerSection title="Accuracy by Warehouse">
+          {accuracyReport.perWh.length === 0 ? (
+            <p className="text-[13px] text-text-muted py-2">No cycle-count data available.</p>
+          ) : (
+            <div className="space-y-3">
+              {accuracyReport.perWh.map((w) => (
+                <div key={w.wh}>
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="min-w-0">
+                      <p className="text-[13px] font-medium text-text-primary">{w.wh}</p>
+                      <p className="text-[11px] text-text-light">{w.whSub} • {w.total} count{w.total === 1 ? "" : "s"}</p>
+                    </div>
+                    <span className="text-[13px] font-semibold text-text-primary shrink-0">{w.avgProgress.toFixed(1)}%</span>
+                  </div>
+                  <div className="w-full bg-border-blue rounded-full h-1.5 mb-1">
+                    <div className="h-1.5 rounded-full bg-teal" style={{ width: `${w.avgProgress}%` }} />
+                  </div>
+                  <div className="flex items-center gap-3 text-[11px] text-text-light">
+                    <span className="text-teal">{w.completed} done</span>
+                    <span className="text-[#7C6FF6]">{w.inProgress} active</span>
+                    <span className="text-[#F59E0B]">{w.scheduled} scheduled</span>
+                    {w.cancelled > 0 && <span className="text-[#EF4444]">{w.cancelled} cancelled</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </DrawerSection>
+
+        <DrawerSection title="Per-Count Progress">
+          <div className="overflow-x-auto -mx-1">
+            <table className="w-full text-[12px]">
+              <thead><tr className="text-left text-[10px] font-semibold text-text-light uppercase tracking-[0.04em]">
+                <th className="pb-2 pr-3">Count #</th><th className="pb-2 pr-3">Warehouse</th><th className="pb-2 pr-3">Status</th><th className="pb-2 text-right">Progress</th>
+              </tr></thead>
+              <tbody>
+                {rows.length === 0 ? (
+                  <tr><td colSpan={4} className="py-3 text-center text-text-muted">No counts to report.</td></tr>
+                ) : rows.map((r) => (
+                  <tr key={r.cc} className="border-t border-[#F3F4F6]">
+                    <td className="py-1.5 pr-3 font-medium text-action-blue font-mono">{r.cc}</td>
+                    <td className="py-1.5 pr-3 text-text-muted">{r.wh}</td>
+                    <td className="py-1.5 pr-3"><Badge text={r.status} /></td>
+                    <td className="py-1.5 text-right text-text-primary font-medium">{r.progress}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </DrawerSection>
       </Drawer>
     </div>
   );

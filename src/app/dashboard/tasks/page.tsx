@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   CheckSquare,
   CheckCircle2,
@@ -21,6 +22,7 @@ import {
   Pencil,
 } from "lucide-react";
 import { Modal } from "@/components/dashboard/Modal";
+import { Drawer, DrawerSection } from "@/components/dashboard/Drawer";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { Field, TextInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
@@ -186,8 +188,11 @@ function isOverdue(t: Task): boolean {
 }
 
 export default function TasksPage() {
+  const router = useRouter();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("All Tasks");
+  const [byTypeOpen, setByTypeOpen] = useState(false);
+  const [activityOpen, setActivityOpen] = useState(false);
   const [items, setItems] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
@@ -616,7 +621,7 @@ export default function TasksPage() {
           <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-[0_1px_3px_rgba(0,0,0,0.1)] p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-[14px] font-semibold text-[#1E293B]">Productivity (Today)</h3>
-              <button onClick={() => toast("Opening productivity report…", "info")} className="text-[12px] font-medium text-[#3B82F6] hover:underline">View report</button>
+              <button onClick={() => router.push("/dashboard/productivity")} className="text-[12px] font-medium text-[#3B82F6] hover:underline">View report</button>
             </div>
             <div className="space-y-3.5">
               <div className="flex items-center justify-between">
@@ -638,7 +643,7 @@ export default function TasksPage() {
           <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-[0_1px_3px_rgba(0,0,0,0.1)] p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-[14px] font-semibold text-[#1E293B]">Tasks by Type (Today)</h3>
-              <button onClick={() => toast("Opening details…", "info")} className="text-[12px] font-medium text-[#3B82F6] hover:underline">View all</button>
+              <button onClick={() => setByTypeOpen(true)} className="text-[12px] font-medium text-[#3B82F6] hover:underline">View all</button>
             </div>
             <div className="space-y-3">
               {tasksByType.map((t) => (
@@ -657,7 +662,7 @@ export default function TasksPage() {
           <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-[0_1px_3px_rgba(0,0,0,0.1)] p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-[14px] font-semibold text-[#1E293B]">Recent Activity</h3>
-              <button onClick={() => toast("Opening details…", "info")} className="text-[12px] font-medium text-[#3B82F6] hover:underline">View all</button>
+              <button onClick={() => setActivityOpen(true)} className="text-[12px] font-medium text-[#3B82F6] hover:underline">View all</button>
             </div>
             <div className="space-y-4">
               {recentActivity.map((a, i) => (
@@ -715,6 +720,59 @@ export default function TasksPage() {
           )}
         </div>
       </Modal>
+
+      {/* Tasks by Type drawer — lists the tasks currently loaded, grouped by type */}
+      <Drawer
+        open={byTypeOpen}
+        onClose={() => setByTypeOpen(false)}
+        title="Tasks by Type"
+        subtitle={`${items.length} tasks across ${new Set(items.map((t) => t.type)).size} types`}
+      >
+        {items.length === 0 ? (
+          <p className="text-[13px] text-[#64748B]">No tasks loaded.</p>
+        ) : (
+          Array.from(new Set(items.map((t) => t.type)))
+            .sort()
+            .map((type) => {
+              const group = items.filter((t) => t.type === type);
+              return (
+                <DrawerSection key={type} title={`${type} (${group.length})`}>
+                  <div className="space-y-2">
+                    {group.map((t) => (
+                      <div key={t.id} className="flex items-center justify-between gap-3 py-1.5 border-b border-[#F3F4F6] last:border-b-0">
+                        <div className="min-w-0">
+                          <p className="text-[13px] font-medium text-[#3B82F6] font-mono">{t.id}</p>
+                          <p className="text-[12px] text-[#94A3B8] truncate">{t.ref} · {t.warehouse} · {t.assignee}</p>
+                        </div>
+                        <StatusBadge s={t.status} />
+                      </div>
+                    ))}
+                  </div>
+                </DrawerSection>
+              );
+            })
+        )}
+      </Drawer>
+
+      {/* Recent Activity drawer */}
+      <Drawer
+        open={activityOpen}
+        onClose={() => setActivityOpen(false)}
+        title="Recent Activity"
+        subtitle={`${recentActivity.length} recent events`}
+      >
+        <div className="space-y-4">
+          {recentActivity.map((a, i) => (
+            <div key={i} className="flex items-start gap-3">
+              <span className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ backgroundColor: a.dot }} />
+              <div>
+                <p className="text-[13px] font-medium text-[#1E293B]">{a.title}</p>
+                <p className="text-[12px] text-[#94A3B8] mt-0.5">{a.sub}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Drawer>
 
       {/* Delete confirm */}
       <ConfirmDialog
