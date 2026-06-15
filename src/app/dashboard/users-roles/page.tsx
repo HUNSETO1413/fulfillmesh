@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Users, UserCheck, UserX, Shield, Mail,
   Search, Plus, Download, MoreHorizontal, ChevronDown, ChevronRight, ChevronLeft,
@@ -11,7 +11,8 @@ import { Modal } from "@/components/dashboard/Modal";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { Field, TextInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
-import { exportToCsv } from "@/lib/client";
+import { api, exportToCsv } from "@/lib/client";
+import type { User, UserRole } from "@/types";
 
 /* ---------------- data ---------------- */
 
@@ -36,24 +37,40 @@ const roleColors: Record<string, string> = {
 };
 
 interface UserRow {
-  id: number; name: string; email: string; role: string; wh: string; status: string; last: string; time: string;
+  id: string; name: string; email: string; role: string; wh: string; status: string; last: string; time: string;
 }
 
 const ROLE_OPTIONS = ["Admin", "Operations Manager", "Warehouse Manager", "Inventory Manager", "Team Lead", "Operator", "Supervisor", "Billing Specialist", "Viewer"];
 const WAREHOUSE_OPTIONS = ["All Warehouses", "DFW1 - Dallas", "ATL1 - Atlanta", "LAX1 - Los Angeles", "MIA1 - Miami"];
 
-const initialUsers: UserRow[] = [
-  { id: 1, name: "John Smith", email: "john.smith@fulfillmesh.com", role: "Admin", wh: "All Warehouses", status: "Active", last: "May 30, 2026", time: "09:42 AM" },
-  { id: 2, name: "Sarah Rodriguez", email: "sarah.rodriguez@fulfillmesh.com", role: "Operations Manager", wh: "DFW1, ATL1, LAX1", status: "Active", last: "May 30, 2026", time: "08:15 AM" },
-  { id: 3, name: "Michael Davis", email: "michael.davis@fulfillmesh.com", role: "Warehouse Manager", wh: "DFW1 - Dallas", status: "Active", last: "May 30, 2026", time: "07:58 AM" },
-  { id: 4, name: "Emily Watson", email: "emily.watson@fulfillmesh.com", role: "Inventory Manager", wh: "ATL1 - Atlanta", status: "Active", last: "May 29, 2026", time: "05:21 PM" },
-  { id: 5, name: "Alex Chen", email: "alex.chen@fulfillmesh.com", role: "Supervisor", wh: "LAX1 - Los Angeles", status: "Active", last: "May 29, 2026", time: "03:44 PM" },
-  { id: 6, name: "Tyler Brown", email: "tyler.brown@fulfillmesh.com", role: "Team Lead", wh: "MIA1 - Miami", status: "Active", last: "May 29, 2026", time: "01:10 PM" },
-  { id: 7, name: "Lisa White", email: "lisa.white@fulfillmesh.com", role: "Operator", wh: "DFW1 - Dallas", status: "Active", last: "May 28, 2026", time: "06:30 PM" },
-  { id: 8, name: "Noah Garcia", email: "noah.garcia@fulfillmesh.com", role: "Operator", wh: "ATL1 - Atlanta", status: "Active", last: "May 28, 2026", time: "04:02 PM" },
-  { id: 9, name: "Ava Harris", email: "ava.harris@fulfillmesh.com", role: "Billing Specialist", wh: "All Warehouses", status: "Active", last: "May 28, 2026", time: "11:48 AM" },
-  { id: 10, name: "Robert Black", email: "robert.black@fulfillmesh.com", role: "Viewer", wh: "LAX1 - Los Angeles", status: "Inactive", last: "May 25, 2026", time: "09:15 AM" },
-];
+// The API stores a narrow role union; the UI offers richer display roles.
+// Map each display role down to the closest persistable API role, and map a
+// stored API role back to a sensible default display role on load.
+function toApiRole(display: string): UserRole {
+  if (display === "Admin") return "Admin";
+  if (display === "Viewer") return "Viewer";
+  if (display === "Operator") return "Operator";
+  if (display.includes("Manager") || display === "Team Lead" || display === "Supervisor") return "Manager";
+  return "Manager";
+}
+
+const API_ROLE_TO_DISPLAY: Record<UserRole, string> = {
+  Admin: "Admin",
+  Manager: "Operations Manager",
+  Operator: "Operator",
+  Viewer: "Viewer",
+};
+
+// The API status union differs from the table's Active/Inactive wording.
+function toApiStatus(display: string): User["status"] {
+  return display === "Active" ? "Active" : "Suspended";
+}
+
+function fromApiStatus(status: User["status"]): string {
+  if (status === "Active") return "Active";
+  if (status === "Invited") return "Invited";
+  return "Inactive";
+}
 
 const avatarColors = ["#0057D8", "#00B894", "#F59E0B", "#7C6FF6", "#EC4899", "#007F8C", "#EF4444", "#F97316", "#84CC16", "#64748B"];
 
@@ -160,17 +177,37 @@ const emptyInvite: InviteDraft = { name: "", email: "", role: "Operator", wh: "A
 
 let userSeq = 1000;
 
+function mapUser(u: User): UserRow {
+  const active = u.lastActive ? new Date(u.lastActive) : null;
+  return {
+    id: u.id,
+    name: u.name,
+    email: u.email,
+    role: API_ROLE_TO_DISPLAY[u.role] ?? "Operator",
+    wh: "All Warehouses",
+    status: fromApiStatus(u.status),
+    last: active && !isNaN(active.getTime())
+      ? active.toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" })
+      : u.status === "Invited" ? "Invited" : "—",
+    time: active && !isNaN(active.getTime())
+      ? active.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })
+      : "—",
+  };
+}
+
 export default function UsersRolesPage() {
   const { toast } = useToast();
   const [permTab, setPermTab] = useState<"roles" | "permissions" | "groups">("permissions");
   const [permCategory, setPermCategory] = useState(permissionCategories[0]);
   const [showDetail, setShowDetail] = useState(false);
 
-  const [rows, setRows] = useState<UserRow[]>(initialUsers);
+  const [rows, setRows] = useState<UserRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [permMatrix, setPermMatrix] = useState(matrix);
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const [openMenu, setOpenMenu] = useState<number | null>(null);
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
 
   const [inviteOpen, setInviteOpen] = useState(false);
   const [invite, setInvite] = useState<InviteDraft>(emptyInvite);
@@ -181,6 +218,28 @@ export default function UsersRolesPage() {
 
   const totalDist = roleDistribution.reduce((a, b) => a + b.count, 0);
   const circumference = 2 * Math.PI * 40;
+
+  // Load members from the API and any persisted permission-matrix overrides.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const [usersRes, settingsRes] = await Promise.all([
+          api.get<{ data: User[]; total: number }>("/api/users"),
+          api.get<Record<string, unknown>>("/api/settings"),
+        ]);
+        if (!alive) return;
+        setRows((usersRes?.data ?? []).map(mapUser));
+        const stored = (settingsRes?.roles as { matrix?: typeof matrix } | undefined)?.matrix;
+        if (Array.isArray(stored) && stored.length > 0) setPermMatrix(stored);
+      } catch {
+        if (alive) toast("Failed to load users", "error");
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filteredUsers = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -197,17 +256,19 @@ export default function UsersRolesPage() {
     setInviteOpen(true);
   }
 
+  // Creating a real user needs a password flow that is out of scope, so the
+  // invite modal adds the member to the local list only (it does not persist).
   function saveInvite() {
     if (!invite.name.trim()) { toast("Name is required", "error"); return; }
     if (!invite.email.trim() || !invite.email.includes("@")) { toast("A valid email is required", "error"); return; }
     setBusy(true);
     const created: UserRow = {
-      id: ++userSeq,
+      id: `LOCAL-${++userSeq}`,
       name: invite.name.trim(),
       email: invite.email.trim(),
       role: invite.role,
       wh: invite.wh,
-      status: "Active",
+      status: "Invited",
       last: "Invited",
       time: "—",
     };
@@ -217,6 +278,8 @@ export default function UsersRolesPage() {
     toast(`Invitation sent to ${created.email}`);
   }
 
+  const isPersisted = (id: string) => !id.startsWith("LOCAL-");
+
   function openEdit(u: UserRow) {
     setEditing(u);
     setEditDraft({ name: u.name, email: u.email, role: u.role, wh: u.wh });
@@ -225,34 +288,64 @@ export default function UsersRolesPage() {
 
   function saveEdit() {
     if (!editing) return;
+    const id = editing.id;
+    const patch = { name: editDraft.name.trim(), email: editDraft.email.trim(), role: editDraft.role, wh: editDraft.wh };
     setBusy(true);
-    setRows((cur) => cur.map((u) => (u.id === editing.id ? { ...u, name: editDraft.name.trim(), email: editDraft.email.trim(), role: editDraft.role, wh: editDraft.wh } : u)));
-    setBusy(false);
-    toast(`${editDraft.name} updated`);
+    setRows((cur) => cur.map((u) => (u.id === id ? { ...u, ...patch } : u)));
     setEditing(null);
+    // Persist the fields the API understands (name, email, role).
+    const finish = () => { setBusy(false); };
+    if (isPersisted(id)) {
+      api.put(`/api/users/${id}`, { name: patch.name, email: patch.email, role: toApiRole(patch.role) })
+        .then(() => toast(`${patch.name} updated`))
+        .catch(() => toast(`Failed to update ${patch.name}`, "error"))
+        .finally(finish);
+    } else {
+      toast(`${patch.name} updated`);
+      finish();
+    }
   }
 
-  function changeRole(id: number, role: string) {
+  function changeRole(id: string, role: string) {
     setRows((cur) => cur.map((u) => (u.id === id ? { ...u, role } : u)));
     setOpenMenu(null);
-    toast(`Role updated to ${role}`);
+    if (isPersisted(id)) {
+      api.put(`/api/users/${id}`, { role: toApiRole(role) })
+        .then(() => toast(`Role updated to ${role}`))
+        .catch(() => toast("Failed to update role", "error"));
+    } else {
+      toast(`Role updated to ${role}`);
+    }
   }
 
-  function toggleStatus(id: number) {
-    setRows((cur) => cur.map((u) => {
-      if (u.id !== id) return u;
-      const status = u.status === "Active" ? "Inactive" : "Active";
-      toast(`${u.name} ${status === "Active" ? "activated" : "deactivated"}`);
-      return { ...u, status };
-    }));
+  function toggleStatus(id: string) {
+    const target = rows.find((u) => u.id === id);
+    if (!target) return;
+    const status = target.status === "Active" ? "Inactive" : "Active";
+    setRows((cur) => cur.map((u) => (u.id === id ? { ...u, status } : u)));
     setOpenMenu(null);
+    const done = () => toast(`${target.name} ${status === "Active" ? "activated" : "deactivated"}`);
+    if (isPersisted(id)) {
+      api.put(`/api/users/${id}`, { status: toApiStatus(status) })
+        .then(done)
+        .catch(() => toast(`Failed to update ${target.name}`, "error"));
+    } else {
+      done();
+    }
   }
 
   function confirmRemove() {
     if (!removing) return;
-    setRows((cur) => cur.filter((u) => u.id !== removing.id));
-    toast(`${removing.name} removed`);
+    const { id, name } = removing;
+    setRows((cur) => cur.filter((u) => u.id !== id));
     setRemoving(null);
+    if (isPersisted(id)) {
+      api.del(`/api/users/${id}`)
+        .then(() => toast(`${name} removed`))
+        .catch(() => toast(`Failed to remove ${name}`, "error"));
+    } else {
+      toast(`${name} removed`);
+    }
   }
 
   function handleExport() {
@@ -270,6 +363,15 @@ export default function UsersRolesPage() {
   const selectCls = "inline-flex items-center gap-2 px-3 py-2 text-[13px] text-text-muted border border-border-soft rounded-lg bg-white hover:bg-soft-bg whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-action-blue/20";
 
   if (showDetail) return <RoleDetail onBack={() => setShowDetail(false)} />;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <span className="w-5 h-5 rounded-full border-2 border-action-blue/30 border-t-action-blue animate-spin" />
+        <span className="ml-2 text-[14px] text-text-muted">Loading users…</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -552,7 +654,7 @@ export default function UsersRolesPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {matrix.map((row) => (
+                    {permMatrix.map((row) => (
                       <tr key={row.perm} className="border-b border-border-soft last:border-b-0 hover:bg-soft-bg/60 transition-colors">
                         <td className="px-5 py-2.5 text-[12px] font-medium text-text-primary whitespace-nowrap">{row.perm}</td>
                         <td className="px-2 py-2.5 text-[12px] text-text-body">{row.desc}</td>

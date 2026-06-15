@@ -1,10 +1,20 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { Filter, Download, ChevronDown, ChevronRight, Users, CheckSquare, Activity, Target, Zap, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
+import { Filter, Download, ChevronDown, ChevronRight, Users, CheckSquare, Activity, Target, Zap, ArrowUpRight, Loader2 } from "lucide-react";
 import { DateRangeMenu } from "@/components/dashboard/DateRangeMenu";
 import { useToast } from "@/components/dashboard/Toast";
-import { exportToCsv } from "@/lib/client";
+import { api, exportToCsv } from "@/lib/client";
+import type { ProductivityReport } from "@/lib/analytics";
+
+const PALETTE = ["#3B82F6", "#10B981", "#F59E0B", "#8B5CF6", "#EF4444", "#06B6A4", "#EC4899"];
+
+function monthLabel(bucket: string): string {
+  const [y, m] = bucket.split("-");
+  const names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const idx = Number(m) - 1;
+  return names[idx] ? `${names[idx]} ${y.slice(2)}` : bucket;
+}
 
 /* ── deterministic series ── */
 function seeded(seed: number, n: number, lo: number, hi: number): number[] {
@@ -13,61 +23,6 @@ function seeded(seed: number, n: number, lo: number, hi: number): number[] {
   for (let i = 0; i < n; i++) { s = (s * 16807 + 7) % 2147483647; out.push(lo + (s % 1000) / 1000 * (hi - lo)); }
   return out;
 }
-
-const statsConfig = [
-  { title: "Total Active Users", value: "128", change: "+12.5%", note: "vs Apr 30", icon: Users, iconBg: "bg-[#3B82F6]/10", iconColor: "text-[#3B82F6]", sparkColor: "#3B82F6" },
-  { title: "Tasks Completed", value: "24,568", change: "+8.3%", note: "vs Apr 30", icon: CheckSquare, iconBg: "bg-[#10B981]/10", iconColor: "text-[#10B981]", sparkColor: "#10B981" },
-  { title: "Avg. Task / User / Day", value: "19.18", change: "+3.2%", note: "vs Apr 30", icon: Activity, iconBg: "bg-[#F59E0B]/10", iconColor: "text-[#F59E0B]", sparkColor: "#F59E0B" },
-  { title: "Accuracy Rate", value: "99.35%", change: "+0.4 pp", note: "vs Apr 30", icon: Target, iconBg: "bg-[#8B5CF6]/10", iconColor: "text-[#8B5CF6]", sparkColor: "#8B5CF6" },
-  { title: "Labor Efficiency", value: "1.28", change: "+5.1%", note: "vs Apr 30", icon: Zap, iconBg: "bg-[#10B981]/10", iconColor: "text-[#10B981]", sparkColor: "#10B981" },
-];
-
-const activityColors = [
-  { name: "Picking", color: "#3B82F6", seed: 10, lo: 40, hi: 90 },
-  { name: "Packing", color: "#10B981", seed: 20, lo: 30, hi: 70 },
-  { name: "Receiving", color: "#F59E0B", seed: 30, lo: 20, hi: 50 },
-  { name: "Putaway", color: "#8B5CF6", seed: 40, lo: 15, hi: 40 },
-  { name: "Cycle Count", color: "#EF4444", seed: 50, lo: 8, hi: 28 },
-];
-
-const overview = [
-  { name: "Picking", value: "10,256", pct: 41.7, color: "#3B82F6" },
-  { name: "Packing", value: "6,742", pct: 27.4, color: "#10B981" },
-  { name: "Receiving", value: "4,152", pct: 16.9, color: "#F59E0B" },
-  { name: "Putaway", value: "2,456", pct: 10.0, color: "#8B5CF6" },
-  { name: "Cycle Count", value: "962", pct: 3.9, color: "#EF4444" },
-];
-
-const byActivity = [
-  { name: "Picking", color: "#3B82F6", tasks: "10,256", pct: "41.7%", time: "1m 48s", acc: "99.42%" },
-  { name: "Packing", color: "#10B981", tasks: "6,742", pct: "27.4%", time: "2m 14s", acc: "99.61%" },
-  { name: "Receiving", color: "#F59E0B", tasks: "4,152", pct: "16.9%", time: "3m 02s", acc: "99.08%" },
-  { name: "Putaway", color: "#8B5CF6", tasks: "2,456", pct: "10.0%", time: "2m 41s", acc: "99.27%" },
-  { name: "Cycle Count", color: "#EF4444", tasks: "962", pct: "3.9%", time: "4m 48s", acc: "99.58%" },
-];
-
-const byWarehouse = [
-  { name: "ATL-1 · Atlanta", tasks: "8,265", perUser: "21.3", acc: "99.41%", eff: "1.32" },
-  { name: "DFW-1 · Dallas", tasks: "6,154", perUser: "19.8", acc: "99.28%", eff: "1.24" },
-  { name: "LAX-1 · Los Angeles", tasks: "5,432", perUser: "18.7", acc: "99.52%", eff: "1.31" },
-  { name: "MIA-1 · Miami", tasks: "3,568", perUser: "16.4", acc: "99.22%", eff: "1.18" },
-  { name: "ORD-1 · Chicago", tasks: "1,149", perUser: "14.2", acc: "99.07%", eff: "1.12" },
-];
-
-const goals = [
-  { name: "Tasks Completed", value: "103.6%", pct: 100, color: "#10B981" },
-  { name: "Accuracy Rate", value: "99.35%", pct: 99, color: "#3B82F6" },
-  { name: "Labor Efficiency", value: "1.28 / 1.10", pct: 96, color: "#8B5CF6" },
-  { name: "On-Time Rate", value: "96.7% / 95.0%", pct: 97, color: "#F59E0B" },
-];
-
-const performers = [
-  { name: "James Carter", role: "Picking", tasks: "1,285", avatar: "#3B82F6" },
-  { name: "Sophie Lee", role: "Packing", tasks: "1,102", avatar: "#10B981" },
-  { name: "Michael Brown", role: "Receiving", tasks: "986", avatar: "#F59E0B" },
-  { name: "Olivia Martinez", role: "Putaway", tasks: "742", avatar: "#8B5CF6" },
-  { name: "Daniel Wilson", role: "Cycle Count", tasks: "510", avatar: "#EF4444" },
-];
 
 function Sparkline({ pts }: { pts: number[] }) {
   const poly = pts.map((y, i) => `${i * 11},${y}`).join(" ");
@@ -81,26 +36,110 @@ function Sparkline({ pts }: { pts: number[] }) {
 export default function ProductivityPage() {
   const { toast } = useToast();
   const [range, setRange] = useState("May 1 – May 31, 2025");
-  const [gran, setGran] = useState<"Daily" | "Weekly" | "Monthly">("Daily");
+  const [report, setReport] = useState<ProductivityReport | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  /* derive chart data from granularity */
-  const n = gran === "Daily" ? 10 : gran === "Weekly" ? 5 : 4;
-  const labels = gran === "Daily"
-    ? ["May 1", "May 5", "May 8", "May 12", "May 16", "May 19", "May 23", "May 26", "May 29", "May 31"]
-    : gran === "Weekly"
-    ? ["Week 1", "Week 2", "Week 3", "Week 4", "Week 5"]
-    : ["Jan", "Feb", "Mar", "Apr"];
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await api.get<ProductivityReport>("/api/analytics/productivity");
+        if (!cancelled) setReport(data);
+      } catch {
+        if (!cancelled) toast("Failed to load productivity report", "error");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const chartSeries = useMemo(() =>
-    activityColors.map((a) => ({ name: a.name, color: a.color, pts: seeded(a.seed, n, a.lo, a.hi) })),
-    [n]
+  const fmtInt = (n: number) => n.toLocaleString("en-US");
+
+  /* ── derived display data from the live report ── */
+  const overview = useMemo(
+    () =>
+      (report?.byType ?? []).map((t, i) => ({
+        name: t.name,
+        value: fmtInt(t.tasks),
+        pct: t.pct,
+        color: PALETTE[i % PALETTE.length],
+      })),
+    [report],
   );
 
-  const maxVal = useMemo(() => Math.ceil(Math.max(...chartSeries.flatMap((s) => s.pts)) * 1.15), [chartSeries]);
+  const byActivity = useMemo(
+    () =>
+      (report?.byType ?? []).map((t, i) => ({
+        name: t.name,
+        color: PALETTE[i % PALETTE.length],
+        tasks: fmtInt(t.tasks),
+        pct: `${t.pct}%`,
+        time: fmtInt(t.completed),
+        acc: `${t.completionPct}%`,
+      })),
+    [report],
+  );
+
+  const byWarehouse = useMemo(
+    () =>
+      (report?.byWarehouse ?? []).map((w) => ({
+        name: w.name,
+        tasks: fmtInt(w.tasks),
+        perUser: String(w.completed),
+        acc: `${w.completionPct}%`,
+        eff: `${w.pct}%`,
+      })),
+    [report],
+  );
+
+  const performers = useMemo(
+    () =>
+      (report?.byAssignee ?? []).slice(0, 5).map((a, i) => ({
+        name: a.name,
+        role: `${a.completed}/${a.tasks} done`,
+        tasks: fmtInt(a.tasks),
+        avatar: PALETTE[i % PALETTE.length],
+      })),
+    [report],
+  );
+
+  const goals = useMemo(() => {
+    const r = report;
+    return [
+      { name: "Completion Rate", value: `${r?.completionPct ?? 0}%`, pct: Math.round(r?.completionPct ?? 0), color: "#10B981" },
+      { name: "Completed", value: fmtInt(r?.completedTasks ?? 0), pct: r && r.totalTasks > 0 ? Math.round((r.completedTasks / r.totalTasks) * 100) : 0, color: "#3B82F6" },
+      { name: "In Progress", value: fmtInt(r?.inProgressTasks ?? 0), pct: r && r.totalTasks > 0 ? Math.round((r.inProgressTasks / r.totalTasks) * 100) : 0, color: "#8B5CF6" },
+      { name: "Pending", value: fmtInt(r?.pendingTasks ?? 0), pct: r && r.totalTasks > 0 ? Math.round((r.pendingTasks / r.totalTasks) * 100) : 0, color: "#F59E0B" },
+    ];
+  }, [report]);
+
+  const statsConfig = useMemo(() => {
+    const r = report;
+    return [
+      { title: "Total Tasks", value: fmtInt(r?.totalTasks ?? 0), change: `${r?.byType.length ?? 0} types`, icon: Users, iconBg: "bg-[#3B82F6]/10", iconColor: "text-[#3B82F6]", sparkColor: "#3B82F6" },
+      { title: "Tasks Completed", value: fmtInt(r?.completedTasks ?? 0), change: `${r?.completionPct ?? 0}%`, icon: CheckSquare, iconBg: "bg-[#10B981]/10", iconColor: "text-[#10B981]", sparkColor: "#10B981" },
+      { title: "In Progress", value: fmtInt(r?.inProgressTasks ?? 0), change: "active", icon: Activity, iconBg: "bg-[#F59E0B]/10", iconColor: "text-[#F59E0B]", sparkColor: "#F59E0B" },
+      { title: "Completion Rate", value: `${r?.completionPct ?? 0}%`, change: "live", icon: Target, iconBg: "bg-[#8B5CF6]/10", iconColor: "text-[#8B5CF6]", sparkColor: "#8B5CF6" },
+      { title: "Pending Tasks", value: fmtInt(r?.pendingTasks ?? 0), change: "queued", icon: Zap, iconBg: "bg-[#10B981]/10", iconColor: "text-[#10B981]", sparkColor: "#10B981" },
+    ];
+  }, [report]);
+
+  /* chart: tasks completed over time (by month bucket) */
+  const overTime = report?.completedOverTime ?? [];
+  const labels = overTime.length > 0 ? overTime.map((p) => monthLabel(p.month)) : ["—"];
+  const chartSeries = useMemo(
+    () => [{ name: "Tasks Created", color: "#3B82F6", pts: overTime.length > 0 ? overTime.map((p) => p.orders) : [0] }],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [report],
+  );
+  const n = Math.max(1, chartSeries[0].pts.length);
+
+  const maxVal = useMemo(() => Math.max(1, Math.ceil(Math.max(...chartSeries.flatMap((s) => s.pts)) * 1.15)), [chartSeries]);
 
   function cycleGran() {
-    const opts: ("Daily" | "Weekly" | "Monthly")[] = ["Daily", "Weekly", "Monthly"];
-    setGran(opts[(opts.indexOf(gran) + 1) % opts.length]);
+    toast("Task trend grouped by month", "info");
   }
 
   function exportActivities() {
@@ -125,9 +164,7 @@ export default function ProductivityPage() {
   const y = (v: number) => padT + (1 - v / maxVal) * (H - padT - padB);
   const yStep = Math.round(maxVal / 4);
   const yLabels = Array.from({ length: 5 }, (_, i) => String(maxVal - i * yStep));
-  const xLabels = gran === "Daily"
-    ? ["May 1", "May 5", "May 11", "May 16", "May 20", "May 26", "May 31"].slice(0, n)
-    : labels;
+  const xLabels = labels;
 
   return (
     <div className="space-y-6">
@@ -169,12 +206,14 @@ export default function ProductivityPage() {
                   <Icon className={`w-[18px] h-[18px] ${s.iconColor}`} />
                 </div>
               </div>
-              <p className="text-[28px] leading-none font-bold text-[#1E293B]">{s.value}</p>
+              <p className="text-[28px] leading-none font-bold text-[#1E293B]">
+                {loading ? <Loader2 className="w-6 h-6 animate-spin text-[#CBD5E1]" /> : s.value}
+              </p>
               <div className="flex items-center gap-2 mt-3">
                 <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[12px] font-semibold bg-[#D1FAE5] text-[#065F46]">
                   <ArrowUpRight className="w-3 h-3" />{s.change}
                 </span>
-                <span className="text-[12px] text-[#94A3B8]">{s.note}</span>
+                <span className="text-[12px] text-[#94A3B8]">live data</span>
               </div>
               <div className="mt-3" style={{ color: s.sparkColor }}>
                 <Sparkline pts={seeded(statsConfig.indexOf(s) + 1, 10, 4, 16)} />
@@ -191,7 +230,7 @@ export default function ProductivityPage() {
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-[16px] font-semibold text-[#1E293B]">Tasks Completed Over Time</h3>
             <button onClick={cycleGran} className="inline-flex items-center gap-1.5 text-[12px] text-[#64748B] border border-[#E2E8F0] px-2.5 py-1 rounded-lg hover:bg-[#F8FAFC]">
-              {gran} <ChevronDown className="w-3.5 h-3.5 text-[#94A3B8]" />
+              Monthly <ChevronDown className="w-3.5 h-3.5 text-[#94A3B8]" />
             </button>
           </div>
           <div className="flex items-center gap-4 mb-4">
@@ -224,7 +263,7 @@ export default function ProductivityPage() {
               })}
             </svg>
           </div>
-          <p className="text-[12px] text-[#94A3B8] mt-2 text-center">Grouped by {gran.toLowerCase()}</p>
+          <p className="text-[12px] text-[#94A3B8] mt-2 text-center">{overTime.length > 0 ? "Tasks created, grouped by month" : "No task history yet"}</p>
         </div>
 
         {/* Productivity Overview donut */}
@@ -243,12 +282,15 @@ export default function ProductivityPage() {
               </svg>
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="text-center">
-                  <span className="text-[20px] font-bold text-[#1E293B]">24,568</span>
-                  <span className="block text-[10px] text-[#64748B]">Tasks Completed</span>
+                  <span className="text-[20px] font-bold text-[#1E293B]">{fmtInt(report?.totalTasks ?? 0)}</span>
+                  <span className="block text-[10px] text-[#64748B]">Total Tasks</span>
                 </div>
               </div>
             </div>
             <div className="flex-1 space-y-2.5">
+              {overview.length === 0 && !loading && (
+                <p className="text-[13px] text-[#94A3B8]">No task data yet</p>
+              )}
               {overview.map((o) => (
                 <div key={o.name} className="flex items-center justify-between text-[13px]">
                   <div className="flex items-center gap-2">
@@ -271,14 +313,17 @@ export default function ProductivityPage() {
             <table className="w-full">
               <thead>
                 <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
-                  <th className="text-left text-[12px] font-semibold text-[#475569] px-5 py-3 uppercase tracking-wide">Activity</th>
-                  <th className="text-right text-[12px] font-semibold text-[#475569] px-5 py-3 uppercase tracking-wide">Tasks Completed</th>
+                  <th className="text-left text-[12px] font-semibold text-[#475569] px-5 py-3 uppercase tracking-wide">Task Type</th>
+                  <th className="text-right text-[12px] font-semibold text-[#475569] px-5 py-3 uppercase tracking-wide">Total Tasks</th>
                   <th className="text-right text-[12px] font-semibold text-[#475569] px-5 py-3 uppercase tracking-wide">% of Total</th>
-                  <th className="text-right text-[12px] font-semibold text-[#475569] px-5 py-3 uppercase tracking-wide">Avg. Time / Task</th>
-                  <th className="text-right text-[12px] font-semibold text-[#475569] px-5 py-3 uppercase tracking-wide">Accuracy Rate</th>
+                  <th className="text-right text-[12px] font-semibold text-[#475569] px-5 py-3 uppercase tracking-wide">Completed</th>
+                  <th className="text-right text-[12px] font-semibold text-[#475569] px-5 py-3 uppercase tracking-wide">Completion Rate</th>
                 </tr>
               </thead>
               <tbody>
+                {byActivity.length === 0 && !loading && (
+                  <tr><td colSpan={5} className="px-5 py-6 text-center text-[13px] text-[#94A3B8]">No tasks yet</td></tr>
+                )}
                 {byActivity.map((a) => (
                   <tr key={a.name} className="border-b border-[#E2E8F0] last:border-b-0 hover:bg-[#F8FAFC] transition-colors">
                     <td className="px-5 py-3.5">
@@ -356,13 +401,16 @@ export default function ProductivityPage() {
               <thead>
                 <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
                   <th className="text-left text-[12px] font-semibold text-[#475569] px-5 py-3 uppercase tracking-wide">Warehouse</th>
-                  <th className="text-right text-[12px] font-semibold text-[#475569] px-5 py-3 uppercase tracking-wide">Tasks Completed</th>
-                  <th className="text-right text-[12px] font-semibold text-[#475569] px-5 py-3 uppercase tracking-wide">Tasks / User / Day</th>
-                  <th className="text-right text-[12px] font-semibold text-[#475569] px-5 py-3 uppercase tracking-wide">Accuracy Rate</th>
-                  <th className="text-right text-[12px] font-semibold text-[#475569] px-5 py-3 uppercase tracking-wide">Labor Efficiency</th>
+                  <th className="text-right text-[12px] font-semibold text-[#475569] px-5 py-3 uppercase tracking-wide">Total Tasks</th>
+                  <th className="text-right text-[12px] font-semibold text-[#475569] px-5 py-3 uppercase tracking-wide">Completed</th>
+                  <th className="text-right text-[12px] font-semibold text-[#475569] px-5 py-3 uppercase tracking-wide">Completion Rate</th>
+                  <th className="text-right text-[12px] font-semibold text-[#475569] px-5 py-3 uppercase tracking-wide">% of Total</th>
                 </tr>
               </thead>
               <tbody>
+                {byWarehouse.length === 0 && !loading && (
+                  <tr><td colSpan={5} className="px-5 py-6 text-center text-[13px] text-[#94A3B8]">No warehouse tasks yet</td></tr>
+                )}
                 {byWarehouse.map((w) => (
                   <tr key={w.name} className="border-b border-[#E2E8F0] last:border-b-0 hover:bg-[#F8FAFC] transition-colors">
                     <td className="px-5 py-3.5 text-[13px] font-medium text-[#1E293B]">{w.name}</td>

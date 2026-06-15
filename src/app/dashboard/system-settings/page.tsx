@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Settings as SettingsIcon, Download, Save, CheckCircle2, ChevronDown, ChevronRight,
   Package, Warehouse, Bell, Shield,
@@ -10,7 +10,7 @@ import { Modal } from "@/components/dashboard/Modal";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
-import { exportToCsv, exportToJson } from "@/lib/client";
+import { api as client, exportToCsv, exportToJson } from "@/lib/client";
 
 /* ---------------- settings definitions ---------------- */
 
@@ -239,13 +239,23 @@ const quickActions = [
   { label: "Download System Config", icon: HardDriveDownload, color: "bg-[#06B6D4]/10 text-[#06B6D4]", done: "System configuration downloaded" },
 ];
 
-const initialAutomationRules = [
+type IntegrationRow = { name: string; status: string; sync: string };
+type AutomationRule = { name: string; active: boolean };
+
+const initialAutomationRules: AutomationRule[] = [
   { name: "Low Stock Alert", active: true },
   { name: "Order Auto-Confirm", active: true },
   { name: "Stale Order Reassign", active: true },
   { name: "Inventory Reconciliation", active: true },
   { name: "Return Auto-Approval", active: true },
 ];
+
+// Shape of the persisted "system" settings section.
+type SystemSettings = {
+  values: Record<string, SettingValue>;
+  integrations: IntegrationRow[];
+  automationRules: AutomationRule[];
+};
 
 const systemLogs = [
   { time: "May 31, 2026 09:15:22", level: "Info", message: "Shopify sync completed — 248 orders imported" },
@@ -271,8 +281,8 @@ const prefTabs = ["Pricing", "Documents", "Shipping", "Returns", "Billing", "API
 export default function SystemSettingsPage() {
   const { toast } = useToast();
   const [prefTab, setPrefTab] = useState("Pricing");
-  const [integrations, setIntegrations] = useState(integrationsTable);
-  const [automationRules, setAutomationRules] = useState(initialAutomationRules);
+  const [integrations, setIntegrations] = useState<IntegrationRow[]>(integrationsTable);
+  const [automationRules, setAutomationRules] = useState<AutomationRule[]>(initialAutomationRules);
 
   const [values, setValues] = useState<Record<string, SettingValue>>(DEFAULTS);
   const [saved, setSaved] = useState<Record<string, SettingValue>>(DEFAULTS);
@@ -293,13 +303,47 @@ export default function SystemSettingsPage() {
     set: (key, value) => setValues((v) => ({ ...v, [key]: value })),
   };
 
+  // Hydrate from the persisted "system" settings section on mount.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const all = await client.get<Record<string, unknown>>("/api/settings");
+        if (!alive) return;
+        const section = (all.system ?? {}) as Partial<SystemSettings>;
+        if (section.values) {
+          // Merge stored values over the defaults so missing fields fall back.
+          const next = { ...DEFAULTS, ...section.values };
+          setValues(next);
+          setSaved(next);
+        }
+        if (Array.isArray(section.integrations) && section.integrations.length > 0) {
+          setIntegrations(section.integrations);
+        }
+        if (Array.isArray(section.automationRules) && section.automationRules.length > 0) {
+          setAutomationRules(section.automationRules);
+        }
+      } catch {
+        if (alive) toast("Failed to load system settings", "error");
+      }
+    })();
+    return () => { alive = false; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const persistSystem = (patch: Partial<SystemSettings>) =>
+    client.put("/api/settings", {
+      system: { values, integrations, automationRules, ...patch },
+    });
+
   const handleSave = () => {
     setSaving(true);
-    setTimeout(() => {
-      setSaving(false);
-      setSaved(values);
-      toast("All changes saved");
-    }, 600);
+    persistSystem({ values })
+      .then(() => {
+        setSaved(values);
+        toast("All changes saved");
+      })
+      .catch(() => toast("Failed to save settings", "error"))
+      .finally(() => setSaving(false));
   };
 
   const handleDiscard = () => {
@@ -337,22 +381,25 @@ export default function SystemSettingsPage() {
   };
 
   const toggleIntegration = (name: string) => {
-    setIntegrations((cur) => cur.map((r) => {
+    const next = integrations.map((r) => {
       if (r.name !== name) return r;
       const connecting = r.status !== "Connected";
-      toast(`${name} ${connecting ? "connected" : "disconnected"}`);
       return connecting
         ? { ...r, status: "Connected", sync: "Just now" }
         : { ...r, status: "Disconnected", sync: "—" };
-    }));
+    });
+    const target = next.find((r) => r.name === name);
+    setIntegrations(next);
+    toast(`${name} ${target?.status === "Connected" ? "connected" : "disconnected"}`);
+    persistSystem({ integrations: next }).catch(() => toast("Failed to update integration", "error"));
   };
 
   const toggleRule = (name: string) => {
-    setAutomationRules((cur) => cur.map((r) => {
-      if (r.name !== name) return r;
-      toast(`"${r.name}" ${r.active ? "paused" : "activated"}`);
-      return { ...r, active: !r.active };
-    }));
+    const next = automationRules.map((r) => (r.name === name ? { ...r, active: !r.active } : r));
+    const target = next.find((r) => r.name === name);
+    setAutomationRules(next);
+    toast(`"${name}" ${target?.active ? "activated" : "paused"}`);
+    persistSystem({ automationRules: next }).catch(() => toast("Failed to update rule", "error"));
   };
 
   const filteredLogs = logLevel === "All Levels" ? systemLogs : systemLogs.filter((l) => l.level === logLevel);

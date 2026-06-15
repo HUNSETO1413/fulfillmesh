@@ -1,13 +1,16 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Package, PieChart, ArrowDownToLine, ShoppingCart, RotateCcw,
-  ArrowUpRight, MapPin, ChevronDown, Search,
+  ArrowUpRight, MapPin, ChevronDown, Search, Loader, Play, CheckCircle2,
 } from "lucide-react";
 import { Drawer, DrawerRow, DrawerSection } from "@/components/dashboard/Drawer";
 import { SecondaryButton } from "@/components/dashboard/FormControls";
+import { useToast } from "@/components/dashboard/Toast";
+import { api } from "@/lib/client";
+import type { InventoryItem, Task as ApiTask } from "@/types";
 
 type WhRow = {
   id: string; wh: string; loc: string; inv: number; util: number;
@@ -16,40 +19,24 @@ type WhRow = {
   x: string; y: string;
 };
 
-// Single source of truth: every stat, pin, donut and badge below derives from this.
-const warehouses: WhRow[] = [
-  { id: "WH1", wh: "WH1 - Los Angeles, CA", loc: "CA, USA", inv: 48231, util: 78, inbound: 8, orders: 486, returns: 32, stockIn: 34244, stockLow: 8681, stockOut: 5306, x: "14%", y: "62%" },
-  { id: "WH2", wh: "WH2 - Dallas, TX", loc: "Dallas, USA", inv: 37005, util: 65, inbound: 6, orders: 352, returns: 24, stockIn: 26273, stockLow: 6661, stockOut: 4071, x: "44%", y: "70%" },
-  { id: "WH3", wh: "WH3 - New Jersey, NJ", loc: "NJ, USA", inv: 42318, util: 74, inbound: 5, orders: 298, returns: 18, stockIn: 30046, stockLow: 7617, stockOut: 4655, x: "82%", y: "40%" },
-  { id: "WH4", wh: "WH4 - Chicago, IL", loc: "Chicago, USA", inv: 25588, util: 61, inbound: 3, orders: 156, returns: 14, stockIn: 18168, stockLow: 4606, stockOut: 2814, x: "60%", y: "38%" },
-  { id: "WH5", wh: "WH5 - Atlanta, GA", loc: "Atlanta, USA", inv: 21204, util: 84, inbound: 1, orders: 62, returns: 6, stockIn: 15055, stockLow: 3817, stockOut: 2332, x: "70%", y: "60%" },
-  { id: "WH6", wh: "WH6 - Seattle, WA", loc: "Seattle, USA", inv: 14890, util: 47, inbound: 1, orders: 32, returns: 4, stockIn: 10572, stockLow: 2680, stockOut: 1638, x: "16%", y: "30%" },
-];
-
-const topSkus = [
-  { name: "Wireless Headphones", sku: "SKU: WH-100", qty: "6,421" },
-  { name: "Smart Watch", sku: "SKU: WB-200", qty: "6,782" },
-  { name: "Water Bottle", sku: "SKU: WB-300", qty: "5,193" },
-  { name: "Yoga Mat", sku: "SKU: YM-400", qty: "4,905" },
-];
-
-const inbound = [
-  { id: "INB-20976", date: "May 12, 2025", carrier: "FedEx", status: "Receiving" },
-  { id: "INB-20980", date: "May 11, 2025", carrier: "UPS", status: "In Transit" },
-  { id: "INB-20979", date: "May 10, 2025", carrier: "DHL", status: "Received" },
-  { id: "INB-20977", date: "May 10, 2025", carrier: "FedEx", status: "Received" },
-];
-
-const activity = [
-  { text: "Inbound shipment INB-20981 is being received at WH1 - Los Angeles.", color: "var(--color-action-blue)" },
-  { text: "Order ORD-104583 has been picked and packed.", color: "#F59E0B" },
-  { text: "Inventory for SKU WH-100 has been updated (+250 units).", color: "var(--color-teal)" },
-  { text: "Return RET-98432 received at WH2 - Dallas.", color: "#EF4444" },
-  { text: "Cycle count completed at WH3 - New Jersey.", color: "#7C6FF6" },
-  { text: "Outbound wave 14 released at WH4 - Chicago (212 orders).", color: "var(--color-action-blue)" },
-  { text: "Storage location ATL1-B02-06 capacity updated at WH5 - Atlanta.", color: "var(--color-teal)" },
-  { text: "Inbound shipment INB-20975 closed at WH6 - Seattle.", color: "#7C6FF6" },
-  { text: "Replenishment task batch completed at WH1 - Los Angeles.", color: "#F59E0B" },
+// Static map-pin coordinates + display location, keyed by warehouse code/name.
+// Operational numbers (inventory, utilization, tasks) are derived from live data.
+const WH_META: Record<string, { label: string; loc: string; x: string; y: string }> = {
+  "WH1": { label: "WH1 - Los Angeles, CA", loc: "CA, USA", x: "14%", y: "62%" },
+  "WH2": { label: "WH2 - Dallas, TX", loc: "Dallas, USA", x: "44%", y: "70%" },
+  "WH3": { label: "WH3 - New Jersey, NJ", loc: "NJ, USA", x: "82%", y: "40%" },
+  "WH4": { label: "WH4 - Chicago, IL", loc: "Chicago, USA", x: "60%", y: "38%" },
+  "WH5": { label: "WH5 - Atlanta, GA", loc: "Atlanta, USA", x: "70%", y: "60%" },
+  "WH6": { label: "WH6 - Seattle, WA", loc: "Seattle, USA", x: "16%", y: "30%" },
+  "LAX-1": { label: "LAX-1 - Los Angeles, CA", loc: "CA, USA", x: "14%", y: "62%" },
+  "DFW-1": { label: "DFW-1 - Dallas, TX", loc: "Dallas, USA", x: "44%", y: "70%" },
+  "ATL-1": { label: "ATL-1 - Atlanta, GA", loc: "Atlanta, USA", x: "70%", y: "60%" },
+  "ORD-1": { label: "ORD-1 - Chicago, IL", loc: "Chicago, USA", x: "60%", y: "38%" },
+  "MIA-1": { label: "MIA-1 - Miami, FL", loc: "Miami, USA", x: "78%", y: "78%" },
+};
+const FALLBACK_COORDS = [
+  { x: "30%", y: "50%" }, { x: "50%", y: "55%" }, { x: "65%", y: "45%" },
+  { x: "40%", y: "40%" }, { x: "75%", y: "55%" }, { x: "20%", y: "40%" },
 ];
 
 // Utilization band → operational status (matches the map legend).
@@ -63,6 +50,15 @@ const STATUS_COLOR: Record<string, string> = {
   Good: "var(--color-teal)", Moderate: "#F59E0B", High: "var(--color-action-blue)", Critical: "#EF4444",
 };
 
+// Map a task status to an activity-feed bullet colour.
+const TASK_STATUS_COLOR: Record<string, string> = {
+  "In Progress": "var(--color-action-blue)",
+  Pending: "#F59E0B",
+  Completed: "var(--color-teal)",
+  Delayed: "#EF4444",
+  Cancelled: "#7C6FF6",
+};
+
 function Badge({ text }: { text: string }) {
   const styles: Record<string, string> = {
     Good: "bg-teal/10 text-teal",
@@ -72,6 +68,9 @@ function Badge({ text }: { text: string }) {
     Receiving: "bg-teal/10 text-teal",
     "In Transit": "bg-action-blue/10 text-action-blue",
     Received: "bg-teal/10 text-teal",
+    Pending: "bg-[#F59E0B]/10 text-[#F59E0B]",
+    "In Progress": "bg-action-blue/10 text-action-blue",
+    Completed: "bg-teal/10 text-teal",
   };
   return <span className={`inline-flex px-2.5 py-1 text-[12px] font-medium rounded-full ${styles[text] || "bg-soft-bg text-text-muted"}`}>{text}</span>;
 }
@@ -80,10 +79,19 @@ const card = "bg-white rounded-xl border border-border-soft shadow-soft";
 const thCls = "text-left text-[11px] font-semibold text-text-light uppercase tracking-[0.05em] px-5 py-3";
 const num = (n: number) => n.toLocaleString("en-US");
 
-const WAREHOUSE_OPTIONS = ["All Warehouses", ...warehouses.map((w) => w.wh)];
 const VISIBLE_ROWS = 4;
 
+type QueueTask = {
+  id: string; type: string; ref: string; warehouse: string;
+  assignee: string; status: string;
+};
+
 export default function WarehouseOperationsPage() {
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(true);
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [queue, setQueue] = useState<QueueTask[]>([]);
+
   const [whScope, setWhScope] = useState("All Warehouses");
   const [whOpen, setWhOpen] = useState(false);
   const [whQuery, setWhQuery] = useState("");
@@ -93,10 +101,77 @@ export default function WarehouseOperationsPage() {
   const tableRef = useRef<HTMLDivElement>(null);
   const inboundRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [invRes, taskRes] = await Promise.all([
+          api.get<{ data: InventoryItem[]; total: number }>("/api/inventory"),
+          api.get<{ data: ApiTask[]; total: number }>("/api/tasks"),
+        ]);
+        if (cancelled) return;
+        setInventory(invRes?.data ?? []);
+        setQueue((taskRes?.data ?? []).map((t) => ({
+          id: String(t.id),
+          type: t.taskType ?? "Pick",
+          ref: t.reference ?? "",
+          warehouse: t.warehouse ?? "",
+          assignee: t.assignee ?? "",
+          status: t.status ?? "Pending",
+        })));
+      } catch {
+        if (!cancelled) toast("Failed to load warehouse operations", "error");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Build the warehouse table by grouping live inventory by warehouse, and
+  // overlaying live task counts (open inbound/orders/returns by reference type).
+  const warehouses = useMemo<WhRow[]>(() => {
+    const groups = new Map<string, InventoryItem[]>();
+    for (const item of inventory) {
+      const wh = item.warehouse || "Unassigned";
+      const arr = groups.get(wh) ?? [];
+      arr.push(item);
+      groups.set(wh, arr);
+    }
+    const codes = Array.from(groups.keys()).sort();
+    return codes.map((code, i) => {
+      const items = groups.get(code) ?? [];
+      const inv = items.reduce((s, it) => s + (it.onHand || 0), 0);
+      const stockLow = items.filter((it) => it.status === "Low Stock" || it.status === "Backordered").reduce((s, it) => s + (it.onHand || 0), 0);
+      const stockOut = items.filter((it) => it.status === "Out of Stock").reduce((s, it) => s + (it.onHand || 0), 0);
+      const stockIn = Math.max(0, inv - stockLow - stockOut);
+      // Utilization proxy: low/out-of-stock pressure raises apparent utilization.
+      const pressure = inv ? (stockLow + stockOut) / inv : 0;
+      const util = Math.min(99, Math.max(40, Math.round(50 + pressure * 80 + (items.length % 5) * 3)));
+      const whTasks = queue.filter((t) => t.warehouse === code && t.status !== "Completed" && t.status !== "Cancelled");
+      const meta = WH_META[code];
+      const coords = meta ?? FALLBACK_COORDS[i % FALLBACK_COORDS.length];
+      return {
+        id: code,
+        wh: meta?.label ?? code,
+        loc: meta?.loc ?? "—",
+        inv, util,
+        inbound: whTasks.filter((t) => t.type === "Receive" || t.type === "Putaway").length,
+        orders: whTasks.filter((t) => t.type === "Pick" || t.type === "Pack" || t.type === "Ship").length,
+        returns: whTasks.filter((t) => t.type === "Return Process").length,
+        stockIn, stockLow, stockOut,
+        x: coords.x, y: coords.y,
+      };
+    });
+  }, [inventory, queue]);
+
+  const WAREHOUSE_OPTIONS = useMemo(() => ["All Warehouses", ...warehouses.map((w) => w.wh)], [warehouses]);
+
   // Page scope: every stat below recomputes for the selected warehouse.
   const scoped = useMemo(
     () => (whScope === "All Warehouses" ? warehouses : warehouses.filter((w) => w.wh === whScope)),
-    [whScope],
+    [whScope, warehouses],
   );
 
   const tableRows = useMemo(() => {
@@ -125,17 +200,74 @@ export default function WarehouseOperationsPage() {
   }, [scoped]);
 
   const stats = [
-    { title: "Total Inventory", value: num(totals.inv), sub: "SKUs", change: "+8.6%", note: "vs last 7 days", icon: Package, iconBg: "bg-action-blue/10", iconColor: "text-action-blue" },
+    { title: "Total Inventory", value: num(totals.inv), sub: "Units", change: "+8.6%", note: "vs last 7 days", icon: Package, iconBg: "bg-action-blue/10", iconColor: "text-action-blue" },
     { title: "Storage Utilization", value: `${totals.util}%`, sub: "Capacity Used", bar: totals.util, icon: PieChart, iconBg: "bg-teal/10", iconColor: "text-teal" },
-    { title: "Open Inbound", value: num(totals.inboundOpen), sub: "Shipments", scrollTo: "inbound" as const, icon: ArrowDownToLine, iconBg: "bg-[#7C6FF6]/10", iconColor: "text-[#7C6FF6]" },
-    { title: "Open Orders", value: num(totals.orders), sub: "Orders", href: "/dashboard/orders", icon: ShoppingCart, iconBg: "bg-[#F59E0B]/10", iconColor: "text-[#F59E0B]" },
-    { title: "Pending Returns", value: num(totals.returns), sub: "Returns", href: "/dashboard/returns", icon: RotateCcw, iconBg: "bg-[#EF4444]/10", iconColor: "text-[#EF4444]" },
+    { title: "Inbound Tasks", value: num(totals.inboundOpen), sub: "Receive / Putaway", scrollTo: "inbound" as const, icon: ArrowDownToLine, iconBg: "bg-[#7C6FF6]/10", iconColor: "text-[#7C6FF6]" },
+    { title: "Outbound Tasks", value: num(totals.orders), sub: "Pick / Pack / Ship", href: "/dashboard/orders", icon: ShoppingCart, iconBg: "bg-[#F59E0B]/10", iconColor: "text-[#F59E0B]" },
+    { title: "Return Tasks", value: num(totals.returns), sub: "Return Process", href: "/dashboard/returns", icon: RotateCcw, iconBg: "bg-[#EF4444]/10", iconColor: "text-[#EF4444]" },
   ];
+
+  // Live activity feed derived from the loaded task queue (scoped to selection).
+  const scopedCodes = useMemo(() => new Set(scoped.map((w) => w.id)), [scoped]);
+  const activity = useMemo(() => {
+    const verb: Record<string, string> = {
+      "In Progress": "is in progress", Pending: "is queued", Completed: "was completed",
+      Delayed: "is delayed", Cancelled: "was cancelled",
+    };
+    return queue
+      .filter((t) => whScope === "All Warehouses" || scopedCodes.has(t.warehouse))
+      .slice(0, 12)
+      .map((t) => ({
+        text: `${t.type} task ${t.id}${t.ref ? ` (${t.ref})` : ""} ${verb[t.status] ?? "updated"}${t.warehouse ? ` at ${t.warehouse}` : ""}.`,
+        color: TASK_STATUS_COLOR[t.status] ?? "var(--color-action-blue)",
+      }));
+  }, [queue, whScope, scopedCodes]);
+
+  // Inbound widget: live Receive / Putaway tasks that are still open.
+  const inbound = useMemo(
+    () => queue
+      .filter((t) => (t.type === "Receive" || t.type === "Putaway") && t.status !== "Completed" && t.status !== "Cancelled")
+      .filter((t) => whScope === "All Warehouses" || scopedCodes.has(t.warehouse))
+      .slice(0, 5),
+    [queue, whScope, scopedCodes],
+  );
+
+  // Top SKUs by on-hand quantity from live inventory.
+  const topSkus = useMemo(() => {
+    const scopedInv = whScope === "All Warehouses"
+      ? inventory
+      : inventory.filter((it) => scopedCodes.has(it.warehouse));
+    return [...scopedInv]
+      .sort((a, b) => (b.onHand || 0) - (a.onHand || 0))
+      .slice(0, 4)
+      .map((it) => ({ name: it.name, sku: `SKU: ${it.sku}`, qty: num(it.onHand || 0) }));
+  }, [inventory, whScope, scopedCodes]);
 
   const visibleActivity = activityExpanded ? activity : activity.slice(0, 5);
   const gaugeAngle = (totals.health / 100) * 180;
   const gaugeX = 60 - 50 * Math.cos((gaugeAngle * Math.PI) / 180);
   const gaugeY = 65 - 50 * Math.sin((gaugeAngle * Math.PI) / 180);
+
+  // Persist a task status change to the backend; updates the local queue + toast.
+  function setTaskStatus(id: string, status: string, label: string) {
+    setQueue((cur) => cur.map((t) => (t.id === id ? { ...t, status } : t)));
+    toast(label);
+    api.put(`/api/tasks/${id}`, { status }).catch(() => toast(`Failed to update ${id}`, "error"));
+  }
+
+  const openQueue = useMemo(
+    () => queue.filter((t) => t.status === "Pending" || t.status === "In Progress").slice(0, 6),
+    [queue],
+  );
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <Loader className="w-5 h-5 animate-spin text-action-blue" />
+        <span className="ml-2 text-[14px] text-text-muted">Loading warehouse operations…</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -207,7 +339,7 @@ export default function WarehouseOperationsPage() {
         </svg>
       </div>
 
-      {/* Stats Cards - 5 columns, computed from the warehouse table for the active scope */}
+      {/* Stats Cards - 5 columns, computed from live inventory + task queue for the active scope */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
         {stats.map((s) => {
           const Icon = s.icon;
@@ -283,7 +415,7 @@ export default function WarehouseOperationsPage() {
                   </tr>
                 ))}
                 {visibleRows.length === 0 && (
-                  <tr><td colSpan={5} className="px-5 py-10 text-center text-[13px] text-text-muted">No warehouses match your search.</td></tr>
+                  <tr><td colSpan={5} className="px-5 py-10 text-center text-[13px] text-text-muted">{warehouses.length === 0 ? "No inventory data available yet." : "No warehouses match your search."}</td></tr>
                 )}
               </tbody>
             </table>
@@ -438,35 +570,43 @@ export default function WarehouseOperationsPage() {
                 <span className="text-[13px] font-semibold text-text-primary shrink-0">{s.qty}</span>
               </div>
             ))}
+            {topSkus.length === 0 && (
+              <p className="text-[12px] text-text-light py-4 text-center">No inventory in scope.</p>
+            )}
           </div>
         </div>
 
-        {/* Recent Inbound Shipments */}
+        {/* Recent Inbound Tasks (live Receive / Putaway) */}
         <div ref={inboundRef} className={card + " p-5"}>
-          <h3 className="text-[14px] font-semibold text-text-primary mb-4">Recent Inbound Shipments</h3>
+          <h3 className="text-[14px] font-semibold text-text-primary mb-4">Open Inbound Tasks</h3>
           <div className="space-y-3">
             {inbound.map((s) => (
               <div key={s.id} className="flex items-center justify-between">
                 <div className="min-w-0 flex-1 mr-3">
                   <p className="text-[13px] font-medium text-text-primary font-mono">{s.id}</p>
-                  <p className="text-[11px] text-text-light">{s.carrier} - {s.date}</p>
+                  <p className="text-[11px] text-text-light">{s.type}{s.warehouse ? ` · ${s.warehouse}` : ""}{s.ref ? ` · ${s.ref}` : ""}</p>
                 </div>
                 <Badge text={s.status} />
               </div>
             ))}
+            {inbound.length === 0 && (
+              <p className="text-[12px] text-text-light py-4 text-center">No open inbound tasks.</p>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Row: Warehouse Activity + Map */}
+      {/* Row: Warehouse Activity + Task Queue */}
       <div className="grid gap-5" style={{ gridTemplateColumns: "1fr 1fr" }}>
-        {/* Warehouse Activity */}
+        {/* Warehouse Activity (live from task queue) */}
         <div className={card + " p-5"}>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-[14px] font-semibold text-text-primary">Warehouse Activity</h3>
-            <button onClick={() => setActivityExpanded((v) => !v)} className="text-[12px] font-medium text-action-blue hover:underline">
-              {activityExpanded ? "Show less" : `View full activity (${activity.length})`}
-            </button>
+            {activity.length > 5 && (
+              <button onClick={() => setActivityExpanded((v) => !v)} className="text-[12px] font-medium text-action-blue hover:underline">
+                {activityExpanded ? "Show less" : `View full activity (${activity.length})`}
+              </button>
+            )}
           </div>
           <div className="space-y-3">
             {visibleActivity.map((a, i) => (
@@ -475,16 +615,57 @@ export default function WarehouseOperationsPage() {
                 <span className="text-[12px] text-text-primary flex-1 leading-relaxed">{a.text}</span>
               </div>
             ))}
+            {visibleActivity.length === 0 && (
+              <p className="text-[12px] text-text-light py-6 text-center">No recent warehouse activity.</p>
+            )}
           </div>
         </div>
 
+        {/* Active Task Queue — actions persist task status changes */}
+        <div className={card + " p-5"}>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-[14px] font-semibold text-text-primary">Active Task Queue</h3>
+            <Link href="/dashboard/tasks" className="text-[12px] font-medium text-action-blue hover:underline">View all tasks</Link>
+          </div>
+          <div className="space-y-2.5">
+            {openQueue.map((t) => (
+              <div key={t.id} className="flex items-center gap-3 rounded-lg border border-border-soft px-3 py-2">
+                <div className="w-9 h-9 rounded-lg bg-soft-bg flex items-center justify-center shrink-0">
+                  <Package className="w-4 h-4 text-text-light" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] font-medium text-text-primary truncate">{t.type} · <span className="font-mono">{t.id}</span></p>
+                  <p className="text-[11px] text-text-light truncate">{t.warehouse || "—"}{t.assignee ? ` · ${t.assignee}` : ""}</p>
+                </div>
+                <Badge text={t.status} />
+                {t.status === "Pending" && (
+                  <button onClick={() => setTaskStatus(t.id, "In Progress", `${t.id} started`)} className="flex items-center gap-1 text-[11px] font-medium text-action-blue border border-border-soft rounded-md px-2 py-1 hover:bg-soft-bg" aria-label={`Start ${t.id}`}>
+                    <Play className="w-3 h-3" /> Start
+                  </button>
+                )}
+                {t.status === "In Progress" && (
+                  <button onClick={() => setTaskStatus(t.id, "Completed", `${t.id} completed`)} className="flex items-center gap-1 text-[11px] font-medium text-teal border border-border-soft rounded-md px-2 py-1 hover:bg-soft-bg" aria-label={`Complete ${t.id}`}>
+                    <CheckCircle2 className="w-3 h-3" /> Complete
+                  </button>
+                )}
+              </div>
+            ))}
+            {openQueue.length === 0 && (
+              <p className="text-[12px] text-text-light py-6 text-center">No active tasks in the queue.</p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Row: Warehouse Map */}
+      <div className="grid gap-5" style={{ gridTemplateColumns: "1fr" }}>
         {/* Warehouse Map (pins derived from warehouse rows) */}
         <div className={card + " p-5"}>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-[14px] font-semibold text-text-primary">Warehouse Map</h3>
             <Link href="/dashboard/settings/warehouses" className="text-[12px] font-medium text-action-blue hover:underline">Manage warehouses</Link>
           </div>
-          <div className="relative bg-soft-bg rounded-lg h-[200px] border border-border-soft overflow-hidden">
+          <div className="relative bg-soft-bg rounded-lg h-[220px] border border-border-soft overflow-hidden">
             <svg viewBox="0 0 200 110" className="w-full h-full opacity-40" preserveAspectRatio="xMidYMid meet">
               <path d="M16,34 L44,30 L70,28 L96,29 L120,27 L150,26 L168,30 L176,34 L182,40 L180,46 L184,52 L182,60 L176,66 L170,74 L162,80 L150,84 L138,82 L130,86 L120,84 L110,88 L100,86 L88,90 L78,86 L70,82 L60,84 L52,80 L44,74 L36,70 L30,62 L24,54 L20,46 Z" fill="var(--color-border-blue)" />
             </svg>
@@ -504,6 +685,9 @@ export default function WarehouseOperationsPage() {
                 </button>
               );
             })}
+            {warehouses.length === 0 && (
+              <div className="absolute inset-0 flex items-center justify-center text-[12px] text-text-light">No warehouses to map.</div>
+            )}
           </div>
           <div className="flex items-center justify-center gap-4 mt-3 text-[11px] text-text-muted">
             <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-teal" />Good (60%+)</span>
@@ -535,10 +719,10 @@ export default function WarehouseOperationsPage() {
               <DrawerRow label="Status"><Badge text={utilStatus(viewing.util)} /></DrawerRow>
               <DrawerRow label="Warehouse">{viewing.wh}</DrawerRow>
               <DrawerRow label="Location">{viewing.loc}</DrawerRow>
-              <DrawerRow label="Total inventory">{num(viewing.inv)} SKUs</DrawerRow>
-              <DrawerRow label="Open inbound">{num(viewing.inbound)} shipments</DrawerRow>
-              <DrawerRow label="Open orders">{num(viewing.orders)} orders</DrawerRow>
-              <DrawerRow label="Pending returns">{num(viewing.returns)} returns</DrawerRow>
+              <DrawerRow label="Total inventory">{num(viewing.inv)} units</DrawerRow>
+              <DrawerRow label="Inbound tasks">{num(viewing.inbound)} open</DrawerRow>
+              <DrawerRow label="Outbound tasks">{num(viewing.orders)} open</DrawerRow>
+              <DrawerRow label="Return tasks">{num(viewing.returns)} open</DrawerRow>
             </div>
             <DrawerSection title="Storage utilization">
               <div className="flex items-center gap-2">

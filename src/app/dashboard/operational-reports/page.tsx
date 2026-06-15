@@ -1,20 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CalendarClock, Download, Plus, ChevronDown, ChevronRight, ShoppingBag, Truck, CheckCircle2, Clock, DollarSign, ArrowUpRight, ArrowDownRight, BarChart3, Package, Ship, Warehouse, RotateCcw, Users, FileText, LineChart } from "lucide-react";
 import { DateRangeMenu } from "@/components/dashboard/DateRangeMenu";
 import { Modal } from "@/components/dashboard/Modal";
 import { Field, TextInput, Select as FormSelect, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
-import { exportToCsv } from "@/lib/client";
+import { api, exportToCsv } from "@/lib/client";
+import type { OperationalReport } from "@/lib/analytics";
 
-const stats = [
-  { title: "Total Orders", value: "12,456", change: "+10.8%", up: true, icon: ShoppingBag, color: "#3B82F6" },
-  { title: "Orders Shipped", value: "11,732", change: "+11.2%", up: true, icon: Truck, color: "#10B981" },
-  { title: "On-Time Delivery", value: "93.2%", change: "+4.6 pp", up: true, icon: CheckCircle2, color: "#3B82F6" },
-  { title: "Avg. Order Cycle", value: "1.82 days", change: "-6.7%", up: true, icon: Clock, color: "#F59E0B" },
-  { title: "Fulfillment Cost / Order", value: "$2.48", change: "-4.2%", up: true, icon: DollarSign, color: "#8B5CF6" },
-];
+const WH_COLORS = ["#3B82F6", "#10B981", "#F59E0B", "#8B5CF6", "#94A3B8", "#EF4444", "#06B6A4"];
+const fmtInt = (n: number) => n.toLocaleString("en-US");
 
 const reportCats = [
   { name: "Order Performance", icon: BarChart3 },
@@ -39,22 +35,6 @@ const CHANNEL_NAMES = [
   { name: "Walmart", color: "#F59E0B" },
   { name: "eBay", color: "#8B5CF6" },
   { name: "Other", color: "#94A3B8" },
-];
-
-const topWarehouses = [
-  { name: "ATL-1 · Atlanta", pct: 26, color: "#3B82F6" },
-  { name: "DFW-1 · Dallas", pct: 24, color: "#10B981" },
-  { name: "LAX-1 · Los Angeles", pct: 20, color: "#F59E0B" },
-  { name: "MIA-1 · Miami", pct: 15, color: "#8B5CF6" },
-  { name: "ORD-1 · Chicago", pct: 15, color: "#94A3B8" },
-];
-
-const whSummary = [
-  { name: "ATL-1 · Atlanta", orders: "3,245", shipped: "3,056", onTime: "94.8%", cycle: "1.52 days", perDay: "105" },
-  { name: "DFW-1 · Dallas", orders: "2,987", shipped: "2,810", onTime: "92.6%", cycle: "1.78 days", perDay: "100" },
-  { name: "LAX-1 · Los Angeles", orders: "2,438", shipped: "2,321", onTime: "92.6%", cycle: "1.95 days", perDay: "82" },
-  { name: "MIA-1 · Miami", orders: "1,876", shipped: "1,721", onTime: "91.4%", cycle: "2.04 days", perDay: "63" },
-  { name: "ORD-1 · Chicago", orders: "1,892", shipped: "1,822", onTime: "92.0%", cycle: "1.78 days", perDay: "63" },
 ];
 
 /* ---- deterministic datasets per category + granularity ---- */
@@ -170,6 +150,8 @@ function FilterPill({ value, options, onSelect }: { value: string; options: stri
 
 export default function OperationalReportsPage() {
   const { toast } = useToast();
+  const [report, setReport] = useState<OperationalReport | null>(null);
+  const [loading, setLoading] = useState(true);
   const [range, setRange] = useState("May 1 – May 31, 2025");
   const [activeCat, setActiveCat] = useState("Order Performance");
   const [gran, setGran] = useState<Gran>("Daily");
@@ -181,6 +163,64 @@ export default function OperationalReportsPage() {
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [schedule, setSchedule] = useState<Schedule | null>(null);
   const [schedDraft, setSchedDraft] = useState<Schedule>({ frequency: "Weekly", day: "Monday", time: "08:00", recipients: "" });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await api.get<OperationalReport>("/api/analytics/operational");
+        if (!cancelled) setReport(data);
+      } catch {
+        if (!cancelled) toast("Failed to load operational report", "error");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Real stat cards derived from the live report.
+  const stats = useMemo(() => {
+    const r = report;
+    return [
+      { title: "Total Orders", value: fmtInt(r?.totalOrders ?? 0), change: `${r?.ordersByStatus.length ?? 0} statuses`, up: true, icon: ShoppingBag, color: "#3B82F6" },
+      { title: "Orders Shipped", value: fmtInt(r?.shippedOrders ?? 0), change: "in transit+", up: true, icon: Truck, color: "#10B981" },
+      { title: "On-Time Delivery", value: `${r?.onTimeDeliveryPct ?? 0}%`, change: "delivered", up: (r?.onTimeDeliveryPct ?? 0) >= 50, icon: CheckCircle2, color: "#3B82F6" },
+      { title: "Task Completion", value: `${r?.taskCompletionPct ?? 0}%`, change: `${fmtInt(r?.completedTasks ?? 0)} done`, up: true, icon: Clock, color: "#F59E0B" },
+      { title: "Inventory Turns", value: String(r?.inventoryTurns ?? 0), change: `${fmtInt(r?.reservedUnits ?? 0)} reserved`, up: true, icon: DollarSign, color: "#8B5CF6" },
+    ];
+  }, [report]);
+
+  // Top warehouses by units (share of total) for the donut.
+  const topWarehouses = useMemo(() => {
+    const whs = report?.warehouses ?? [];
+    const total = whs.reduce((s, w) => s + w.units, 0);
+    return whs.slice(0, 6).map((w, i) => ({
+      name: w.warehouse,
+      pct: total > 0 ? Math.round((w.units / total) * 1000) / 10 : 0,
+      color: WH_COLORS[i % WH_COLORS.length],
+    }));
+  }, [report]);
+
+  const totalWhUnits = useMemo(
+    () => (report?.warehouses ?? []).reduce((s, w) => s + w.units, 0),
+    [report],
+  );
+
+  // Warehouse performance summary table.
+  const whSummary = useMemo(
+    () =>
+      (report?.warehouses ?? []).map((w) => ({
+        name: w.warehouse,
+        orders: fmtInt(w.orders),
+        shipped: fmtInt(w.shipped),
+        onTime: `${w.onTimePct}%`,
+        cycle: `${w.tasks} tasks`,
+        perDay: fmtInt(w.units),
+      })),
+    [report],
+  );
 
   function cycleGran() {
     setGran(GRANS[(GRANS.indexOf(gran) + 1) % GRANS.length]);
@@ -306,7 +346,7 @@ export default function OperationalReportsPage() {
                   <Icon className="w-[18px] h-[18px]" style={{ color: s.color }} />
                 </div>
               </div>
-              <p className="text-[28px] font-bold text-[#1E293B] leading-none">{s.value}</p>
+              <p className="text-[28px] font-bold text-[#1E293B] leading-none">{loading ? "—" : s.value}</p>
               <div className="flex items-center gap-2 mt-3">
                 <span
                   className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[12px] font-semibold ${
@@ -416,7 +456,7 @@ export default function OperationalReportsPage() {
 
         {/* Top Warehouses donut */}
         <div className="bg-white rounded-xl border border-[#E2E8F0] p-5 shadow-[0_1px_3px_0_rgba(0,0,0,0.1),0_1px_2px_0_rgba(0,0,0,0.06)]">
-          <h3 className="text-[16px] font-semibold text-[#1E293B] mb-4">Top Warehouses by Orders</h3>
+          <h3 className="text-[16px] font-semibold text-[#1E293B] mb-4">Top Warehouses by Units</h3>
           <div className="flex items-center gap-6">
             <div className="relative w-[160px] h-[160px] shrink-0">
               <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
@@ -425,12 +465,15 @@ export default function OperationalReportsPage() {
               </svg>
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="text-center">
-                  <p className="text-[20px] font-bold text-[#1E293B]">12,456</p>
-                  <p className="text-[10px] text-[#64748B]">Orders</p>
+                  <p className="text-[20px] font-bold text-[#1E293B]">{fmtInt(totalWhUnits)}</p>
+                  <p className="text-[10px] text-[#64748B]">Units</p>
                 </div>
               </div>
             </div>
             <div className="flex-1 space-y-2.5">
+              {topWarehouses.length === 0 && !loading && (
+                <p className="text-[13px] text-[#94A3B8]">No warehouse data</p>
+              )}
               {topWarehouses.map((w) => (
                 <div key={w.name} className="flex items-center justify-between text-[13px]">
                   <div className="flex items-center gap-2">
@@ -453,12 +496,15 @@ export default function OperationalReportsPage() {
             <table className="w-full">
               <thead>
                 <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
-                  {["Warehouse", "Orders", "Shipped", "On-Time Delivery", "Avg. Cycle Time", "Orders / Day"].map((h, i) => (
+                  {["Warehouse", "Orders", "Shipped", "On-Time Delivery", "Open Tasks", "On-Hand Units"].map((h, i) => (
                     <th key={h} className={`text-[12px] font-semibold text-[#475569] px-5 py-3 uppercase tracking-wide ${i === 0 ? "text-left" : "text-right"}`}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
+                {whSummary.length === 0 && !loading && (
+                  <tr><td colSpan={6} className="px-5 py-6 text-center text-[13px] text-[#94A3B8]">No warehouse activity yet</td></tr>
+                )}
                 {whSummary.map((w) => (
                   <tr key={w.name} className="border-b border-[#E2E8F0] last:border-b-0 hover:bg-[#F8FAFC] transition-colors">
                     <td className="px-5 py-3.5 text-[13px] font-medium text-[#1E293B]">{w.name}</td>

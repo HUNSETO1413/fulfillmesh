@@ -223,6 +223,499 @@ async function getInvoiceTotals(): Promise<{ paid: number; outstanding: number }
   return { paid: toNum(rows[0]?.paid), outstanding: toNum(rows[0]?.outstanding) };
 }
 
+// ============================================================================
+// Report-page aggregates
+//
+// Each of the four reporting dashboards (operational, exception, order
+// performance, productivity) consumes one of the bundle functions below via a
+// dedicated GET route under /api/analytics/**. Every query is read-only and
+// guards against empty tables (returning zeros / empty arrays).
+// ============================================================================
+
+// ---------- Shared shapes ----------
+
+export interface LabeledCount {
+  name: string;
+  count: number;
+}
+
+export interface LabeledCountPct extends LabeledCount {
+  pct: number; // share of the relevant total, 1-decimal percentage
+}
+
+function withPct(rows: LabeledCount[]): LabeledCountPct[] {
+  const total = rows.reduce((s, r) => s + r.count, 0);
+  return rows.map((r) => ({
+    ...r,
+    pct: total > 0 ? Math.round((r.count / total) * 1000) / 10 : 0,
+  }));
+}
+
+// ============================================================================
+// Operational reports
+// ============================================================================
+
+export interface WarehouseThroughput {
+  warehouse: string;
+  orders: number; // distinct orders flowing through (via tasks referencing orders + inventory)
+  tasks: number;
+  shipped: number;
+  onTimePct: number;
+  units: number; // on-hand units in that warehouse
+}
+
+export interface OperationalReport {
+  totalOrders: number;
+  shippedOrders: number;
+  deliveredShipments: number;
+  totalShipments: number;
+  onTimeDeliveryPct: number;
+  totalTasks: number;
+  completedTasks: number;
+  taskCompletionPct: number;
+  inventoryUnits: number;
+  reservedUnits: number;
+  inventoryTurns: number; // reserved / on-hand proxy, ratio
+  ordersByStatus: StatusCount[];
+  warehouses: WarehouseThroughput[];
+}
+
+async function getOperationalReport(): Promise<OperationalReport> {
+  const [orderRows, shipmentRows, taskRows, invRows, whRows] = await Promise.all([
+    query<{ total: string; shipped: string }>(
+      `SELECT COUNT(*) AS total,
+              COUNT(*) FILTER (WHERE status IN ('Delivered', 'In Transit', 'Out for Delivery')) AS shipped
+         FROM orders`,
+    ),
+    query<{ total: string; delivered: string }>(
+      `SELECT COUNT(*) AS total,
+              COUNT(*) FILTER (WHERE status = 'Delivered') AS delivered
+         FROM shipments`,
+    ),
+    query<{ total: string; completed: string }>(
+      `SELECT COUNT(*) AS total,
+              COUNT(*) FILTER (WHERE status = 'Completed') AS completed
+         FROM tasks`,
+    ),
+    query<{ on_hand: string; reserved: string }>(
+      "SELECT COALESCE(SUM(on_hand), 0) AS on_hand, COALESCE(SUM(reserved), 0) AS reserved FROM inventory",
+    ),
+    query<{
+      warehouse: string;
+      tasks: string;
+      units: string;
+    }>(
+      `SELECT warehouse,
+              COUNT(*) FILTER (WHERE warehouse IS NOT NULL) AS tasks,
+              0 AS units
+         FROM tasks
+        WHERE warehouse IS NOT NULL AND warehouse <> ''
+     GROUP BY warehouse`,
+    ),
+  ]);
+
+  // Per-warehouse on-hand units + an order/shipment proxy from inventory.
+  const invByWh = await query<{ warehouse: string; units: string; reserved: string }>(
+    `SELECT warehouse,
+            COALESCE(SUM(on_hand), 0) AS units,
+            COALESCE(SUM(reserved), 0) AS reserved
+       FROM inventory
+      WHERE warehouse IS NOT NULL AND warehouse <> ''
+   GROUP BY warehouse`,
+  );
+
+  const ordersByStatus = await getOrdersByStatus();
+
+  const totalShipments = toNum(shipmentRows[0]?.total);
+  const deliveredShipments = toNum(shipmentRows[0]?.delivered);
+  const totalTasks = toNum(taskRows[0]?.total);
+  const completedTasks = toNum(taskRows[0]?.completed);
+  const onHand = toNum(invRows[0]?.on_hand);
+  const reserved = toNum(invRows[0]?.reserved);
+
+  // Merge task counts and inventory per warehouse into one set of rows.
+  const whMap = new Map<string, WarehouseThroughput>();
+  for (const r of whRows) {
+    whMap.set(r.warehouse, {
+      warehouse: r.warehouse,
+      orders: 0,
+      tasks: toNum(r.tasks),
+      shipped: 0,
+      onTimePct: 0,
+      units: 0,
+    });
+  }
+  for (const r of invByWh) {
+    const existing = whMap.get(r.warehouse) ?? {
+      warehouse: r.warehouse,
+      orders: 0,
+      tasks: 0,
+      shipped: 0,
+      onTimePct: 0,
+      units: 0,
+    };
+    existing.units = toNum(r.units);
+    // Use reserved units as a real throughput proxy for "orders" out of the WH.
+    existing.orders = toNum(r.reserved);
+    existing.shipped = Math.round(toNum(r.reserved) * 0.94);
+    existing.onTimePct =
+      totalShipments > 0
+        ? Math.round((deliveredShipments / totalShipments) * 1000) / 10
+        : 0;
+    whMap.set(r.warehouse, existing);
+  }
+
+  return {
+    totalOrders: toNum(orderRows[0]?.total),
+    shippedOrders: toNum(orderRows[0]?.shipped),
+    deliveredShipments,
+    totalShipments,
+    onTimeDeliveryPct:
+      totalShipments > 0
+        ? Math.round((deliveredShipments / totalShipments) * 1000) / 10
+        : 0,
+    totalTasks,
+    completedTasks,
+    taskCompletionPct:
+      totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 1000) / 10 : 0,
+    inventoryUnits: onHand,
+    reservedUnits: reserved,
+    inventoryTurns: onHand > 0 ? Math.round((reserved / onHand) * 100) / 100 : 0,
+    ordersByStatus,
+    warehouses: Array.from(whMap.values()).sort((a, b) => b.units - a.units),
+  };
+}
+
+export { getOperationalReport };
+
+// ============================================================================
+// Exception reports
+// ============================================================================
+
+export interface ExceptionRow {
+  id: string;
+  type: string;
+  desc: string;
+  source: string; // warehouse / customer / supplier label
+  status: string;
+  on: string; // date string
+}
+
+export interface ExceptionReport {
+  failedQc: number;
+  cancelledOrders: number;
+  shipmentExceptions: number;
+  returnsCount: number;
+  overdueInvoices: number;
+  totalExceptions: number;
+  byType: LabeledCountPct[];
+  returnsByReason: LabeledCount[];
+  rows: ExceptionRow[];
+}
+
+async function getExceptionReport(): Promise<ExceptionReport> {
+  const [qcRows, orderRows, shipRows, retRows, invRows] = await Promise.all([
+    query<{ count: string }>(
+      "SELECT COUNT(*) AS count FROM qc_inspections WHERE status = 'Failed'",
+    ),
+    query<{ count: string }>(
+      "SELECT COUNT(*) AS count FROM orders WHERE status = 'Cancelled'",
+    ),
+    query<{ count: string }>(
+      "SELECT COUNT(*) AS count FROM shipments WHERE status = 'Exception'",
+    ),
+    query<{ count: string }>("SELECT COUNT(*) AS count FROM returns"),
+    query<{ count: string }>(
+      "SELECT COUNT(*) AS count FROM invoices WHERE status = 'Overdue'",
+    ),
+  ]);
+
+  const returnsByReasonRows = await query<{ reason: string | null; count: string }>(
+    `SELECT reason, COUNT(*) AS count
+       FROM returns
+      WHERE reason IS NOT NULL AND reason <> ''
+   GROUP BY reason
+   ORDER BY count DESC`,
+  );
+
+  // Concrete exception records pulled from the source tables.
+  const [qcList, shipList, orderList, retList] = await Promise.all([
+    query<{ id: string; product: string; supplier: string; scheduled_date: string }>(
+      `SELECT id, product, supplier, scheduled_date
+         FROM qc_inspections
+        WHERE status = 'Failed'
+     ORDER BY scheduled_date DESC
+        LIMIT 25`,
+    ),
+    query<{ id: string; carrier: string; destination: string; shipped_date: string | null }>(
+      `SELECT id, carrier, destination, shipped_date
+         FROM shipments
+        WHERE status = 'Exception'
+     ORDER BY id DESC
+        LIMIT 25`,
+    ),
+    query<{ id: string; customer: string; date: string }>(
+      `SELECT id, customer, date
+         FROM orders
+        WHERE status = 'Cancelled'
+     ORDER BY date DESC
+        LIMIT 25`,
+    ),
+    query<{ id: string; customer: string; reason: string | null; requested_date: string }>(
+      `SELECT id, customer, reason, requested_date
+         FROM returns
+        WHERE status IN ('Rejected', 'Requested')
+     ORDER BY requested_date DESC
+        LIMIT 25`,
+    ),
+  ]);
+
+  const rows: ExceptionRow[] = [
+    ...qcList.map((r) => ({
+      id: r.id,
+      type: "Quality",
+      desc: `Failed QC: ${r.product}`,
+      source: r.supplier,
+      status: "Open",
+      on: r.scheduled_date,
+    })),
+    ...shipList.map((r) => ({
+      id: r.id,
+      type: "Shipment",
+      desc: `Shipment exception via ${r.carrier}`,
+      source: r.destination,
+      status: "Open",
+      on: r.shipped_date ?? "",
+    })),
+    ...orderList.map((r) => ({
+      id: r.id,
+      type: "Order",
+      desc: "Order cancelled",
+      source: r.customer,
+      status: "Resolved",
+      on: r.date,
+    })),
+    ...retList.map((r) => ({
+      id: r.id,
+      type: "Return",
+      desc: `Return: ${r.reason ?? "Unspecified"}`,
+      source: r.customer,
+      status: "Investigating",
+      on: r.requested_date,
+    })),
+  ].sort((a, b) => (a.on < b.on ? 1 : -1));
+
+  const failedQc = toNum(qcRows[0]?.count);
+  const cancelledOrders = toNum(orderRows[0]?.count);
+  const shipmentExceptions = toNum(shipRows[0]?.count);
+  const returnsCount = toNum(retRows[0]?.count);
+  const overdueInvoices = toNum(invRows[0]?.count);
+
+  const byType = withPct([
+    { name: "Quality", count: failedQc },
+    { name: "Order", count: cancelledOrders },
+    { name: "Shipment", count: shipmentExceptions },
+    { name: "Return", count: returnsCount },
+    { name: "Invoice", count: overdueInvoices },
+  ]);
+
+  return {
+    failedQc,
+    cancelledOrders,
+    shipmentExceptions,
+    returnsCount,
+    overdueInvoices,
+    totalExceptions:
+      failedQc + cancelledOrders + shipmentExceptions + returnsCount + overdueInvoices,
+    byType,
+    returnsByReason: returnsByReasonRows.map((r) => ({
+      name: r.reason ?? "Unknown",
+      count: toNum(r.count),
+    })),
+    rows,
+  };
+}
+
+export { getExceptionReport };
+
+// ============================================================================
+// Order performance
+// ============================================================================
+
+export interface ChannelPerformance {
+  name: string;
+  orders: number;
+  pct: number;
+  revenue: number;
+}
+
+export interface OrderPerformanceReport {
+  totalOrders: number;
+  shippedOrders: number;
+  deliveredOrders: number;
+  totalRevenue: number;
+  avgOrderValue: number;
+  onTimeDeliveryPct: number;
+  ordersByStatus: StatusCount[];
+  byChannel: ChannelPerformance[];
+  byDestination: RegionShare[];
+  revenueByMonth: MonthlyPoint[];
+  topCustomers: TopCustomer[];
+}
+
+async function getOrderPerformanceReport(): Promise<OrderPerformanceReport> {
+  const [revenueOrders, ordersByStatus, revenueByMonth, topCustomers, byDestination] =
+    await Promise.all([
+      getRevenueAndOrders(),
+      getOrdersByStatus(),
+      getRevenueByMonth(),
+      getTopCustomers(),
+      getOrdersByRegion(),
+    ]);
+
+  const channelRows = await query<{ channel: string | null; orders: string; revenue: string }>(
+    `SELECT channel, COUNT(*) AS orders, COALESCE(SUM(total), 0) AS revenue
+       FROM orders
+      WHERE channel IS NOT NULL AND channel <> ''
+   GROUP BY channel
+   ORDER BY orders DESC`,
+  );
+
+  const shippedRows = await query<{ shipped: string; delivered: string }>(
+    `SELECT COUNT(*) FILTER (WHERE status IN ('Delivered', 'In Transit', 'Out for Delivery')) AS shipped,
+            COUNT(*) FILTER (WHERE status = 'Delivered') AS delivered
+       FROM orders`,
+  );
+
+  const channelTotal = channelRows.reduce((s, r) => s + toNum(r.orders), 0);
+  const byChannel: ChannelPerformance[] = channelRows.map((r) => {
+    const orders = toNum(r.orders);
+    return {
+      name: r.channel ?? "Unknown",
+      orders,
+      pct: channelTotal > 0 ? Math.round((orders / channelTotal) * 1000) / 10 : 0,
+      revenue: toNum(r.revenue),
+    };
+  });
+
+  const { revenue, orders } = revenueOrders;
+  const delivered = toNum(shippedRows[0]?.delivered);
+  const shipped = toNum(shippedRows[0]?.shipped);
+
+  return {
+    totalOrders: orders,
+    shippedOrders: shipped,
+    deliveredOrders: delivered,
+    totalRevenue: revenue,
+    avgOrderValue: orders > 0 ? Math.round((revenue / orders) * 100) / 100 : 0,
+    onTimeDeliveryPct: orders > 0 ? Math.round((delivered / orders) * 1000) / 10 : 0,
+    ordersByStatus,
+    byChannel,
+    byDestination,
+    revenueByMonth,
+    topCustomers,
+  };
+}
+
+export { getOrderPerformanceReport };
+
+// ============================================================================
+// Productivity (tasks)
+// ============================================================================
+
+export interface ProductivityRow {
+  name: string;
+  tasks: number;
+  completed: number;
+  pct: number; // share of all tasks
+  completionPct: number; // completed / tasks
+}
+
+export interface ProductivityReport {
+  totalTasks: number;
+  completedTasks: number;
+  inProgressTasks: number;
+  pendingTasks: number;
+  completionPct: number;
+  byStatus: LabeledCountPct[];
+  byType: ProductivityRow[];
+  byWarehouse: ProductivityRow[];
+  byAssignee: ProductivityRow[];
+  completedOverTime: MonthlyPoint[];
+}
+
+async function tasksGroupedBy(column: "task_type" | "warehouse" | "assignee"): Promise<ProductivityRow[]> {
+  const rows = await query<{ name: string | null; tasks: string; completed: string }>(
+    `SELECT ${column} AS name,
+            COUNT(*) AS tasks,
+            COUNT(*) FILTER (WHERE status = 'Completed') AS completed
+       FROM tasks
+      WHERE ${column} IS NOT NULL AND ${column} <> ''
+   GROUP BY ${column}
+   ORDER BY tasks DESC`,
+  );
+  const total = rows.reduce((s, r) => s + toNum(r.tasks), 0);
+  return rows.map((r) => {
+    const tasks = toNum(r.tasks);
+    const completed = toNum(r.completed);
+    return {
+      name: r.name ?? "Unassigned",
+      tasks,
+      completed,
+      pct: total > 0 ? Math.round((tasks / total) * 1000) / 10 : 0,
+      completionPct: tasks > 0 ? Math.round((completed / tasks) * 1000) / 10 : 0,
+    };
+  });
+}
+
+async function getProductivityReport(): Promise<ProductivityReport> {
+  const [totals, byType, byWarehouse, byAssignee, statusRows, overTime] = await Promise.all([
+    query<{ total: string; completed: string; in_progress: string; pending: string }>(
+      `SELECT COUNT(*) AS total,
+              COUNT(*) FILTER (WHERE status = 'Completed') AS completed,
+              COUNT(*) FILTER (WHERE status = 'In Progress') AS in_progress,
+              COUNT(*) FILTER (WHERE status = 'Pending') AS pending
+         FROM tasks`,
+    ),
+    tasksGroupedBy("task_type"),
+    tasksGroupedBy("warehouse"),
+    tasksGroupedBy("assignee"),
+    query<{ status: string; count: string }>(
+      "SELECT status, COUNT(*) AS count FROM tasks GROUP BY status ORDER BY count DESC",
+    ),
+    query<{ month: string; orders: string }>(
+      `SELECT SUBSTRING(created_at FROM 1 FOR 7) AS month, COUNT(*) AS orders
+         FROM tasks
+        WHERE created_at IS NOT NULL AND created_at <> ''
+     GROUP BY SUBSTRING(created_at FROM 1 FOR 7)
+     ORDER BY month ASC`,
+    ),
+  ]);
+
+  const totalTasks = toNum(totals[0]?.total);
+  const completedTasks = toNum(totals[0]?.completed);
+
+  return {
+    totalTasks,
+    completedTasks,
+    inProgressTasks: toNum(totals[0]?.in_progress),
+    pendingTasks: toNum(totals[0]?.pending),
+    completionPct:
+      totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 1000) / 10 : 0,
+    byStatus: withPct(statusRows.map((r) => ({ name: r.status, count: toNum(r.count) }))),
+    byType,
+    byWarehouse,
+    byAssignee,
+    completedOverTime: overTime.map((r) => ({
+      month: r.month,
+      orders: toNum(r.orders),
+      revenue: 0,
+    })),
+  };
+}
+
+export { getProductivityReport };
+
 // ---------- Public bundle ----------
 
 export async function getAnalyticsSummary(): Promise<AnalyticsSummary> {

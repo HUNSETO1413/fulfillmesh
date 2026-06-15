@@ -471,6 +471,20 @@ export const users = {
     );
     return (await this.get(id))!;
   },
+  // Editable profile fields only — never touches password_hash here.
+  async update(id: string, u: Partial<User>): Promise<User | null> {
+    const existing = await this.get(id);
+    if (!existing) return null;
+    const m = { ...existing, ...u };
+    await query(
+      `UPDATE users SET name=$1, email=$2, role=$3, status=$4, last_active=$5 WHERE id=$6`,
+      [m.name, m.email.toLowerCase(), m.role, m.status, m.lastActive ?? null, id],
+    );
+    return this.get(id);
+  },
+  async remove(id: string): Promise<boolean> {
+    return (await query("DELETE FROM users WHERE id = $1 RETURNING id", [id])).length > 0;
+  },
 };
 
 // ---------- Submissions ----------

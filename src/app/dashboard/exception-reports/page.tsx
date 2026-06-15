@@ -1,42 +1,30 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Filter, Download, ChevronDown, ChevronLeft, ChevronRight, Search, AlertTriangle, AlertCircle, CheckCircle2, ShieldAlert, Clock, ArrowUpRight, ArrowDownRight, MoreHorizontal, Plus, Settings, UserPlus, FileDown, X } from "lucide-react";
 import { DateRangeMenu } from "@/components/dashboard/DateRangeMenu";
 import { useToast } from "@/components/dashboard/Toast";
-import { exportToCsv } from "@/lib/client";
+import { api, exportToCsv } from "@/lib/client";
+import type { ExceptionReport } from "@/lib/analytics";
 
-const stats = [
-  { title: "Total Exceptions", value: "312", change: "-12.5%", good: true, icon: AlertTriangle, color: "#EF4444" },
-  { title: "Open Exceptions", value: "128", change: "-8.3%", good: true, icon: AlertCircle, color: "#F59E0B" },
-  { title: "Resolved Exceptions", value: "176", change: "+11.2%", good: true, icon: CheckCircle2, color: "#10B981" },
-  { title: "SLA Breached", value: "23", change: "-15.7%", good: true, icon: ShieldAlert, color: "#8B5CF6" },
-  { title: "Avg. Resolution Time", value: "6.2 hrs", change: "-9.1%", good: true, icon: Clock, color: "#3B82F6" },
-];
+const TYPE_COLORS: Record<string, string> = {
+  Quality: "#3B82F6",
+  Shipment: "#10B981",
+  Order: "#F59E0B",
+  Return: "#8B5CF6",
+  Invoice: "#EF4444",
+  Inventory: "#06B6A4",
+};
 
-const tabs = [
-  { name: "All Exceptions", count: 312 },
-  { name: "Open", count: 128 },
-  { name: "SLA Breached", count: 23 },
-  { name: "Resolved", count: 176 },
-  { name: "Ignored", count: 8 },
-];
+// Map a backing status to its filter bucket + display color.
+function statusBucket(status: string): { sc: string; priority: string; pc: string } {
+  if (status === "Resolved") return { sc: "resolved", priority: "Low", pc: "#3B82F6" };
+  if (status === "Investigating") return { sc: "investigating", priority: "Medium", pc: "#F59E0B" };
+  return { sc: "open", priority: "High", pc: "#EF4444" };
+}
 
 type LogEntry = { at: string; text: string };
 type ExcRow = { id: string; type: string; desc: string; wh: string; priority: string; pc: string; status: string; sc: string; on: string; log: LogEntry[] };
-
-const initialRows: ExcRow[] = [
-  { id: "EXC-0005-0001-001", type: "Inventory", desc: "Inventory discrepancy on SKU-10023", wh: "ATL-1 · Atlanta", priority: "High", pc: "#EF4444", status: "Open", sc: "open", on: "May 31, 2025 09:42 AM", log: [] },
-  { id: "EXC-0005-0001-002", type: "Shipment", desc: "Shipment delayed > 24 hr", wh: "DFW-1 · Dallas", priority: "Medium", pc: "#F59E0B", status: "Open", sc: "open", on: "May 31, 2025 08:15 AM", log: [] },
-  { id: "EXC-0005-0001-003", type: "Order", desc: "Order not allocated", wh: "LAX-1 · Los Angeles", priority: "High", pc: "#EF4444", status: "Investigating", sc: "investigating", on: "May 30, 2025 06:30 PM", log: [] },
-  { id: "EXC-0005-0001-004", type: "Return", desc: "Return received without RMA", wh: "MIA-1 · Miami", priority: "Low", pc: "#3B82F6", status: "Open", sc: "open", on: "May 30, 2025 04:12 PM", log: [] },
-  { id: "EXC-0005-0001-005", type: "Inventory", desc: "Negative inventory count", wh: "ORD-1 · Chicago", priority: "Medium", pc: "#F59E0B", status: "Resolved", sc: "resolved", on: "May 30, 2025 02:45 PM", log: [] },
-  { id: "EXC-0005-0001-006", type: "Inbound", desc: "ASN qty mismatch", wh: "DFW-1 · Dallas", priority: "Low", pc: "#3B82F6", status: "Resolved", sc: "resolved", on: "May 30, 2025 11:20 AM", log: [] },
-  { id: "EXC-0005-0001-007", type: "Order", desc: "Carrier rejection", wh: "ATL-1 · Atlanta", priority: "Medium", pc: "#F59E0B", status: "Investigating", sc: "investigating", on: "May 30, 2025 09:05 AM", log: [] },
-  { id: "EXC-0005-0001-008", type: "Shipment", desc: "Address verification failed", wh: "LAX-1 · Los Angeles", priority: "High", pc: "#EF4444", status: "Open", sc: "open", on: "May 29, 2025 03:50 PM", log: [] },
-  { id: "EXC-0005-0001-009", type: "Transfer", desc: "Transfer delay > 48 hr", wh: "MIA-1 · Miami", priority: "Low", pc: "#3B82F6", status: "Resolved", sc: "resolved", on: "May 29, 2025 01:18 PM", log: [] },
-  { id: "EXC-0005-0001-010", type: "Inventory", desc: "Cycle count variance", wh: "ORD-1 · Chicago", priority: "Medium", pc: "#F59E0B", status: "Open", sc: "open", on: "May 29, 2025 10:02 AM", log: [] },
-];
 
 const statusStyle: Record<string, string> = {
   open: "bg-[#FEF2F2] text-[#EF4444]",
@@ -45,47 +33,6 @@ const statusStyle: Record<string, string> = {
   ignored: "bg-[#F1F5F9] text-[#64748B]",
   acknowledged: "bg-[#EFF6FF] text-[#3B82F6]",
 };
-
-const summary = [
-  { name: "Inventory", pct: 38, color: "#3B82F6" },
-  { name: "Shipment", pct: 24, color: "#10B981" },
-  { name: "Order", pct: 18, color: "#F59E0B" },
-  { name: "Return", pct: 12, color: "#8B5CF6" },
-  { name: "Inbound", pct: 5, color: "#EF4444" },
-  { name: "Transfer", pct: 3, color: "#94A3B8" },
-];
-
-const priorities = [
-  { name: "High", value: "98 (31.4%)", pct: 31, color: "#EF4444" },
-  { name: "Medium", value: "146 (46.8%)", pct: 47, color: "#F59E0B" },
-  { name: "Low", value: "68 (21.8%)", pct: 22, color: "#3B82F6" },
-];
-
-const topWh = [
-  { name: "DFW-1 · Dallas", count: 78 },
-  { name: "ATL-1 · Atlanta", count: 62 },
-  { name: "LAX-1 · Los Angeles", count: 54 },
-  { name: "MIA-1 · Miami", count: 41 },
-  { name: "ORD-1 · Chicago", count: 38 },
-];
-
-const topTypes = [
-  { type: "Inventory", count: 112, pct: "35.9%" },
-  { type: "Shipment", count: 76, pct: "24.4%" },
-  { type: "Order", count: 56, pct: "17.9%" },
-  { type: "Return", count: 32, pct: "10.3%" },
-  { type: "Inbound", count: 22, pct: "7.1%" },
-  { type: "Transfer", count: 14, pct: "4.5%" },
-];
-
-const resByType = [
-  { type: "Inventory", hrs: 8.7, color: "#3B82F6", w: 100 },
-  { type: "Shipment", hrs: 5.2, color: "#10B981", w: 60 },
-  { type: "Order", hrs: 4.1, color: "#F59E0B", w: 47 },
-  { type: "Return", hrs: 3.6, color: "#8B5CF6", w: 41 },
-  { type: "Inbound", hrs: 2.8, color: "#EF4444", w: 32 },
-  { type: "Transfer", hrs: 1.6, color: "#94A3B8", w: 18 },
-];
 
 function Sparkline({ color }: { color: string }) {
   const pts = [8, 11, 7, 13, 9, 12, 6, 10, 8, 5];
@@ -118,8 +65,7 @@ function FilterPill({ value, options, onSelect }: { value: string; options: stri
   );
 }
 
-const TYPE_FILTER = ["All Types", "Inventory", "Shipment", "Order", "Return", "Inbound", "Transfer"];
-const WH_FILTER = ["All Warehouses", "ATL-1 · Atlanta", "DFW-1 · Dallas", "LAX-1 · Los Angeles", "MIA-1 · Miami", "ORD-1 · Chicago"];
+const TYPE_FILTER = ["All Types", "Quality", "Shipment", "Order", "Return", "Invoice"];
 const PRIORITY_FILTER = ["All Priorities", "High", "Medium", "Low"];
 
 const PAGE_SIZE = 5;
@@ -139,12 +85,54 @@ export default function ExceptionReportsPage() {
   const [range, setRange] = useState("May 1 – May 31, 2025");
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("All Types");
-  const [whFilter, setWhFilter] = useState("All Warehouses");
+  const [whFilter, setWhFilter] = useState("All Sources");
   const [priorityFilter, setPriorityFilter] = useState("All Priorities");
-  const [rows, setRows] = useState(initialRows);
+  const [report, setReport] = useState<ExceptionReport | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<ExcRow[]>([]);
   const [rowMenu, setRowMenu] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await api.get<ExceptionReport>("/api/analytics/exceptions");
+        if (cancelled) return;
+        setReport(data);
+        setRows(
+          data.rows.map((r) => {
+            const b = statusBucket(r.status);
+            return {
+              id: r.id,
+              type: r.type,
+              desc: r.desc,
+              wh: r.source,
+              priority: b.priority,
+              pc: b.pc,
+              status: r.status,
+              sc: b.sc,
+              on: r.on,
+              log: [],
+            };
+          }),
+        );
+      } catch {
+        if (!cancelled) toast("Failed to load exception report", "error");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Source (warehouse/customer/supplier) filter options derived from the rows.
+  const WH_FILTER = useMemo(
+    () => ["All Sources", ...Array.from(new Set(rows.map((r) => r.wh).filter(Boolean)))],
+    [rows],
+  );
 
   const tabFilter: Record<string, (r: ExcRow) => boolean> = {
     "All Exceptions": () => true,
@@ -154,12 +142,76 @@ export default function ExceptionReportsPage() {
     Ignored: (r) => r.sc === "ignored",
   };
 
+  // Live counts for the stat cards, tabs, donut, priorities and top types.
+  const openCount = rows.filter((r) => r.sc === "open").length;
+  const resolvedCount = rows.filter((r) => r.sc === "resolved").length;
+  const investigatingCount = rows.filter((r) => r.sc === "investigating").length;
+
+  const stats = [
+    { title: "Total Exceptions", value: String(report?.totalExceptions ?? rows.length), change: "live", good: true, icon: AlertTriangle, color: "#EF4444" },
+    { title: "Open Exceptions", value: String(openCount), change: "live", good: true, icon: AlertCircle, color: "#F59E0B" },
+    { title: "Resolved Exceptions", value: String(resolvedCount), change: "live", good: true, icon: CheckCircle2, color: "#10B981" },
+    { title: "Failed QC", value: String(report?.failedQc ?? 0), change: "live", good: true, icon: ShieldAlert, color: "#8B5CF6" },
+    { title: "Overdue Invoices", value: String(report?.overdueInvoices ?? 0), change: "live", good: true, icon: Clock, color: "#3B82F6" },
+  ];
+
+  const tabs = [
+    { name: "All Exceptions", count: rows.length },
+    { name: "Open", count: openCount },
+    { name: "SLA Breached", count: rows.filter((r) => r.priority === "High").length },
+    { name: "Resolved", count: resolvedCount },
+    { name: "Ignored", count: rows.filter((r) => r.sc === "ignored").length },
+  ];
+
+  const summary = (report?.byType ?? []).filter((t) => t.count > 0).map((t) => ({
+    name: t.name,
+    pct: t.pct,
+    color: TYPE_COLORS[t.name] ?? "#94A3B8",
+  }));
+
+  const priorities = [
+    { name: "High", count: openCount, color: "#EF4444" },
+    { name: "Medium", count: investigatingCount, color: "#F59E0B" },
+    { name: "Low", count: resolvedCount, color: "#3B82F6" },
+  ].map((p) => {
+    const total = rows.length || 1;
+    const pct = Math.round((p.count / total) * 100);
+    return { name: p.name, value: `${p.count} (${pct}%)`, pct, color: p.color };
+  });
+
+  const topTypes = (report?.byType ?? []).filter((t) => t.count > 0).map((t) => ({
+    type: t.name,
+    count: t.count,
+    pct: `${t.pct}%`,
+  }));
+
+  // Top sources by exception count.
+  const topWh = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const r of rows) counts.set(r.wh, (counts.get(r.wh) ?? 0) + 1);
+    return Array.from(counts.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+  }, [rows]);
+
+  // Returns by reason → reuse the resolution-time bar block as a real breakdown.
+  const resByType = (report?.returnsByReason ?? []).map((r, i) => {
+    const max = Math.max(1, ...(report?.returnsByReason ?? []).map((x) => x.count));
+    return {
+      type: r.name,
+      hrs: r.count,
+      color: ["#3B82F6", "#10B981", "#F59E0B", "#8B5CF6", "#EF4444", "#94A3B8"][i % 6],
+      w: Math.round((r.count / max) * 100),
+    };
+  });
+
   const filteredRows = useMemo(() => {
     const q = query.trim().toLowerCase();
     return rows.filter((r) =>
       (tabFilter[activeTab] ?? (() => true))(r) &&
       (typeFilter === "All Types" || r.type === typeFilter) &&
-      (whFilter === "All Warehouses" || r.wh === whFilter) &&
+      (whFilter === "All Sources" || r.wh === whFilter) &&
       (priorityFilter === "All Priorities" || r.priority === priorityFilter) &&
       (!q || r.id.toLowerCase().includes(q) || r.desc.toLowerCase().includes(q))
     );
@@ -198,13 +250,13 @@ export default function ExceptionReportsPage() {
   const activeFilters: { label: string; clear: () => void }[] = [];
   if (query.trim()) activeFilters.push({ label: `Search: “${query.trim()}”`, clear: () => { setQuery(""); setPage(1); } });
   if (typeFilter !== "All Types") activeFilters.push({ label: `Type: ${typeFilter}`, clear: () => { setTypeFilter("All Types"); setPage(1); } });
-  if (whFilter !== "All Warehouses") activeFilters.push({ label: `Warehouse: ${whFilter}`, clear: () => { setWhFilter("All Warehouses"); setPage(1); } });
+  if (whFilter !== "All Sources") activeFilters.push({ label: `Source: ${whFilter}`, clear: () => { setWhFilter("All Sources"); setPage(1); } });
   if (priorityFilter !== "All Priorities") activeFilters.push({ label: `Priority: ${priorityFilter}`, clear: () => { setPriorityFilter("All Priorities"); setPage(1); } });
 
   function clearAllFilters() {
     setQuery("");
     setTypeFilter("All Types");
-    setWhFilter("All Warehouses");
+    setWhFilter("All Sources");
     setPriorityFilter("All Priorities");
     setPage(1);
   }
@@ -510,11 +562,14 @@ export default function ExceptionReportsPage() {
                   })}
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-[20px] font-bold text-text-primary leading-none">312</span>
+                  <span className="text-[20px] font-bold text-text-primary leading-none">{report?.totalExceptions ?? 0}</span>
                   <span className="text-[10px] font-medium text-text-muted mt-0.5">Total</span>
                 </div>
               </div>
               <div className="flex-1 space-y-2.5">
+                {summary.length === 0 && !loading && (
+                  <p className="text-[12px] text-text-muted">No exceptions</p>
+                )}
                 {summary.map((s) => (
                   <div key={s.name} className="flex items-center justify-between text-[12px]">
                     <div className="flex items-center gap-2">
@@ -573,10 +628,13 @@ export default function ExceptionReportsPage() {
             </svg>
           </div>
 
-          {/* Top Warehouses by Exceptions */}
+          {/* Top Sources by Exceptions */}
           <div className="bg-white rounded-xl border border-border-soft p-5">
-            <h3 className="text-[15px] font-semibold text-text-primary mb-4">Top Warehouses by Exceptions</h3>
+            <h3 className="text-[15px] font-semibold text-text-primary mb-4">Top Sources by Exceptions</h3>
             <div className="space-y-3">
+              {topWh.length === 0 && !loading && (
+                <p className="text-[13px] text-text-muted">No exception sources</p>
+              )}
               {topWh.map((w, i) => (
                 <div key={w.name} className="flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
@@ -658,6 +716,9 @@ export default function ExceptionReportsPage() {
               </tr>
             </thead>
             <tbody>
+              {topTypes.length === 0 && !loading && (
+                <tr><td colSpan={3} className="px-5 py-6 text-center text-[13px] text-text-muted">No exceptions yet</td></tr>
+              )}
               {topTypes.map((t) => (
                 <tr key={t.type} className="border-b border-border-soft/60 last:border-b-0 hover:bg-soft-bg/50 transition-colors">
                   <td className="px-5 py-3 text-[13px] font-semibold text-text-primary">{t.type}</td>
@@ -672,10 +733,13 @@ export default function ExceptionReportsPage() {
           </div>
         </div>
 
-        {/* Average Resolution Time by Type */}
+        {/* Returns by Reason */}
         <div className="bg-white rounded-xl border border-border-soft p-5">
-          <h3 className="text-[15px] font-semibold text-text-primary mb-5">Average Resolution Time by Type (hrs)</h3>
+          <h3 className="text-[15px] font-semibold text-text-primary mb-5">Returns by Reason</h3>
           <div className="space-y-3">
+            {resByType.length === 0 && !loading && (
+              <p className="text-[12px] text-text-muted">No returns yet</p>
+            )}
             {resByType.map((r) => (
               <div key={r.type} className="flex items-center gap-3">
                 <span className="text-[12px] font-medium text-text-muted w-[68px] shrink-0">{r.type}</span>

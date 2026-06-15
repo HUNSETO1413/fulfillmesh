@@ -48,9 +48,42 @@ const ROUTES: { path: string; priority: number; changeFrequency: MetadataRoute.S
   { path: "/legal/data-processing", priority: 0.3, changeFrequency: "yearly" },
 ];
 
+// Dynamic content slugs. The blog/resource detail pages are rendered by shared
+// [slug] templates (no generateStaticParams / DB lookup), so the canonical slugs
+// are the concrete ones linked from the hub and detail pages. Source files:
+//   - src/app/blog/page.tsx + src/app/blog/[slug]/page.tsx (hrefs)
+//   - src/app/resources/case-studies/page.tsx (caseStudies array of 8 brands)
+//   - src/app/resources/case-studies/[slug]/page.tsx (href)
+//   - src/app/resources/guides/page.tsx + [slug]/page.tsx (href)
+//   - src/app/resources/help-center/page.tsx + [slug]/page.tsx (href)
+const BLOG_SLUGS = ["sample-post", "shipping-from-china"];
+
+// Case-study slugs derived from the 8 brands in the case-studies hub array.
+const CASE_STUDY_SLUGS = [
+  "luxeglow",
+  "threadline",
+  "soundwave",
+  "cozyhaus",
+  "purely-you",
+  "skinmuse",
+  "stridefast",
+  "megamart",
+];
+
+const GUIDE_SLUGS = ["supplier-vetting"];
+
+const HELP_CENTER_SLUGS = ["getting-started"];
+
+const DYNAMIC_ROUTES: { path: string; priority: number; changeFrequency: MetadataRoute.Sitemap[number]["changeFrequency"] }[] = [
+  ...BLOG_SLUGS.map((slug) => ({ path: `/blog/${slug}`, priority: 0.5, changeFrequency: "monthly" as const })),
+  ...CASE_STUDY_SLUGS.map((slug) => ({ path: `/resources/case-studies/${slug}`, priority: 0.5, changeFrequency: "monthly" as const })),
+  ...GUIDE_SLUGS.map((slug) => ({ path: `/resources/guides/${slug}`, priority: 0.5, changeFrequency: "monthly" as const })),
+  ...HELP_CENTER_SLUGS.map((slug) => ({ path: `/resources/help-center/${slug}`, priority: 0.5, changeFrequency: "monthly" as const })),
+];
+
 export default function sitemap(): MetadataRoute.Sitemap {
   const lastModified = new Date("2026-06-12");
-  return ROUTES.map(({ path, priority, changeFrequency }) => ({
+  return [...ROUTES, ...DYNAMIC_ROUTES].map(({ path, priority, changeFrequency }) => ({
     url: `${SITE_URL}${path === "/" ? "" : path}`,
     lastModified,
     changeFrequency,

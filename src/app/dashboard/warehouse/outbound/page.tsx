@@ -1,49 +1,86 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Truck, PackageCheck, Navigation, AlertTriangle, XCircle,
   Search, Columns3, Plus, ChevronDown, MoreHorizontal,
   ArrowUpRight, ArrowDownRight, Eye, CheckCircle2, Ban, Pencil,
-  ChevronUp, ArrowUpDown, Download, PackageOpen, Box,
+  ChevronUp, ArrowUpDown, Download, PackageOpen, Box, Loader,
 } from "lucide-react";
 import { Modal } from "@/components/dashboard/Modal";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { Drawer, DrawerRow, DrawerSection } from "@/components/dashboard/Drawer";
 import { Field, TextInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
-import { exportToCsv } from "@/lib/client";
+import { api, exportToCsv } from "@/lib/client";
+import type {
+  Order, Shipment, ShipmentStatus, OrderStatus,
+} from "@/types";
 
 const tabs = ["All Shipments", "Processing", "Shipped", "In Transit", "Exception", "Delivered", "Cancelled"];
 
 type Status = "Processing" | "Shipped" | "In Transit" | "Exception" | "Delayed" | "Delivered" | "Cancelled";
 type Stage = "Created" | "Picked" | "Packed" | "Shipped";
 type Row = {
+  // identity for persistence: a row is backed by a shipment, or (for orders with
+  // no shipment yet) by the order itself.
+  kind: "shipment" | "order";
+  entityId: string;       // the id we PUT to for THIS row's status
+  orderEntityId?: string; // order id (for cancelling a shipment-backed row)
   so: string; shp: string; recipient: string; city: string; wh: string;
   carrier: string; service: string; status: Status; stage: Stage; ship: string; eta: string;
 };
 
-const initialRows: Row[] = [
-  { so: "SO-102880", shp: "SHP-009872", recipient: "Lakeside Outfitters", city: "ATL", wh: "ATL-1", carrier: "UPS", service: "Ground", status: "Processing", stage: "Picked", ship: "May 21, 2025", eta: "May 24, 2025" },
-  { so: "SO-102878", shp: "SHP-009871", recipient: "Metro Essentials", city: "DFW", wh: "DFW-1", carrier: "FedEx", service: "Express", status: "Processing", stage: "Created", ship: "May 21, 2025", eta: "May 23, 2025" },
-  { so: "SO-102876", shp: "SHP-009870", recipient: "Acme Retail Co.", city: "ATL", wh: "ATL-1", carrier: "UPS", service: "Ground", status: "Shipped", stage: "Shipped", ship: "May 20, 2025", eta: "May 23, 2025" },
-  { so: "SO-102874", shp: "SHP-009869", recipient: "ShopZone Inc.", city: "LAX", wh: "LAX-1", carrier: "FedEx", service: "Express", status: "In Transit", stage: "Shipped", ship: "May 20, 2025", eta: "May 22, 2025" },
-  { so: "SO-102872", shp: "SHP-009868", recipient: "Roadrunner LLC", city: "ORD", wh: "ORD-1", carrier: "XPO", service: "Priority", status: "Exception", stage: "Shipped", ship: "May 19, 2025", eta: "May 22, 2025" },
-  { so: "SO-102870", shp: "SHP-009867", recipient: "NorthStar Supplies", city: "ORD", wh: "ORD-1", carrier: "XPO", service: "Ground", status: "Delayed", stage: "Shipped", ship: "May 18, 2025", eta: "May 21, 2025" },
-  { so: "SO-102868", shp: "SHP-009866", recipient: "GreenLife Market", city: "DFW", wh: "DFW-1", carrier: "USPS", service: "2nd Day Air", status: "Shipped", stage: "Shipped", ship: "May 18, 2025", eta: "May 21, 2025" },
-  { so: "SO-102866", shp: "SHP-009865", recipient: "Bright Home Goods", city: "ATL", wh: "ATL-1", carrier: "UPS", service: "Ground", status: "Shipped", stage: "Shipped", ship: "May 17, 2025", eta: "May 20, 2025" },
-  { so: "SO-102864", shp: "SHP-009864", recipient: "Coastal Traders", city: "LAX", wh: "LAX-1", carrier: "FedEx", service: "Express", status: "In Transit", stage: "Shipped", ship: "May 17, 2025", eta: "May 19, 2025" },
-  { so: "SO-102862", shp: "SHP-009863", recipient: "Summit Wholesale", city: "DFW", wh: "DFW-1", carrier: "USPS", service: "Ground", status: "Delivered", stage: "Shipped", ship: "May 16, 2025", eta: "May 19, 2025" },
-  { so: "SO-102860", shp: "SHP-009862", recipient: "Vista Distributors", city: "ORD", wh: "ORD-1", carrier: "XPO", service: "Priority", status: "Shipped", stage: "Shipped", ship: "May 16, 2025", eta: "May 18, 2025" },
-  { so: "SO-102858", shp: "SHP-009861", recipient: "Harbor Supply Co.", city: "ATL", wh: "ATL-1", carrier: "UPS", service: "2nd Day Air", status: "In Transit", stage: "Shipped", ship: "May 15, 2025", eta: "May 18, 2025" },
-  { so: "SO-102856", shp: "SHP-009860", recipient: "Pioneer Goods", city: "LAX", wh: "LAX-1", carrier: "FedEx", service: "Ground", status: "Exception", stage: "Shipped", ship: "May 15, 2025", eta: "May 17, 2025" },
-  { so: "SO-102854", shp: "SHP-009859", recipient: "Crestview Retail", city: "DFW", wh: "DFW-1", carrier: "USPS", service: "Express", status: "Delivered", stage: "Shipped", ship: "May 14, 2025", eta: "May 17, 2025" },
-];
-
-const WAREHOUSES = ["ATL-1", "LAX-1", "ORD-1", "DFW-1"];
-const CARRIERS = ["UPS", "FedEx", "USPS", "XPO"];
+const WAREHOUSES = ["ATL-1", "LAX-1", "ORD-1", "DFW-1", "MIA-1"];
+const CARRIERS = ["UPS", "FedEx", "USPS", "XPO", "DHL"];
 const SERVICES = ["Ground", "Express", "Priority", "2nd Day Air"];
 const STATUSES: Status[] = ["Processing", "Shipped", "In Transit", "Exception", "Delayed", "Delivered", "Cancelled"];
+
+// ---- status mapping between the UI vocabulary and the persisted entities ----
+function shipmentToUiStatus(s: ShipmentStatus): Status {
+  switch (s) {
+    case "Awaiting Pickup": return "Processing";
+    case "In Transit": return "In Transit";
+    case "Customs": return "In Transit";
+    case "Out for Delivery": return "In Transit";
+    case "Delivered": return "Delivered";
+    case "Exception": return "Exception";
+    default: return "Processing";
+  }
+}
+function orderToUiStatus(s: OrderStatus): Status {
+  switch (s) {
+    case "Pending": return "Processing";
+    case "Processing": return "Processing";
+    case "In Transit": return "In Transit";
+    case "Delivered": return "Delivered";
+    case "Cancelled": return "Cancelled";
+    default: return "Processing";
+  }
+}
+// UI status → persisted shipment status (Cancelled has no shipment equivalent).
+function uiToShipmentStatus(s: Status): ShipmentStatus | null {
+  switch (s) {
+    case "Processing": return "Awaiting Pickup";
+    case "Shipped": return "In Transit";
+    case "In Transit": return "In Transit";
+    case "Exception": return "Exception";
+    case "Delayed": return "Exception";
+    case "Delivered": return "Delivered";
+    case "Cancelled": return null;
+    default: return null;
+  }
+}
+function uiToOrderStatus(s: Status): OrderStatus | null {
+  switch (s) {
+    case "Processing": return "Processing";
+    case "Shipped": return "In Transit";
+    case "In Transit": return "In Transit";
+    case "Delivered": return "Delivered";
+    case "Cancelled": return "Cancelled";
+    default: return null;
+  }
+}
 
 function Badge({ text }: { text: string }) {
   const styles: Record<string, string> = {
@@ -91,11 +128,30 @@ function Dropdown({ label, value, options, onSelect }: { label: string; value: s
 type Draft = { recipient: string; wh: string; carrier: string; service: string; eta: string };
 const emptyDraft: Draft = { recipient: "", wh: "ATL-1", carrier: "UPS", service: "Ground", eta: new Date().toISOString().slice(0, 10) };
 
-const fmtDate = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+const fmtDate = (iso: string) => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+};
 const toIso = (formatted: string) => {
   const d = new Date(formatted);
   return Number.isNaN(d.getTime()) ? new Date().toISOString().slice(0, 10) : d.toISOString().slice(0, 10);
 };
+
+// short city/destination code from a free-text destination
+function cityCode(dest?: string): string {
+  if (!dest) return "—";
+  const head = dest.split(",")[0].trim();
+  return head ? head.slice(0, 12) : "—";
+}
+// pick a warehouse code from a shipment origin, falling back to round-robin
+function originToWh(origin: string | undefined, idx: number): string {
+  if (origin) {
+    const up = origin.toUpperCase();
+    const match = WAREHOUSES.find((w) => up.includes(w) || up.includes(w.split("-")[0]));
+    if (match) return match;
+  }
+  return WAREHOUSES[idx % WAREHOUSES.length];
+}
 
 // Tracking timeline: deterministic milestone list derived from status + stage.
 const TIMELINE_STEPS: { label: string; desc: string }[] = [
@@ -118,7 +174,8 @@ type SortKey = "so" | "recipient" | "wh" | "carrier" | "status" | "ship" | "eta"
 export default function OutboundShipmentsPage() {
   const { toast } = useToast();
   const tableRef = useRef<HTMLDivElement>(null);
-  const [rows, setRows] = useState<Row[]>(initialRows);
+  const [rows, setRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTabState] = useState("All Shipments");
   const [query, setQueryState] = useState("");
   const [whFilter, setWhFilterState] = useState("");
@@ -158,6 +215,74 @@ export default function OutboundShipmentsPage() {
   const [viewing, setViewing] = useState<Row | null>(null);
   const seq = useRef(9872);
 
+  // Load orders + shipments and join into outbound rows.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [orderRes, shipRes] = await Promise.all([
+          api.get<{ data: Order[]; total: number }>("/api/orders"),
+          api.get<{ data: Shipment[]; total: number }>("/api/shipments"),
+        ]);
+        if (cancelled) return;
+        const orders = orderRes?.data ?? [];
+        const shipments = shipRes?.data ?? [];
+        const orderById = new Map(orders.map((o) => [String(o.id), o]));
+
+        const shipmentRows: Row[] = shipments.map((s, i) => {
+          const order = s.orderId ? orderById.get(String(s.orderId)) : undefined;
+          const uiStatus = shipmentToUiStatus(s.status);
+          const stage: Stage = uiStatus === "Processing" ? "Created" : "Shipped";
+          return {
+            kind: "shipment",
+            entityId: String(s.id),
+            orderEntityId: s.orderId ? String(s.orderId) : undefined,
+            so: order ? String(order.id) : (s.orderId ? String(s.orderId) : "—"),
+            shp: String(s.id),
+            recipient: order?.customer ?? s.destination ?? "—",
+            city: cityCode(s.destination ?? order?.destination),
+            wh: originToWh(s.origin, i),
+            carrier: s.carrier || "UPS",
+            service: SERVICES[i % SERVICES.length],
+            status: uiStatus,
+            stage,
+            ship: s.shippedDate ? fmtDate(s.shippedDate) : "—",
+            eta: s.estimatedDelivery ? fmtDate(s.estimatedDelivery) : "—",
+          };
+        });
+
+        // Orders that are ready to ship but have no shipment yet.
+        const shippedOrderIds = new Set(shipments.map((s) => (s.orderId ? String(s.orderId) : "")));
+        const readyToShip: Row[] = orders
+          .filter((o) => (o.status === "Pending" || o.status === "Processing") && !shippedOrderIds.has(String(o.id)))
+          .map((o, i) => ({
+            kind: "order",
+            entityId: String(o.id),
+            orderEntityId: String(o.id),
+            so: String(o.id),
+            shp: `order:${o.id}`,
+            recipient: o.customer,
+            city: cityCode(o.destination),
+            wh: WAREHOUSES[i % WAREHOUSES.length],
+            carrier: CARRIERS[i % CARRIERS.length],
+            service: SERVICES[i % SERVICES.length],
+            status: orderToUiStatus(o.status),
+            stage: "Created" as Stage,
+            ship: "—",
+            eta: o.date ? fmtDate(o.date) : "—",
+          }));
+
+        setRows([...readyToShip, ...shipmentRows]);
+      } catch {
+        if (!cancelled) toast("Failed to load outbound shipments", "error");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return rows.filter((r) => {
@@ -177,6 +302,8 @@ export default function OutboundShipmentsPage() {
       let bv: string | number;
       if (sortKey === "ship" || sortKey === "eta") { av = new Date(a[sortKey]).getTime(); bv = new Date(b[sortKey]).getTime(); }
       else { av = String(a[sortKey]).toLowerCase(); bv = String(b[sortKey]).toLowerCase(); }
+      if (Number.isNaN(av as number) && (sortKey === "ship" || sortKey === "eta")) av = 0;
+      if (Number.isNaN(bv as number) && (sortKey === "ship" || sortKey === "eta")) bv = 0;
       if (av < bv) return -1 * dir;
       if (av > bv) return 1 * dir;
       return 0;
@@ -219,7 +346,8 @@ export default function OutboundShipmentsPage() {
     const exception = count((r) => r.status === "Exception" || r.status === "Delayed");
     const delivered = count((r) => r.status === "Delivered");
     const cancelled = count((r) => r.status === "Cancelled");
-    const carriers = CARRIERS.map((name) => {
+    const carrierNames = Array.from(new Set(rows.map((r) => r.carrier))).sort();
+    const carriers = (carrierNames.length ? carrierNames : CARRIERS).map((name) => {
       const carrierRows = rows.filter((r) => r.carrier === name);
       const issues = carrierRows.filter((r) => r.status === "Exception" || r.status === "Delayed" || r.status === "Cancelled").length;
       const rate = carrierRows.length ? ((1 - issues / carrierRows.length) * 100).toFixed(1) : "—";
@@ -279,6 +407,8 @@ export default function OutboundShipmentsPage() {
     setFormOpen(true);
   }
 
+  // New shipments / edits to display-only fields (recipient, carrier, service,
+  // warehouse) stay local: there is no backend write path for these here.
   function saveShipment() {
     if (!draft.recipient.trim()) { toast("Recipient is required", "error"); return; }
     if (!draft.eta || Number.isNaN(new Date(draft.eta).getTime())) { toast("Enter a valid date", "error"); return; }
@@ -293,33 +423,74 @@ export default function OutboundShipmentsPage() {
       const n = ++seq.current;
       const shp = `SHP-00${n}`;
       const newRow: Row = {
+        kind: "shipment", entityId: shp,
         so: `SO-10${2880 + (n - 9872) * 2}`, shp, recipient: draft.recipient.trim(), city: draft.wh.split("-")[0],
         wh: draft.wh, carrier: draft.carrier, service: draft.service, status: "Processing", stage: "Created", ship: date, eta: date,
       };
       setRows((prev) => [newRow, ...prev]);
-      toast(`Shipment ${shp} created — ready for picking`);
+      toast(`Shipment ${shp} created — ready for picking (local draft)`);
     }
     setBusy(false);
     setFormOpen(false);
     setDraft(emptyDraft);
   }
 
-  function patchRow(shp: string, patch: Partial<Row>, msg: string) {
-    setRows((prev) => prev.map((r) => (r.shp === shp ? { ...r, ...patch } : r)));
-    setViewing((prev) => (prev && prev.shp === shp ? { ...prev, ...patch } : prev));
+  // Apply a status change locally and persist it to the backing entity.
+  function applyStatus(r: Row, status: Status, patch: Partial<Row>, msg: string) {
+    setRows((prev) => prev.map((x) => (x.shp === r.shp ? { ...x, status, ...patch } : x)));
+    setViewing((prev) => (prev && prev.shp === r.shp ? { ...prev, status, ...patch } : prev));
     setMenuFor(null);
     toast(msg);
+    persistStatus(r, status);
   }
 
+  function persistStatus(r: Row, status: Status) {
+    // Cancelled persists to the order (no shipment "cancelled" state).
+    if (status === "Cancelled") {
+      const target = r.orderEntityId ?? (r.kind === "order" ? r.entityId : null);
+      if (target) {
+        api.put(`/api/orders/${target}`, { status: "Cancelled" satisfies OrderStatus })
+          .catch(() => toast(`Failed to persist cancel for ${r.shp}`, "error"));
+      }
+      return;
+    }
+    if (r.kind === "shipment") {
+      const ss = uiToShipmentStatus(status);
+      if (ss) {
+        api.put(`/api/shipments/${r.entityId}`, { status: ss })
+          .catch(() => toast(`Failed to update ${r.shp}`, "error"));
+      }
+    } else {
+      const os = uiToOrderStatus(status);
+      if (os) {
+        api.put(`/api/orders/${r.entityId}`, { status: os })
+          .catch(() => toast(`Failed to update ${r.so}`, "error"));
+      }
+    }
+  }
+
+  // Local-only stage advance for Processing rows (Created→Picked→Packed). The
+  // final "Mark shipped" transition flips status and persists.
   function advanceStage(r: Row) {
-    if (r.stage === "Created") patchRow(r.shp, { stage: "Picked" }, `${r.shp} marked picked`);
-    else if (r.stage === "Picked") patchRow(r.shp, { stage: "Packed" }, `${r.shp} marked packed`);
-    else if (r.stage === "Packed") patchRow(r.shp, { stage: "Shipped", status: "Shipped", ship: fmtDate(new Date().toISOString()) }, `${r.shp} marked shipped`);
+    if (r.stage === "Created") {
+      setRows((prev) => prev.map((x) => (x.shp === r.shp ? { ...x, stage: "Picked" } : x)));
+      setViewing((prev) => (prev && prev.shp === r.shp ? { ...prev, stage: "Picked" } : prev));
+      setMenuFor(null);
+      toast(`${r.shp} marked picked`);
+    } else if (r.stage === "Picked") {
+      setRows((prev) => prev.map((x) => (x.shp === r.shp ? { ...x, stage: "Packed" } : x)));
+      setViewing((prev) => (prev && prev.shp === r.shp ? { ...prev, stage: "Packed" } : prev));
+      setMenuFor(null);
+      toast(`${r.shp} marked packed`);
+    } else if (r.stage === "Packed") {
+      applyStatus(r, "Shipped", { stage: "Shipped", ship: fmtDate(new Date().toISOString()) }, `${r.shp} marked shipped`);
+    }
   }
 
   function bulkMarkDelivered() {
     const eligible = selectedRows.filter((r) => r.status !== "Delivered" && r.status !== "Cancelled");
     setRows((prev) => prev.map((r) => (selected.has(r.shp) && r.status !== "Delivered" && r.status !== "Cancelled" ? { ...r, status: "Delivered", stage: "Shipped" } : r)));
+    eligible.forEach((r) => persistStatus(r, "Delivered"));
     toast(`Marked ${eligible.length} shipment${eligible.length === 1 ? "" : "s"} delivered`);
     setSelected(new Set());
   }
@@ -327,6 +498,7 @@ export default function OutboundShipmentsPage() {
   function bulkCancel() {
     const eligible = selectedRows.filter((r) => r.status !== "Delivered" && r.status !== "Cancelled");
     setRows((prev) => prev.map((r) => (selected.has(r.shp) && r.status !== "Delivered" && r.status !== "Cancelled" ? { ...r, status: "Cancelled" } : r)));
+    eligible.forEach((r) => persistStatus(r, "Cancelled"));
     toast(`Cancelled ${eligible.length} shipment${eligible.length === 1 ? "" : "s"}`);
     setSelected(new Set());
     setBulkCancelling(false);
@@ -339,6 +511,15 @@ export default function OutboundShipmentsPage() {
     if (r.stage === "Packed") return { label: "Mark shipped", icon: Truck };
     return null;
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <Loader className="w-5 h-5 animate-spin text-action-blue" />
+        <span className="ml-2 text-[14px] text-text-muted">Loading outbound shipments…</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -478,7 +659,7 @@ export default function OutboundShipmentsPage() {
                                     <button onClick={() => openEdit(r)} className="w-full flex items-center gap-2 px-3 py-1.5 text-[13px] text-text-primary hover:bg-soft-bg"><Pencil className="w-3.5 h-3.5" /> Edit shipment</button>
                                   )}
                                   {r.status !== "Delivered" && r.status !== "Cancelled" && r.status !== "Processing" && (
-                                    <button onClick={() => patchRow(r.shp, { status: "Delivered" }, `${r.shp} marked delivered`)} className="w-full flex items-center gap-2 px-3 py-1.5 text-[13px] text-teal hover:bg-soft-bg"><CheckCircle2 className="w-3.5 h-3.5" /> Mark delivered</button>
+                                    <button onClick={() => applyStatus(r, "Delivered", {}, `${r.shp} marked delivered`)} className="w-full flex items-center gap-2 px-3 py-1.5 text-[13px] text-teal hover:bg-soft-bg"><CheckCircle2 className="w-3.5 h-3.5" /> Mark delivered</button>
                                   )}
                                   {r.status !== "Delivered" && r.status !== "Cancelled" && (
                                     <button onClick={() => { setMenuFor(null); setCancelling(r); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-[13px] text-[#EF4444] hover:bg-soft-bg"><Ban className="w-3.5 h-3.5" /> Cancel shipment</button>
@@ -492,7 +673,7 @@ export default function OutboundShipmentsPage() {
                     );
                   })}
                   {pageRows.length === 0 && (
-                    <tr><td colSpan={9} className="px-6 py-12 text-center text-[13px] text-text-muted">No shipments match your filters.</td></tr>
+                    <tr><td colSpan={9} className="px-6 py-12 text-center text-[13px] text-text-muted">{rows.length === 0 ? "No outbound shipments or orders yet." : "No shipments match your filters."}</td></tr>
                   )}
                 </tbody>
               </table>
@@ -570,25 +751,35 @@ export default function OutboundShipmentsPage() {
             </div>
           </div>
 
-          {/* Recent Activity */}
+          {/* Recent Activity (live from latest rows) */}
           <div className={card + " p-5"}>
             <h3 className="text-[14px] font-semibold text-text-primary mb-3">Recent Activity</h3>
             <div className="space-y-3">
-              {[
-                { icon: PackageCheck, type: "Shipment delivered", info: "SHP-009859 - Crestview Retail", time: "1h ago", color: "var(--color-teal)" },
-                { icon: AlertTriangle, type: "Delivery delayed", info: "SO-102873 - NorthStar Supplies", time: "3h ago", color: "#EF4444" },
-                { icon: Navigation, type: "Out for delivery", info: "SHP-009864 - Coastal Traders", time: "5h ago", color: "var(--color-action-blue)" },
-                { icon: Truck, type: "Shipment dispatched", info: "SHP-009870 - Acme Retail Co.", time: "8h ago", color: "#7C6FF6" },
-              ].map((e, i) => {
-                const Icon = e.icon;
-                return (
-                  <div key={i} className="flex items-start gap-2.5">
-                    <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5" style={{ backgroundColor: e.color + "1a" }}><Icon className="w-3.5 h-3.5" style={{ color: e.color }} /></div>
-                    <div className="flex-1 min-w-0"><p className="text-[12px] text-text-primary">{e.type}</p><p className="text-[11px] text-text-light">{e.info}</p></div>
-                    <span className="text-[11px] text-text-light shrink-0">{e.time}</span>
-                  </div>
-                );
-              })}
+              {(() => {
+                const meta: Record<string, { icon: typeof Truck; type: string; color: string }> = {
+                  Delivered: { icon: PackageCheck, type: "Shipment delivered", color: "var(--color-teal)" },
+                  Exception: { icon: AlertTriangle, type: "Delivery exception", color: "#EF4444" },
+                  Delayed: { icon: AlertTriangle, type: "Delivery delayed", color: "#EF4444" },
+                  "In Transit": { icon: Navigation, type: "Out for delivery", color: "var(--color-action-blue)" },
+                  Shipped: { icon: Truck, type: "Shipment dispatched", color: "#7C6FF6" },
+                  Processing: { icon: Box, type: "Order processing", color: "#7C6FF6" },
+                  Cancelled: { icon: Ban, type: "Shipment cancelled", color: "#EF4444" },
+                };
+                const events = rows.slice(0, 4);
+                if (events.length === 0) {
+                  return <p className="text-[12px] text-text-light py-4 text-center">No recent shipment activity.</p>;
+                }
+                return events.map((r) => {
+                  const m = meta[r.status] ?? meta.Processing;
+                  const Icon = m.icon;
+                  return (
+                    <div key={r.shp} className="flex items-start gap-2.5">
+                      <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5" style={{ backgroundColor: m.color + "1a" }}><Icon className="w-3.5 h-3.5" style={{ color: m.color }} /></div>
+                      <div className="flex-1 min-w-0"><p className="text-[12px] text-text-primary">{m.type}</p><p className="text-[11px] text-text-light truncate">{r.shp} - {r.recipient}</p></div>
+                    </div>
+                  );
+                });
+              })()}
             </div>
           </div>
         </div>
@@ -630,7 +821,7 @@ export default function OutboundShipmentsPage() {
               )}
               {viewing.status !== "Cancelled" && <SecondaryButton onClick={() => openEdit(viewing)}>Edit shipment</SecondaryButton>}
               {viewing.status !== "Delivered" && viewing.status !== "Cancelled" && viewing.status !== "Processing" && (
-                <PrimaryButton onClick={() => patchRow(viewing.shp, { status: "Delivered" }, `${viewing.shp} marked delivered`)}>Mark delivered</PrimaryButton>
+                <PrimaryButton onClick={() => applyStatus(viewing, "Delivered", {}, `${viewing.shp} marked delivered`)}>Mark delivered</PrimaryButton>
               )}
             </>
           )
@@ -693,7 +884,7 @@ export default function OutboundShipmentsPage() {
       <ConfirmDialog
         open={!!cancelling}
         onClose={() => setCancelling(null)}
-        onConfirm={() => { if (cancelling) { patchRow(cancelling.shp, { status: "Cancelled" }, `${cancelling.shp} cancelled`); setCancelling(null); } }}
+        onConfirm={() => { if (cancelling) { applyStatus(cancelling, "Cancelled", {}, `${cancelling.shp} cancelled`); setCancelling(null); } }}
         title="Cancel shipment"
         message={`Are you sure you want to cancel ${cancelling?.shp}?`}
         confirmLabel="Cancel shipment"

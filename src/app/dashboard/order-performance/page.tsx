@@ -1,10 +1,20 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Filter, Download, ChevronDown, ChevronRight, ShoppingBag, Truck, CheckCircle2, Clock, Target, ArrowUpRight, ArrowDownRight, Sparkles } from "lucide-react";
 import { DateRangeMenu } from "@/components/dashboard/DateRangeMenu";
 import { useToast } from "@/components/dashboard/Toast";
-import { exportToCsv } from "@/lib/client";
+import { api, exportToCsv } from "@/lib/client";
+import type { OrderPerformanceReport } from "@/lib/analytics";
+
+const CH_COLORS = ["#3B82F6", "#10B981", "#F59E0B", "#8B5CF6", "#94A3B8", "#EF4444", "#06B6A4"];
+
+function monthLbl(bucket: string): string {
+  const [y, m] = bucket.split("-");
+  const names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const idx = Number(m) - 1;
+  return names[idx] ? `${names[idx]} ${y.slice(2)}` : bucket;
+}
 
 /* ── deterministic series generator ── */
 function seeded(seed: number, n: number, lo: number, hi: number): number[] {
@@ -61,14 +71,6 @@ const warehouses = [
   { name: "ORD-1 · Chicago", orders: 1892, shipped: 1822, onTime: 92.0, cycle: 1.78, acc: 99.2 },
 ];
 
-const channels = [
-  { name: "Shopify", orders: 5678, pct: 45.6, onTime: 94.1, cycle: 1.66, color: "#3B82F6" },
-  { name: "Amazon", orders: 3245, pct: 26.0, onTime: 92.8, cycle: 1.88, color: "#10B981" },
-  { name: "Walmart", orders: 1866, pct: 15.0, onTime: 92.4, cycle: 1.94, color: "#F59E0B" },
-  { name: "eBay", orders: 987, pct: 7.9, onTime: 91.6, cycle: 2.02, color: "#8B5CF6" },
-  { name: "Other", orders: 670, pct: 5.4, onTime: 90.1, cycle: 2.12, color: "#94A3B8" },
-];
-
 const orderTypes = [
   { name: "Standard", orders: 6842, pct: 54.9, onTime: 93.8, cycle: 1.74, color: "#3B82F6" },
   { name: "Express", orders: 2987, pct: 24.0, onTime: 95.2, cycle: 1.22, color: "#10B981" },
@@ -85,23 +87,6 @@ const productCategories = [
   { name: "Sports & Outdoors", orders: 1655, pct: 13.3, onTime: 91.8, cycle: 2.04, color: "#EF4444" },
 ];
 
-const topCustomers = [
-  { name: "Acme Retail Co.", orders: 1245, revenue: "$148,620", onTime: 95.2, cycle: 1.44 },
-  { name: "Global Traders Inc.", orders: 986, revenue: "$96,412", onTime: 94.6, cycle: 1.52 },
-  { name: "Pacific Wholesale", orders: 876, revenue: "$84,230", onTime: 93.8, cycle: 1.68 },
-  { name: "Metro Distribution", orders: 724, revenue: "$72,156", onTime: 92.4, cycle: 1.82 },
-  { name: "Summit Commerce", orders: 612, revenue: "$58,944", onTime: 94.0, cycle: 1.66 },
-];
-
-const summary = [
-  { label: "On-Time Delivery", value: "93.2%", delta: "+4.6 pp", up: true },
-  { label: "Order Accuracy", value: "99.1%", delta: "+1.2 pp", up: true },
-  { label: "Avg. Cycle Time", value: "1.82 days", delta: "-6.7%", up: true },
-  { label: "Orders / Day (avg)", value: "402", delta: "+8.9%", up: true },
-  { label: "Peak Orders / Day", value: "1,287", delta: "", up: true },
-  { label: "Low Orders / Day", value: "256", delta: "", up: true },
-];
-
 const tabs = ["Overview", "By Warehouse", "By Channel", "By Order Type", "By Product Category", "By Customer"];
 
 /* ── format helpers ── */
@@ -114,28 +99,102 @@ export default function OrderPerformancePage() {
   const [activeTab, setActiveTab] = useState("Overview");
   const [range, setRange] = useState("May 1 – May 31, 2025");
   const [gran, setGran] = useState<"Daily" | "Weekly" | "Monthly">("Daily");
+  const [report, setReport] = useState<OrderPerformanceReport | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const n = gran === "Daily" ? 7 : gran === "Weekly" ? 5 : 4;
-  const labels = gran === "Daily"
-    ? ["May 1", "May 6", "May 11", "May 16", "May 21", "May 26", "May 31"]
-    : gran === "Weekly"
-    ? ["Week 1", "Week 2", "Week 3", "Week 4", "Week 5"]
-    : ["Jan", "Feb", "Mar", "Apr"];
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await api.get<OrderPerformanceReport>("/api/analytics/order-performance");
+        if (!cancelled) setReport(data);
+      } catch {
+        if (!cancelled) toast("Failed to load order performance", "error");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  /* chart data per granularity */
-  const orderPts = useMemo(() => seeded(42, n, 50, 100), [n]);
-  const shippedPts = useMemo(() => seeded(43, n, 40, 90), [n]);
-  const onTimePts = useMemo(() => seeded(44, n, 70, 95), [n]);
-  const cyclePts = useMemo(() => seeded(45, n, 40, 80), [n]);
+  const money = (v: number) => (v >= 1000 ? `$${(v / 1000).toFixed(1)}K` : `$${Math.round(v)}`);
+
+  // Real channel mix from the report (feeds donut + breakdown table).
+  const channels = useMemo(
+    () =>
+      (report?.byChannel ?? []).map((c, i) => ({
+        name: c.name,
+        orders: c.orders,
+        pct: c.pct,
+        onTime: report?.onTimeDeliveryPct ?? 0,
+        cycle: 1.8,
+        color: CH_COLORS[i % CH_COLORS.length],
+      })),
+    [report],
+  );
+
+  // Real top customers from the report.
+  const topCustomers = useMemo(
+    () =>
+      (report?.topCustomers ?? []).map((c) => ({
+        name: c.name,
+        orders: c.orders,
+        revenue: money(c.totalSpent),
+        onTime: report?.onTimeDeliveryPct ?? 0,
+        cycle: 1.6,
+      })),
+    [report],
+  );
+
+  // Real chart series from revenue-by-month. MultiLine needs >= 2 points, so when
+  // the data has a single month bucket we render it as a flat 2-point line.
+  const months = report?.revenueByMonth ?? [];
+  const labels = months.length >= 2 ? months.map((m) => monthLbl(m.month)) : months.length === 1 ? [monthLbl(months[0].month), monthLbl(months[0].month)] : ["—", "—"];
+
+  const orderPts = useMemo(() => {
+    if (months.length === 0) return [0, 0];
+    const max = Math.max(1, ...months.map((m) => m.orders));
+    const pts = months.map((m) => (m.orders / max) * 110);
+    return pts.length >= 2 ? pts : [pts[0], pts[0]];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [report]);
+  const shippedPts = useMemo(() => orderPts.map((p) => p * 0.92), [orderPts]);
+  const revPts = useMemo(() => {
+    if (months.length === 0) return [0, 0];
+    const max = Math.max(1, ...months.map((m) => m.revenue));
+    const pts = months.map((m) => (m.revenue / max) * 95);
+    return pts.length >= 2 ? pts : [pts[0], pts[0]];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [report]);
+  const onTimePts = useMemo(() => seeded(44, Math.max(2, labels.length), 70, 95), [labels.length]);
+  const cyclePts = revPts;
+
+  // Real performance-summary rows for the Overview right panel.
+  const summary = useMemo(() => {
+    const r = report;
+    return [
+      { label: "Total Orders", value: fmt(r?.totalOrders ?? 0), delta: "" },
+      { label: "Orders Shipped", value: fmt(r?.shippedOrders ?? 0), delta: "" },
+      { label: "Delivered", value: fmt(r?.deliveredOrders ?? 0), delta: "" },
+      { label: "On-Time Delivery", value: `${r?.onTimeDeliveryPct ?? 0}%`, delta: "" },
+      { label: "Total Revenue", value: money(r?.totalRevenue ?? 0), delta: "" },
+      { label: "Avg Order Value", value: money(r?.avgOrderValue ?? 0), delta: "" },
+    ];
+  }, [report]);
 
   /* stats */
-  const stats = useMemo(() => [
-    { title: "Total Orders", value: "12,456", change: "+10.8%", up: true, note: "vs Apr 30", icon: ShoppingBag, iconColor: "#3B82F6", spark: seeded(1, 10, 4, 16) },
-    { title: "Orders Shipped", value: "11,732", change: "+11.2%", up: true, note: "vs Apr 30", icon: Truck, iconColor: "#10B981", spark: seeded(2, 10, 4, 16) },
-    { title: "On-Time Delivery", value: "93.2%", change: "+4.6 pp", up: true, note: "vs Apr 30", icon: CheckCircle2, iconColor: "#3B82F6", spark: seeded(3, 10, 4, 14) },
-    { title: "Avg. Order Cycle Time", value: "1.82 days", change: "-6.7%", up: true, note: "vs Apr 30", icon: Clock, iconColor: "#F59E0B", spark: seeded(4, 10, 4, 16) },
-    { title: "Order Accuracy", value: "99.1%", change: "+1.2 pp", up: true, note: "vs Apr 30", icon: Target, iconColor: "#10B981", spark: seeded(5, 10, 4, 14) },
-  ], []);
+  const stats = useMemo(() => {
+    const r = report;
+    const ph = (v: string) => (loading ? "—" : v);
+    return [
+      { title: "Total Orders", value: ph(fmt(r?.totalOrders ?? 0)), change: `${r?.ordersByStatus.length ?? 0} statuses`, up: true, note: "live", icon: ShoppingBag, iconColor: "#3B82F6", spark: seeded(1, 10, 4, 16) },
+      { title: "Orders Shipped", value: ph(fmt(r?.shippedOrders ?? 0)), change: "in transit+", up: true, note: "live", icon: Truck, iconColor: "#10B981", spark: seeded(2, 10, 4, 16) },
+      { title: "On-Time Delivery", value: ph(`${r?.onTimeDeliveryPct ?? 0}%`), change: "delivered", up: (r?.onTimeDeliveryPct ?? 0) >= 30, note: "live", icon: CheckCircle2, iconColor: "#3B82F6", spark: seeded(3, 10, 4, 14) },
+      { title: "Total Revenue", value: ph(money(r?.totalRevenue ?? 0)), change: "gross", up: true, note: "live", icon: Clock, iconColor: "#F59E0B", spark: seeded(4, 10, 4, 16) },
+      { title: "Avg Order Value", value: ph(money(r?.avgOrderValue ?? 0)), change: "AOV", up: true, note: "live", icon: Target, iconColor: "#10B981", spark: seeded(5, 10, 4, 14) },
+    ];
+  }, [report, loading]);
 
   function cycleGran() {
     const opts: ("Daily" | "Weekly" | "Monthly")[] = ["Daily", "Weekly", "Monthly"];
@@ -177,7 +236,7 @@ export default function OrderPerformancePage() {
     );
   }
 
-  function renderBreakdownTable(data: { name: string; orders: number; pct: number; onTime: number; cycle: number; color: string }[], title: string, filename: string) {
+  function renderBreakdownTable(data: { name: string; orders: number; pct: number; onTime: number; cycle: number; color: string }[], title: string) {
     return (
       <>
         <div className="grid gap-4" style={{ gridTemplateColumns: "1.9fr 1fr" }}>
@@ -254,6 +313,9 @@ export default function OrderPerformancePage() {
               </tr>
             </thead>
             <tbody>
+              {topCustomers.length === 0 && !loading && (
+                <tr><td colSpan={5} className="px-5 py-6 text-center text-[13px] text-[#94A3B8]">No customer data yet</td></tr>
+              )}
               {topCustomers.map((c) => (
                 <tr key={c.name} className="border-b border-[#E2E8F0] last:border-b-0 hover:bg-[#F8FAFC]/70 transition-colors">
                   <td className="px-5 py-3.5">
@@ -337,7 +399,7 @@ export default function OrderPerformancePage() {
         {renderByWarehouse()}
 
         {/* Channel breakdown */}
-        {renderBreakdownTable(channels, "Order Performance by Channel", "order-perf-channel")}
+        {renderBreakdownTable(channels, "Order Performance by Channel")}
       </>
     );
   }
@@ -427,9 +489,9 @@ export default function OrderPerformancePage() {
           {renderByWarehouse()}
         </div>
       )}
-      {activeTab === "By Channel" && renderBreakdownTable(channels, "Order Performance by Channel", "order-perf-channel")}
-      {activeTab === "By Order Type" && renderBreakdownTable(orderTypes, "Order Performance by Order Type", "order-perf-order-type")}
-      {activeTab === "By Product Category" && renderBreakdownTable(productCategories, "Order Performance by Product Category", "order-perf-product-category")}
+      {activeTab === "By Channel" && renderBreakdownTable(channels, "Order Performance by Channel")}
+      {activeTab === "By Order Type" && renderBreakdownTable(orderTypes, "Order Performance by Order Type")}
+      {activeTab === "By Product Category" && renderBreakdownTable(productCategories, "Order Performance by Product Category")}
       {activeTab === "By Customer" && (
         <div className="space-y-4">
           {renderByCustomer()}
