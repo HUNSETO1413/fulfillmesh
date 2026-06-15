@@ -6,6 +6,7 @@ import { Menu, Search, Bell, ChevronDown, CheckCheck } from "lucide-react";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { useToast } from "@/components/dashboard/Toast";
 import { api } from "@/lib/client";
+import type { AppNotification } from "@/types";
 
 interface DashboardTopbarProps {
   onMenuToggle: () => void;
@@ -62,21 +63,18 @@ const SEARCH_INDEX: SearchRoute[] = [
   { label: "System Settings", href: "/dashboard/system-settings", section: "Settings" },
 ];
 
-interface TopbarNotification {
-  id: number;
-  title: string;
-  time: string;
-  unread: boolean;
-  href?: string;
+// Render a notification's ISO createdAt as a compact, human-friendly time.
+function formatNotifTime(createdAt: string): string {
+  const date = new Date(createdAt);
+  if (Number.isNaN(date.getTime())) return createdAt;
+  const now = new Date();
+  const sameDay = date.toDateString() === now.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (sameDay) return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
-
-const initialNotifications: TopbarNotification[] = [
-  { id: 1, title: "Shipment SO-102876 has been shipped", time: "10:24 AM", unread: true, href: "/dashboard/shipments" },
-  { id: 2, title: "Low stock alert: SKU-10023 at ATL1", time: "09:58 AM", unread: true, href: "/dashboard/inventory" },
-  { id: 3, title: "New message from James Carter", time: "09:30 AM", unread: true, href: "/dashboard/messages" },
-  { id: 4, title: "Invoice INV-2041 generated", time: "Yesterday", unread: false, href: "/dashboard/invoices" },
-  { id: 5, title: "System maintenance scheduled for Jun 5", time: "May 29", unread: false },
-];
 
 export default function DashboardTopbar({
   onMenuToggle,
@@ -94,9 +92,9 @@ export default function DashboardTopbar({
   const [activeIndex, setActiveIndex] = useState(0);
   const searchRef = useRef<HTMLDivElement>(null);
 
-  // Notifications
+  // Notifications (loaded from the real API)
   const [notifOpen, setNotifOpen] = useState(false);
-  const [notifications, setNotifications] = useState<TopbarNotification[]>(initialNotifications);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const notifRef = useRef<HTMLDivElement>(null);
 
   // Logout
@@ -118,6 +116,21 @@ export default function DashboardTopbar({
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<{ data: AppNotification[]; total: number }>("/api/notifications")
+      .then((res) => {
+        if (!cancelled) setNotifications(res?.data ?? []);
+      })
+      .catch(() => {
+        /* keep the bell silent on load failure */
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const results = useMemo(() => {
@@ -165,19 +178,28 @@ export default function DashboardTopbar({
     }
   }
 
-  const unreadCount = notifications.filter((n) => n.unread).length;
+  const unreadCount = notifications.filter((n) => !n.read).length;
 
-  function openNotification(n: TopbarNotification) {
-    setNotifications((cur) => cur.map((x) => (x.id === n.id ? { ...x, unread: false } : x)));
-    if (n.href) {
+  function openNotification(n: AppNotification) {
+    if (!n.read) {
+      setNotifications((cur) => cur.map((x) => (x.id === n.id ? { ...x, read: true } : x)));
+      api.put(`/api/notifications/${n.id}`, { read: true }).catch(() => {
+        toast("Could not mark notification as read", "error");
+      });
+    }
+    if (n.link) {
       setNotifOpen(false);
-      router.push(n.href);
+      router.push(n.link);
     }
   }
 
   function markAllNotificationsRead() {
-    if (unreadCount === 0) return;
-    setNotifications((cur) => cur.map((n) => ({ ...n, unread: false })));
+    const unread = notifications.filter((n) => !n.read);
+    if (unread.length === 0) return;
+    setNotifications((cur) => cur.map((n) => ({ ...n, read: true })));
+    Promise.all(
+      unread.map((n) => api.put(`/api/notifications/${n.id}`, { read: true })),
+    ).catch(() => toast("Could not mark all as read", "error"));
   }
 
   async function handleLogout() {
@@ -296,18 +318,25 @@ export default function DashboardTopbar({
                   >
                     <span
                       className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${
-                        n.unread ? "bg-[#3B82F6]" : "bg-transparent"
+                        n.read ? "bg-transparent" : "bg-[#3B82F6]"
                       }`}
                     />
                     <span className="min-w-0 flex-1">
                       <span
                         className={`block text-[13px] leading-snug truncate ${
-                          n.unread ? "font-semibold text-[#1E293B]" : "text-[#475569]"
+                          n.read ? "text-[#475569]" : "font-semibold text-[#1E293B]"
                         }`}
                       >
                         {n.title}
                       </span>
-                      <span className="block text-[11px] text-[#94A3B8] mt-0.5">{n.time}</span>
+                      {n.description && (
+                        <span className="block text-[12px] text-[#64748B] leading-snug truncate mt-0.5">
+                          {n.description}
+                        </span>
+                      )}
+                      <span className="block text-[11px] text-[#94A3B8] mt-0.5">
+                        {formatNotifTime(n.createdAt)}
+                      </span>
                     </span>
                   </button>
                 ))}

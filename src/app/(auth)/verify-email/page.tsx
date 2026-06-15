@@ -1,9 +1,13 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Send, ShieldCheck, Bell, Sparkles, Check, Mail } from "lucide-react";
+import { Send, ShieldCheck, Bell, Sparkles, Check, Mail, Loader2, CheckCircle2 } from "lucide-react";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const RESEND_COOLDOWN = 30; // seconds
 
 const reasons = [
   { icon: ShieldCheck, title: "Secure Your Account", desc: "Protect your account and prevent unauthorized access." },
@@ -12,6 +16,52 @@ const reasons = [
 ];
 
 export default function VerifyEmailPage() {
+  const [email, setEmail] = useState("hello@acmestore.com");
+  const [editing, setEditing] = useState(false);
+  const [draftEmail, setDraftEmail] = useState("");
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [resending, setResending] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
+  const [resentNote, setResentNote] = useState<string | null>(null);
+
+  // Tick down the resend cooldown.
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = window.setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => window.clearTimeout(t);
+  }, [cooldown]);
+
+  async function handleResend() {
+    if (resending || cooldown > 0) return;
+    setResending(true);
+    setResentNote(null);
+    // No verification-email endpoint exists yet; simulate the send + start a
+    // cooldown so the button is honestly non-spammable.
+    await new Promise((r) => setTimeout(r, 600));
+    setResending(false);
+    setCooldown(RESEND_COOLDOWN);
+    setResentNote(`Verification email resent to ${email}.`);
+  }
+
+  function startEditing() {
+    setDraftEmail(email);
+    setEmailError(null);
+    setEditing(true);
+  }
+
+  function saveEmail(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = draftEmail.trim();
+    if (!EMAIL_RE.test(trimmed)) {
+      setEmailError("Please enter a valid email address.");
+      return;
+    }
+    setEmail(trimmed);
+    setEditing(false);
+    setResentNote(`Verification email sent to ${trimmed}.`);
+    setCooldown(RESEND_COOLDOWN);
+  }
+
   return (
     <>
       <Header />
@@ -65,7 +115,7 @@ export default function VerifyEmailPage() {
 
             <h1 className="mt-6 text-3xl font-bold text-deep-navy">Check your email</h1>
             <p className="mt-3 text-base text-text-body">We&apos;ve sent a verification link to</p>
-            <p className="mt-1 text-base font-semibold text-action-blue">hello@acmestore.com</p>
+            <p className="mt-1 text-base font-semibold text-action-blue">{email}</p>
             <p className="mt-4 text-sm text-text-muted max-w-md mx-auto leading-relaxed">
               Please click the link in the email to verify your account and get started with FulfillMesh.
             </p>
@@ -76,20 +126,74 @@ export default function VerifyEmailPage() {
               <p className="mt-1.5 text-sm text-text-muted leading-relaxed">
                 Check your spam or junk folder. If you still can&apos;t find it, you can resend the email or use a different email address.
               </p>
-              <div className="mt-5 flex flex-col sm:flex-row gap-3">
-                <button
-                  type="button"
-                  className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 rounded-lg bg-action-blue text-white text-sm font-medium hover:bg-[#0046B8] transition-colors"
-                >
-                  <Send className="w-4 h-4" /> Resend Email
-                </button>
-                <button
-                  type="button"
-                  className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 rounded-lg border border-border-blue text-deep-navy text-sm font-medium hover:bg-white transition-colors"
-                >
-                  Change Email Address
-                </button>
-              </div>
+
+              {editing ? (
+                <form onSubmit={saveEmail} className="mt-5 text-left" noValidate>
+                  <label className="block text-sm font-semibold text-deep-navy mb-2">New email address</label>
+                  <input
+                    type="email"
+                    autoFocus
+                    value={draftEmail}
+                    onChange={(e) => {
+                      setDraftEmail(e.target.value);
+                      if (emailError) setEmailError(null);
+                    }}
+                    aria-invalid={!!emailError}
+                    className="w-full rounded-lg border border-border-soft bg-white px-4 py-2.5 text-sm text-deep-navy placeholder:text-text-light focus:outline-none focus:border-action-blue focus:ring-2 focus:ring-action-blue/20 transition-colors"
+                    placeholder="name@company.com"
+                  />
+                  {emailError && <p className="mt-2 text-sm font-medium text-red-600" role="alert">{emailError}</p>}
+                  <div className="mt-4 flex gap-3">
+                    <button
+                      type="submit"
+                      className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 rounded-lg bg-action-blue text-white text-sm font-medium hover:bg-[#0046B8] transition-colors"
+                    >
+                      Save &amp; Resend
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditing(false)}
+                      className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 rounded-lg border border-border-blue text-deep-navy text-sm font-medium hover:bg-white transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <>
+                  <div className="mt-5 flex flex-col sm:flex-row gap-3">
+                    <button
+                      type="button"
+                      onClick={handleResend}
+                      disabled={resending || cooldown > 0}
+                      className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 rounded-lg bg-action-blue text-white text-sm font-medium hover:bg-[#0046B8] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      {resending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Send className="w-4 h-4" />
+                      )}
+                      {resending
+                        ? "Sending…"
+                        : cooldown > 0
+                          ? `Resend in ${cooldown}s`
+                          : "Resend Email"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={startEditing}
+                      className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 rounded-lg border border-border-blue text-deep-navy text-sm font-medium hover:bg-white transition-colors"
+                    >
+                      Change Email Address
+                    </button>
+                  </div>
+                  {resentNote && (
+                    <p className="mt-4 inline-flex items-center justify-center gap-1.5 text-sm font-medium text-teal" role="status">
+                      <CheckCircle2 className="w-4 h-4" /> {resentNote}
+                    </p>
+                  )}
+                </>
+              )}
             </div>
 
             <p className="mt-6 text-sm text-text-muted">

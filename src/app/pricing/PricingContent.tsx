@@ -13,9 +13,9 @@ const plans = [
   {
     name: "Starter",
     subtitle: "Perfect for brands getting started with China fulfillment.",
-    price: "$49",
+    annualPrice: "$49",
+    monthlyPrice: "$59",
     period: "/month",
-    note: "Billed annually",
     cta: "Get Started",
     href: "/get-started",
     highlighted: false,
@@ -34,9 +34,9 @@ const plans = [
   {
     name: "Growth",
     subtitle: "For growing brands managing higher volumes and more partners.",
-    price: "$129",
+    annualPrice: "$129",
+    monthlyPrice: "$159",
     period: "/month",
-    note: "Billed annually",
     cta: "Get Started",
     href: "/get-started",
     highlighted: true,
@@ -56,9 +56,9 @@ const plans = [
   {
     name: "Enterprise",
     subtitle: "For high-volume brands with complex operations and custom needs.",
-    price: "Custom",
+    annualPrice: "Custom",
+    monthlyPrice: "Custom",
     period: "",
-    note: "Tailored to your needs",
     cta: "Contact Sales",
     href: "/contact",
     highlighted: false,
@@ -204,9 +204,20 @@ export default function PricingContent() {
             </div>
             <span className="hidden lg:block absolute right-0 text-[12px] text-text-light">All prices in USD</span>
           </div>
+          <p className="mt-3 text-center text-[12px] font-medium text-teal h-4 transition-opacity" aria-live="polite">
+            {annual ? "You're saving 20% with annual billing." : ""}
+          </p>
 
           <div className="mt-10 grid gap-6 lg:grid-cols-3 items-start">
-            {plans.map((plan) => (
+            {plans.map((plan) => {
+              const isCustom = plan.annualPrice === plan.monthlyPrice;
+              const price = annual ? plan.annualPrice : plan.monthlyPrice;
+              const note = isCustom
+                ? "Tailored to your needs"
+                : annual
+                  ? "Billed annually · save 20%"
+                  : "Billed monthly";
+              return (
               <div
                 key={plan.name}
                 className={`relative rounded-2xl bg-white ${
@@ -226,10 +237,10 @@ export default function PricingContent() {
                   <p className="mt-2 text-[13px] text-text-muted leading-relaxed min-h-[36px]">{plan.subtitle}</p>
 
                   <div className="mt-5 flex items-baseline gap-1">
-                    <span className="text-[34px] font-extrabold text-text-primary tracking-tight">{plan.price}</span>
+                    <span className="text-[34px] font-extrabold text-text-primary tracking-tight">{price}</span>
                     {plan.period && <span className="text-[14px] text-text-muted">{plan.period}</span>}
                   </div>
-                  <p className="mt-1 text-[12px] text-text-light">{plan.note}</p>
+                  <p className="mt-1 text-[12px] text-text-light">{note}</p>
 
                   <Link
                     href={plan.href}
@@ -253,12 +264,13 @@ export default function PricingContent() {
                     ))}
                   </ul>
 
-                  <Link href="/how-it-works" className="mt-6 inline-flex items-center gap-1.5 text-[13px] font-semibold text-action-blue hover:gap-2.5 transition-all">
+                  <Link href="#whats-included" scroll className="mt-6 inline-flex items-center gap-1.5 text-[13px] font-semibold text-action-blue hover:gap-2.5 transition-all">
                     See all features <ArrowRight className="w-3.5 h-3.5" />
                   </Link>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Trust badges */}
@@ -281,7 +293,7 @@ export default function PricingContent() {
       </section>
 
       {/* What's included */}
-      <section className="bg-white">
+      <section id="whats-included" className="bg-white scroll-mt-24">
         <div className="max-w-[1200px] mx-auto px-6 pb-14">
           <div className="text-center">
             <h2 className="text-[28px] font-bold text-text-primary">What&apos;s included in every plan</h2>

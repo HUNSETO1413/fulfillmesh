@@ -20,6 +20,37 @@ const tabs = ["All Orders", "Processing", "In Transit", "Delivered", "Cancelled"
 const STATUSES: OrderStatus[] = ["Pending", "Processing", "In Transit", "Delivered", "Cancelled"];
 const CHANNELS = ["Shopify", "Amazon", "Direct", "TikTok Shop"];
 
+// The demo workspace anchors "today" to the end of the header range so date
+// filtering stays deterministic across renders.
+const REF_DATE = new Date("2025-05-18T12:00:00Z");
+const DATE_RANGES = ["All time", "Last 7 days", "Last 30 days", "This quarter", "Year to date"];
+
+function rangeStart(range: string): Date | null {
+  const start = new Date(REF_DATE);
+  switch (range) {
+    case "Last 7 days":
+      start.setUTCDate(start.getUTCDate() - 7);
+      return start;
+    case "Last 30 days":
+      start.setUTCDate(start.getUTCDate() - 30);
+      return start;
+    case "This quarter":
+      return new Date("2025-04-01T00:00:00Z");
+    case "Year to date":
+      return new Date("2025-01-01T00:00:00Z");
+    default:
+      return null;
+  }
+}
+
+function inDateRange(iso: string | undefined, range: string): boolean {
+  const start = rangeStart(range);
+  if (!start) return true;
+  if (!iso) return false;
+  const d = new Date(`${iso}T12:00:00Z`);
+  return d >= start && d <= REF_DATE;
+}
+
 type Draft = {
   customer: string;
   status: OrderStatus;
@@ -73,6 +104,7 @@ export default function OrdersView({ orders }: { orders: Order[] }) {
   const [pageSize, setPageSize] = useState(8);
   const [pageSizeOpen, setPageSizeOpen] = useState(false);
   const [dateOpen, setDateOpen] = useState(false);
+  const [dateRange, setDateRange] = useState("All time");
 
   const [channelFilter, setChannelFilter] = useState<string>("");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -108,11 +140,12 @@ export default function OrdersView({ orders }: { orders: Order[] }) {
     return orders.filter((o) => {
       const matchesTab = activeTab === "All Orders" || o.status === activeTab;
       const matchesChannel = !channelFilter || o.channel === channelFilter;
+      const matchesDate = inDateRange(o.date, dateRange);
       const q = query.trim().toLowerCase();
       const matchesQuery = !q || o.id.toLowerCase().includes(q) || o.customer.toLowerCase().includes(q);
-      return matchesTab && matchesChannel && matchesQuery;
+      return matchesTab && matchesChannel && matchesDate && matchesQuery;
     });
-  }, [orders, activeTab, channelFilter, query]);
+  }, [orders, activeTab, channelFilter, dateRange, query]);
 
   const sorted = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
@@ -284,21 +317,23 @@ export default function OrdersView({ orders }: { orders: Order[] }) {
           <div className="relative">
             <button
               onClick={() => setDateOpen((v) => !v)}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] text-[#6B7280] hover:bg-[#F3F4F6] transition-colors"
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] transition-colors ${
+                dateRange !== "All time" ? "text-[#3B82F6] bg-[#3B82F6]/10" : "text-[#6B7280] hover:bg-[#F3F4F6]"
+              }`}
             >
               <Calendar className="w-4 h-4" />
-              May 01 - May 08, 2025
+              {dateRange === "All time" ? "All time" : dateRange}
               <ChevronDown className="w-3.5 h-3.5" />
             </button>
             {dateOpen && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setDateOpen(false)} />
                 <div className="absolute right-0 mt-1 z-20 w-44 bg-white rounded-lg border border-[#E5E7EB] shadow-lg py-1">
-                  {["Last 7 days", "Last 30 days", "This quarter", "Year to date"].map((r) => (
+                  {DATE_RANGES.map((r) => (
                     <button
                       key={r}
-                      onClick={() => { setDateOpen(false); toast(`Date range: ${r}`); }}
-                      className="w-full text-left px-3 py-1.5 text-[13px] text-[#374151] hover:bg-[#F3F4F6]"
+                      onClick={() => { setDateRange(r); setPage(1); setDateOpen(false); }}
+                      className={`w-full text-left px-3 py-1.5 text-[13px] hover:bg-[#F3F4F6] ${dateRange === r ? "text-[#3B82F6] font-medium" : "text-[#374151]"}`}
                     >
                       {r}
                     </button>

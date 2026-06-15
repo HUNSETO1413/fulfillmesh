@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Package, Layers, AlertTriangle, XCircle,
-  Search, Filter, Download, Calendar, Plus,
+  Search, Filter, Download, Plus,
   ChevronDown, ChevronLeft, ChevronRight, ArrowUpRight, ArrowDownRight,
   Pencil, Trash2, ChevronUp, ArrowUpDown,
 } from "lucide-react";
@@ -97,7 +97,6 @@ export default function InventoryView({ items }: { items: InventoryItem[] }) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(8);
   const [pageSizeOpen, setPageSizeOpen] = useState(false);
-  const [dateOpen, setDateOpen] = useState(false);
 
   // warehouse filter dropdown
   const [warehouseFilter, setWarehouseFilter] = useState<string>("");
@@ -336,32 +335,6 @@ export default function InventoryView({ items }: { items: InventoryItem[] }) {
           <p className="text-[14px] text-[#64748B] mt-1">May 15, 2023 - May 28, 2023</p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="relative">
-            <button
-              onClick={() => setDateOpen((v) => !v)}
-              className="flex items-center gap-2 text-[13px] text-[#64748B] bg-white border border-[#E2E8F0] rounded-lg px-3 py-2 hover:bg-[#F8FAFC]"
-            >
-              <Calendar className="w-4 h-4" />
-              May 12 - May 18, 2025
-              <ChevronDown className="w-3.5 h-3.5" />
-            </button>
-            {dateOpen && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setDateOpen(false)} />
-                <div className="absolute right-0 mt-1 z-20 w-44 bg-white rounded-lg border border-[#E2E8F0] shadow-lg py-1">
-                  {["Last 7 days", "Last 30 days", "This quarter", "Year to date"].map((r) => (
-                    <button
-                      key={r}
-                      onClick={() => { setDateOpen(false); toast(`Date range: ${r}`); }}
-                      className="w-full text-left px-3 py-1.5 text-[13px] text-[#374151] hover:bg-[#F8FAFC]"
-                    >
-                      {r}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
           <button
             onClick={handleExport}
             className="flex items-center gap-2 text-[13px] font-medium text-[#64748B] bg-white border border-[#E2E8F0] rounded-lg px-3 py-2 hover:bg-[#F8FAFC]"

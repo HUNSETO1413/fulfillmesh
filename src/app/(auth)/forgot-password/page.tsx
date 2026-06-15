@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import {
   Lock,
@@ -13,9 +14,13 @@ import {
   Headphones,
   Globe,
   Check,
+  MailCheck,
+  Loader2,
 } from "lucide-react";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const inputBase =
   "w-full rounded-lg border border-border-soft bg-white px-4 py-3 text-sm text-deep-navy placeholder:text-text-light focus:outline-none focus:border-action-blue focus:ring-2 focus:ring-action-blue/20 transition-colors";
@@ -51,6 +56,31 @@ const trustItems = [
 ];
 
 export default function ForgotPasswordPage() {
+  const [email, setEmail] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [sentTo, setSentTo] = useState<string | null>(null);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    const trimmed = email.trim();
+    if (!trimmed) {
+      setError("Please enter your email address.");
+      return;
+    }
+    if (!EMAIL_RE.test(trimmed)) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+    setSubmitting(true);
+    // No password-reset endpoint exists yet, so we resolve client-side and show a
+    // confirmation. The brief flag below keeps the interaction honest about state.
+    await new Promise((r) => setTimeout(r, 600));
+    setSubmitting(false);
+    setSentTo(trimmed);
+  }
+
   return (
     <>
       <Header />
@@ -61,54 +91,106 @@ export default function ForgotPasswordPage() {
             {/* ===== Left: Form ===== */}
             <div className="lg:sticky lg:top-24">
               <div className="rounded-2xl border border-border-soft bg-white shadow-card p-8">
-                <div className="flex justify-center mb-6">
-                  <div className="w-14 h-14 rounded-xl bg-action-blue/10 flex items-center justify-center">
-                    <Lock className="w-6 h-6 text-action-blue" />
-                  </div>
-                </div>
-
-                <h1 className="text-3xl font-bold text-deep-navy text-center">
-                  Forgot your password?
-                </h1>
-                <p className="mt-3 text-base text-text-body text-center leading-relaxed max-w-sm mx-auto">
-                  No worries! Enter your email address and we&apos;ll send you a secure link to reset your password.
-                </p>
-
-                <form className="mt-7 space-y-5" onSubmit={(e) => e.preventDefault()}>
-                  <div>
-                    <label className="block text-sm font-semibold text-deep-navy mb-2">Email address</label>
-                    <div className="relative">
-                      <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-light" />
-                      <input type="email" className={inputBase + " pl-11"} placeholder="Enter your email address" />
+                {sentTo ? (
+                  <>
+                    <div className="flex justify-center mb-6">
+                      <div className="w-14 h-14 rounded-xl bg-teal/10 flex items-center justify-center">
+                        <MailCheck className="w-6 h-6 text-teal" />
+                      </div>
                     </div>
-                  </div>
-                  <button
-                    type="submit"
-                    className="w-full py-3 rounded-lg bg-navy text-white text-base font-semibold hover:bg-navy/90 transition-colors"
-                  >
-                    Send reset link
-                  </button>
-                  <p className="flex items-center justify-center gap-2 text-sm text-text-body">
-                    <CheckCircle2 className="w-4 h-4 text-teal" />
-                    We&apos;ll email you a secure link that expires in 1 hour.
-                  </p>
-                </form>
+                    <h1 className="text-3xl font-bold text-deep-navy text-center">Check your email</h1>
+                    <p className="mt-3 text-base text-text-body text-center leading-relaxed max-w-sm mx-auto">
+                      If an account exists for{" "}
+                      <span className="font-semibold text-deep-navy">{sentTo}</span>, we&apos;ve sent a secure link to
+                      reset your password. The link expires in 1 hour.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSentTo(null);
+                        setEmail("");
+                      }}
+                      className="mt-7 w-full py-3 rounded-lg border border-border-blue text-deep-navy text-base font-semibold hover:bg-soft-bg transition-colors"
+                    >
+                      Use a different email
+                    </button>
+                    <p className="mt-5 text-center text-sm text-text-body">
+                      Didn&apos;t get it? Check your spam folder or{" "}
+                      <Link href="/contact" className="font-semibold text-action-blue hover:underline">
+                        contact support
+                      </Link>
+                      .
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex justify-center mb-6">
+                      <div className="w-14 h-14 rounded-xl bg-action-blue/10 flex items-center justify-center">
+                        <Lock className="w-6 h-6 text-action-blue" />
+                      </div>
+                    </div>
 
-                <div className="relative my-6">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-border-soft" />
-                  </div>
-                  <div className="relative flex justify-center">
-                    <span className="px-3 bg-white text-sm text-text-muted">OR</span>
-                  </div>
-                </div>
+                    <h1 className="text-3xl font-bold text-deep-navy text-center">
+                      Forgot your password?
+                    </h1>
+                    <p className="mt-3 text-base text-text-body text-center leading-relaxed max-w-sm mx-auto">
+                      No worries! Enter your email address and we&apos;ll send you a secure link to reset your password.
+                    </p>
 
-                <p className="text-center text-sm text-text-body">
-                  Remember your password?{" "}
-                  <Link href="/login" className="font-semibold text-action-blue hover:underline">
-                    Log in
-                  </Link>
-                </p>
+                    <form className="mt-7 space-y-5" onSubmit={handleSubmit} noValidate>
+                      <div>
+                        <label className="block text-sm font-semibold text-deep-navy mb-2">Email address</label>
+                        <div className="relative">
+                          <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-light" />
+                          <input
+                            type="email"
+                            value={email}
+                            onChange={(e) => {
+                              setEmail(e.target.value);
+                              if (error) setError(null);
+                            }}
+                            aria-invalid={!!error}
+                            className={inputBase + " pl-11"}
+                            placeholder="Enter your email address"
+                          />
+                        </div>
+                        {error && (
+                          <p className="mt-2 text-sm font-medium text-red-600" role="alert">
+                            {error}
+                          </p>
+                        )}
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={submitting}
+                        className="w-full py-3 rounded-lg bg-navy text-white text-base font-semibold hover:bg-navy/90 transition-colors disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
+                      >
+                        {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                        {submitting ? "Sending…" : "Send reset link"}
+                      </button>
+                      <p className="flex items-center justify-center gap-2 text-sm text-text-body">
+                        <CheckCircle2 className="w-4 h-4 text-teal" />
+                        We&apos;ll email you a secure link that expires in 1 hour.
+                      </p>
+                    </form>
+
+                    <div className="relative my-6">
+                      <div className="absolute inset-0 flex items-center">
+                        <div className="w-full border-t border-border-soft" />
+                      </div>
+                      <div className="relative flex justify-center">
+                        <span className="px-3 bg-white text-sm text-text-muted">OR</span>
+                      </div>
+                    </div>
+
+                    <p className="text-center text-sm text-text-body">
+                      Remember your password?{" "}
+                      <Link href="/login" className="font-semibold text-action-blue hover:underline">
+                        Log in
+                      </Link>
+                    </p>
+                  </>
+                )}
               </div>
             </div>
 

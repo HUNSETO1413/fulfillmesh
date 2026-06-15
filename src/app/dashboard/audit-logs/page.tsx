@@ -9,6 +9,9 @@ import {
 import type { AuditLog } from "@/types";
 import { api, exportToCsv } from "@/lib/client";
 import { useToast } from "@/components/dashboard/Toast";
+import { Modal } from "@/components/dashboard/Modal";
+import { Drawer } from "@/components/dashboard/Drawer";
+import { Field, NumberInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 
 /* ---------------- static decorative data ---------------- */
 
@@ -98,6 +101,16 @@ export default function AuditLogsPage() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
 
+  // ---- Retention Settings modal ----
+  const RETENTION_OPTIONS = ["30", "60", "90", "180", "365", "730"];
+  const [retentionOpen, setRetentionOpen] = useState(false);
+  const [retentionDays, setRetentionDays] = useState("365");
+  const [archiveBeforeDelete, setArchiveBeforeDelete] = useState("Yes");
+  const [retentionSaving, setRetentionSaving] = useState(false);
+
+  // ---- Full Event Types drawer ----
+  const [typesOpen, setTypesOpen] = useState(false);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -114,6 +127,53 @@ export default function AuditLogsPage() {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Hydrate retention settings from the persisted "audit" settings section.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const all = await api.get<Record<string, unknown>>("/api/settings");
+        if (cancelled) return;
+        const audit = (all.audit ?? {}) as { retentionDays?: number | string; archiveBeforeDelete?: boolean };
+        if (audit.retentionDays != null) setRetentionDays(String(audit.retentionDays));
+        if (typeof audit.archiveBeforeDelete === "boolean") {
+          setArchiveBeforeDelete(audit.archiveBeforeDelete ? "Yes" : "No");
+        }
+      } catch {
+        /* keep defaults if settings can't be loaded */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const saveRetention = async () => {
+    setRetentionSaving(true);
+    try {
+      await api.put("/api/settings", {
+        audit: {
+          retentionDays: Number(retentionDays) || 0,
+          archiveBeforeDelete: archiveBeforeDelete === "Yes",
+        },
+      });
+      toast(`Audit logs will be retained for ${retentionDays} days`);
+      setRetentionOpen(false);
+    } catch {
+      toast("Failed to save retention settings", "error");
+    } finally {
+      setRetentionSaving(false);
+    }
+  };
+
+  // Full list of action types (not limited to the top 7 shown in the sidebar).
+  const allEventTypes = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const l of logs) counts.set(l.action, (counts.get(l.action) ?? 0) + 1);
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, count], i) => ({ name, count, color: DONUT_COLORS[i % DONUT_COLORS.length] }));
+  }, [logs]);
+  const allEventTypesTotal = allEventTypes.reduce((a, b) => a + b.count, 0) || 1;
 
   const categoryOptions = useMemo(
     () => Array.from(new Set(logs.map((l) => l.category))).sort(),
@@ -256,7 +316,7 @@ export default function AuditLogsPage() {
           <button onClick={handleExport} className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-border-soft bg-white text-text-body text-[13px] font-medium hover:bg-soft-bg shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
             <Download className="w-4 h-4 text-text-light" /> Export Logs
           </button>
-          <button onClick={() => toast("Opening retention settings…", "info")} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-action-blue text-white text-[13px] font-medium hover:bg-[#0047B3] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+          <button onClick={() => setRetentionOpen(true)} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-action-blue text-white text-[13px] font-medium hover:bg-[#0047B3] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
             <SettingsIcon className="w-4 h-4" /> Retention Settings
           </button>
         </div>
@@ -420,7 +480,7 @@ export default function AuditLogsPage() {
           <Card className="p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-[14px] font-semibold text-text-primary">Event Types</h3>
-              <button onClick={() => toast("Opening full list…", "info")} className="text-[12px] font-medium text-action-blue hover:underline">View all</button>
+              <button onClick={() => setTypesOpen(true)} className="text-[12px] font-medium text-action-blue hover:underline">View all</button>
             </div>
             <div className="space-y-3">
               {eventTypes.length === 0 && <p className="text-[13px] text-text-light">No events yet.</p>}
@@ -544,6 +604,68 @@ export default function AuditLogsPage() {
           </div>
         </Card>
       </div>
+
+      {/* Retention Settings */}
+      <Modal
+        open={retentionOpen}
+        onClose={() => setRetentionOpen(false)}
+        title="Retention Settings"
+        description="Control how long audit log events are kept before they are purged."
+        size="md"
+        footer={
+          <>
+            <SecondaryButton onClick={() => setRetentionOpen(false)}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={saveRetention} disabled={retentionSaving}>
+              {retentionSaving ? "Saving…" : "Save Settings"}
+            </PrimaryButton>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Field label="Retention period (days)" required hint="Events older than this are eligible for deletion.">
+            <NumberInput
+              min={1}
+              value={retentionDays}
+              list="retention-presets"
+              onChange={(e) => setRetentionDays(e.target.value)}
+            />
+            <datalist id="retention-presets">
+              {RETENTION_OPTIONS.map((o) => <option key={o} value={o} />)}
+            </datalist>
+          </Field>
+          <Field label="Archive before deleting" hint="Export expiring events to cold storage before they are purged.">
+            <Select
+              value={archiveBeforeDelete}
+              options={["Yes", "No"]}
+              onChange={(e) => setArchiveBeforeDelete(e.target.value)}
+            />
+          </Field>
+        </div>
+      </Modal>
+
+      {/* All Event Types */}
+      <Drawer
+        open={typesOpen}
+        onClose={() => setTypesOpen(false)}
+        title="All Event Types"
+        subtitle={`${allEventTypes.length} distinct action${allEventTypes.length === 1 ? "" : "s"} across ${totalEvents.toLocaleString()} events`}
+        footer={<PrimaryButton onClick={() => setTypesOpen(false)}>Close</PrimaryButton>}
+      >
+        <div className="space-y-2.5">
+          {allEventTypes.length === 0 && <p className="text-[13px] text-text-light">No events yet.</p>}
+          {allEventTypes.map((e) => (
+            <div key={e.name} className="flex items-center justify-between text-[13px]">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: e.color }} />
+                <span className="text-text-muted truncate">{e.name}</span>
+              </div>
+              <span className="font-medium text-text-primary whitespace-nowrap">
+                {e.count.toLocaleString()} ({((e.count / allEventTypesTotal) * 100).toFixed(1)}%)
+              </span>
+            </div>
+          ))}
+        </div>
+      </Drawer>
       </>
       )}
     </div>

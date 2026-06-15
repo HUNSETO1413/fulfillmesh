@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { SITE_URL } from "@/lib/seo";
+import { articleSlugs } from "@/app/blog/articles";
 
 // Static public routes. Dynamic content routes (blog posts, guides, case
 // studies, help-center articles) can be appended here as the content layer grows.
@@ -56,7 +57,9 @@ const ROUTES: { path: string; priority: number; changeFrequency: MetadataRoute.S
 //   - src/app/resources/case-studies/[slug]/page.tsx (href)
 //   - src/app/resources/guides/page.tsx + [slug]/page.tsx (href)
 //   - src/app/resources/help-center/page.tsx + [slug]/page.tsx (href)
-const BLOG_SLUGS = ["sample-post", "shipping-from-china"];
+// Imported from the blog article source of truth so the sitemap always matches
+// the slugs that blog/[slug]/page.tsx prerenders via generateStaticParams.
+const BLOG_SLUGS = articleSlugs;
 
 // Case-study slugs derived from the 8 brands in the case-studies hub array.
 const CASE_STUDY_SLUGS = [

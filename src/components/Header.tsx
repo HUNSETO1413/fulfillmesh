@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Menu, X, ChevronDown, User,
@@ -49,10 +49,23 @@ const company = [
 export default function Header() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
   const toggleDropdown = (name: string) => {
     setOpenDropdown(openDropdown === name ? null : name);
   };
+
+  useEffect(() => {
+    if (!userMenuOpen) return;
+    const onClick = (e: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setUserMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [userMenuOpen]);
 
   return (
     <header className="sticky top-0 z-50 bg-white border-b border-border-soft">
@@ -224,9 +237,41 @@ export default function Header() {
 
         {/* Right CTA */}
         <div className="hidden lg:flex items-center gap-4">
-          <button className="w-9 h-9 rounded-full bg-deep-navy flex items-center justify-center">
-            <User className="w-4 h-4 text-white" />
-          </button>
+          <div className="relative" ref={userMenuRef}>
+            <button
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={userMenuOpen}
+              aria-label="Account menu"
+              onClick={() => setUserMenuOpen((v) => !v)}
+              className="w-9 h-9 rounded-full bg-deep-navy flex items-center justify-center hover:brightness-110 transition-all"
+            >
+              <User className="w-4 h-4 text-white" />
+            </button>
+            {userMenuOpen && (
+              <div
+                role="menu"
+                className="absolute top-full right-0 mt-2 w-48 bg-white rounded-lg shadow-card p-2"
+              >
+                <Link
+                  href="/login"
+                  role="menuitem"
+                  className="block px-3 py-2 rounded-md text-[14px] font-normal text-text-primary hover:bg-soft-bg transition-colors"
+                  onClick={() => setUserMenuOpen(false)}
+                >
+                  Log in
+                </Link>
+                <Link
+                  href="/get-started"
+                  role="menuitem"
+                  className="block px-3 py-2 rounded-md text-[14px] font-semibold text-teal hover:bg-soft-bg transition-colors"
+                  onClick={() => setUserMenuOpen(false)}
+                >
+                  Get started
+                </Link>
+              </div>
+            )}
+          </div>
           <Link
             href="/book-a-demo"
             className="px-5 py-2.5 text-[14px] font-medium text-white gradient-cta rounded-lg hover:brightness-110 transition-all"

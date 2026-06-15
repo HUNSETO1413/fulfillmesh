@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   Building2, Store, BarChart3, Globe, Headphones, CheckCircle2, Check,
   ArrowRight, Bell, TrendingUp, Target, Zap, ShieldCheck, Sparkles,
   Building, User, ClipboardList, MessageSquare, ShoppingCart, LifeBuoy, X,
+  Plus,
 } from "lucide-react";
 
 const steps = [
@@ -26,7 +28,29 @@ const benefits = [
 
 const channels = ["Shopify", "WooCommerce", "Amazon", "Etsy", "TikTok Shop", "Other"];
 const volumes = ["0 - 100 orders", "101 - 500 orders", "501 - 1,000 orders", "1,001 - 5,000 orders", "5,000+ orders"];
-const productTypes = ["Apparel", "Accessories", "Home & Living"];
+const productTypeOptions = [
+  "Apparel", "Accessories", "Home & Living", "Beauty & Personal Care",
+  "Electronics", "Toys & Games", "Health & Wellness", "Pet Supplies",
+  "Food & Beverage", "Other",
+];
+
+const DRAFT_KEY = "fulfillmesh:onboarding-draft";
+
+interface OnboardingDraft {
+  companyName: string;
+  website: string;
+  businessType: string;
+  companySize: string;
+  contactName: string;
+  contactEmail: string;
+  contactPhone: string;
+  contactRole: string;
+  productTypes: string[];
+  handlingNotes: string;
+  volume: string;
+  channels: string[];
+  notes: string;
+}
 
 function BrandLogo({ name, className }: { name: string; className?: string }) {
   switch (name) {
@@ -93,10 +117,144 @@ function Label({ children }: { children: React.ReactNode }) {
 const inputCls =
   "w-full px-4 py-2.5 rounded-[10px] border border-border-soft text-sm bg-white text-text-body focus:outline-none focus:border-teal focus:ring-1 focus:ring-teal transition-colors";
 
+type FieldErrors = Partial<Record<keyof OnboardingDraft, string>>;
+
 export default function OnboardingPage() {
-  const [picked, setPicked] = useState<string[]>(["Shopify", "Amazon"]);
+  const router = useRouter();
+
+  // Form state (mirrors OnboardingDraft).
+  const [companyName, setCompanyName] = useState("Acme Retail");
+  const [website, setWebsite] = useState("https://acmeretail.com");
+  const [businessType, setBusinessType] = useState("E-commerce Brand");
+  const [companySize, setCompanySize] = useState("11 – 50 employees");
+  const [contactName, setContactName] = useState("Bessie Cooper");
+  const [contactEmail, setContactEmail] = useState("bessie@acmeretail.com");
+  const [contactPhone, setContactPhone] = useState("🇺🇸 +1 (555) 123-4567");
+  const [contactRole, setContactRole] = useState("Operations Manager");
+  const [productTypes, setProductTypes] = useState<string[]>(["Apparel", "Accessories", "Home & Living"]);
+  const [productMenuOpen, setProductMenuOpen] = useState(false);
+  const [handlingNotes, setHandlingNotes] = useState("");
   const [volume, setVolume] = useState("101 - 500 orders");
+  const [picked, setPicked] = useState<string[]>(["Shopify", "Amazon"]);
+  const [notes, setNotes] = useState("");
+
+  const [errors, setErrors] = useState<FieldErrors>({});
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+
+  const productMenuRef = useRef<HTMLDivElement>(null);
+
+  // Hydrate from a previously saved draft on mount. Reading localStorage must
+  // happen client-side only (it is undefined during SSR), so this lives in an
+  // effect. The setState calls are deferred via queueMicrotask so they run after
+  // the effect commits rather than synchronously inside it.
+  useEffect(() => {
+    let raw: string | null;
+    try {
+      raw = localStorage.getItem(DRAFT_KEY);
+    } catch {
+      return;
+    }
+    if (!raw) return;
+    let d: Partial<OnboardingDraft>;
+    try {
+      d = JSON.parse(raw) as Partial<OnboardingDraft>;
+    } catch {
+      return; // corrupt draft — start fresh
+    }
+    queueMicrotask(() => {
+      if (typeof d.companyName === "string") setCompanyName(d.companyName);
+      if (typeof d.website === "string") setWebsite(d.website);
+      if (typeof d.businessType === "string") setBusinessType(d.businessType);
+      if (typeof d.companySize === "string") setCompanySize(d.companySize);
+      if (typeof d.contactName === "string") setContactName(d.contactName);
+      if (typeof d.contactEmail === "string") setContactEmail(d.contactEmail);
+      if (typeof d.contactPhone === "string") setContactPhone(d.contactPhone);
+      if (typeof d.contactRole === "string") setContactRole(d.contactRole);
+      if (Array.isArray(d.productTypes)) setProductTypes(d.productTypes.filter((x): x is string => typeof x === "string"));
+      if (typeof d.handlingNotes === "string") setHandlingNotes(d.handlingNotes);
+      if (typeof d.volume === "string") setVolume(d.volume);
+      if (Array.isArray(d.channels)) setPicked(d.channels.filter((x): x is string => typeof x === "string"));
+      if (typeof d.notes === "string") setNotes(d.notes);
+    });
+  }, []);
+
+  // Close the product-type dropdown on outside click.
+  useEffect(() => {
+    if (!productMenuOpen) return;
+    function onClick(e: MouseEvent) {
+      if (productMenuRef.current && !productMenuRef.current.contains(e.target as Node)) {
+        setProductMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [productMenuOpen]);
+
   const toggle = (n: string) => setPicked((p) => (p.includes(n) ? p.filter((x) => x !== n) : [...p, n]));
+  const toggleProductType = (n: string) =>
+    setProductTypes((p) => (p.includes(n) ? p.filter((x) => x !== n) : [...p, n]));
+  const removeProductType = (n: string) => setProductTypes((p) => p.filter((x) => x !== n));
+
+  const collectDraft = (): OnboardingDraft => ({
+    companyName, website, businessType, companySize,
+    contactName, contactEmail, contactPhone, contactRole,
+    productTypes, handlingNotes, volume, channels: picked, notes,
+  });
+
+  // Validate the required fields the user can fill on this page.
+  const validate = (): FieldErrors => {
+    const next: FieldErrors = {};
+    if (!companyName.trim()) next.companyName = "Company name is required.";
+    if (!contactName.trim()) next.contactName = "Full name is required.";
+    if (!contactEmail.trim()) {
+      next.contactEmail = "Work email is required.";
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail.trim())) {
+      next.contactEmail = "Enter a valid email address.";
+    }
+    if (productTypes.length === 0) next.productTypes = "Select at least one product type.";
+    if (picked.length === 0) next.channels = "Select at least one sales channel.";
+    return next;
+  };
+
+  // "Save & Exit" — persist the in-progress form so the user can resume later.
+  const handleSaveExit = () => {
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(collectDraft()));
+      setSavedAt(Date.now());
+      window.setTimeout(() => setSavedAt(null), 3500);
+    } catch {
+      /* storage unavailable — surface nothing destructive */
+    }
+  };
+
+  // "Continue" — validate the current step before moving on.
+  const handleContinue = () => {
+    const next = validate();
+    setErrors(next);
+    if (Object.keys(next).length > 0) {
+      // Persist progress + scroll the first error into view.
+      try {
+        localStorage.setItem(DRAFT_KEY, JSON.stringify(collectDraft()));
+      } catch {
+        /* ignore */
+      }
+      const firstKey = Object.keys(next)[0];
+      // Defer so any newly-rendered error elements are in the DOM before scrolling.
+      window.setTimeout(() => {
+        document.getElementById(`onb-${firstKey}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 0);
+      return;
+    }
+    // Valid — persist and advance.
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(collectDraft()));
+    } catch {
+      /* ignore */
+    }
+    router.push("/get-started");
+  };
+
+  const errCls = "mt-1.5 text-[12px] font-medium text-red-600";
 
   return (
     <section
@@ -259,17 +417,30 @@ export default function OnboardingPage() {
                 <h2 className="text-[18px] font-bold text-deep-navy">Company Information</h2>
               </div>
               <div className="grid sm:grid-cols-2 gap-4">
-                <div><Label>Company Name</Label><input className={inputCls} defaultValue="Acme Retail" /></div>
-                <div><Label>Website (Optional)</Label><input className={inputCls} defaultValue="https://acmeretail.com" /></div>
+                <div>
+                  <Label>Company Name</Label>
+                  <input
+                    id="onb-companyName"
+                    className={inputCls}
+                    value={companyName}
+                    onChange={(e) => setCompanyName(e.target.value)}
+                    aria-invalid={!!errors.companyName}
+                  />
+                  {errors.companyName && <p className={errCls}>{errors.companyName}</p>}
+                </div>
+                <div>
+                  <Label>Website (Optional)</Label>
+                  <input className={inputCls} value={website} onChange={(e) => setWebsite(e.target.value)} />
+                </div>
                 <div>
                   <Label>Business Type</Label>
-                  <select className={inputCls} defaultValue="E-commerce Brand">
+                  <select className={inputCls} value={businessType} onChange={(e) => setBusinessType(e.target.value)}>
                     {["E-commerce Brand", "Retailer", "Wholesaler", "Manufacturer", "Other"].map((o) => <option key={o}>{o}</option>)}
                   </select>
                 </div>
                 <div>
                   <Label>Company Size</Label>
-                  <select className={inputCls} defaultValue="11 – 50 employees">
+                  <select className={inputCls} value={companySize} onChange={(e) => setCompanySize(e.target.value)}>
                     {["1 – 10 employees", "11 – 50 employees", "51 – 200 employees", "200+ employees"].map((o) => <option key={o}>{o}</option>)}
                   </select>
                 </div>
@@ -283,12 +454,36 @@ export default function OnboardingPage() {
                 <h2 className="text-[18px] font-bold text-deep-navy">Primary Contact</h2>
               </div>
               <div className="grid sm:grid-cols-2 gap-4">
-                <div><Label>Full Name</Label><input className={inputCls} defaultValue="Bessie Cooper" /></div>
-                <div><Label>Work Email</Label><input type="email" className={inputCls} defaultValue="bessie@acmeretail.com" /></div>
-                <div><Label>Phone Number</Label><input className={inputCls} defaultValue="🇺🇸 +1 (555) 123-4567" /></div>
+                <div>
+                  <Label>Full Name</Label>
+                  <input
+                    id="onb-contactName"
+                    className={inputCls}
+                    value={contactName}
+                    onChange={(e) => setContactName(e.target.value)}
+                    aria-invalid={!!errors.contactName}
+                  />
+                  {errors.contactName && <p className={errCls}>{errors.contactName}</p>}
+                </div>
+                <div>
+                  <Label>Work Email</Label>
+                  <input
+                    id="onb-contactEmail"
+                    type="email"
+                    className={inputCls}
+                    value={contactEmail}
+                    onChange={(e) => setContactEmail(e.target.value)}
+                    aria-invalid={!!errors.contactEmail}
+                  />
+                  {errors.contactEmail && <p className={errCls}>{errors.contactEmail}</p>}
+                </div>
+                <div>
+                  <Label>Phone Number</Label>
+                  <input className={inputCls} value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} />
+                </div>
                 <div>
                   <Label>Role</Label>
-                  <select className={inputCls} defaultValue="Operations Manager">
+                  <select className={inputCls} value={contactRole} onChange={(e) => setContactRole(e.target.value)}>
                     {["Operations Manager", "Founder / CEO", "Logistics Lead", "E-commerce Manager", "Other"].map((o) => <option key={o}>{o}</option>)}
                   </select>
                 </div>
@@ -302,17 +497,60 @@ export default function OnboardingPage() {
                 <h2 className="text-[18px] font-bold text-deep-navy">Tell us about your business</h2>
               </div>
               <Label>What type of products do you sell?</Label>
-              <div className="flex flex-wrap items-center gap-2 px-3 py-2.5 rounded-[10px] border border-border-soft bg-white">
-                {productTypes.map((p) => (
-                  <span key={p} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-action-blue/8 text-[13px] font-medium text-action-blue">
-                    {p} <X className="w-3 h-3" />
-                  </span>
-                ))}
-                <span className="text-[13px] text-text-light ml-auto pr-1">▾</span>
+              <div className="relative" ref={productMenuRef}>
+                <div
+                  id="onb-productTypes"
+                  className={`flex flex-wrap items-center gap-2 px-3 py-2.5 rounded-[10px] border bg-white ${errors.productTypes ? "border-red-400" : "border-border-soft"}`}
+                >
+                  {productTypes.length === 0 && (
+                    <span className="text-[13px] text-text-light">Select the product types you sell…</span>
+                  )}
+                  {productTypes.map((p) => (
+                    <span key={p} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-action-blue/8 text-[13px] font-medium text-action-blue">
+                      {p}
+                      <button
+                        type="button"
+                        onClick={() => removeProductType(p)}
+                        aria-label={`Remove ${p}`}
+                        className="rounded hover:bg-action-blue/15 transition-colors"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setProductMenuOpen((o) => !o)}
+                    aria-expanded={productMenuOpen}
+                    aria-label="Add product type"
+                    className="ml-auto inline-flex items-center gap-1 text-[13px] font-medium text-action-blue hover:opacity-80 pr-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Add
+                  </button>
+                </div>
+                {productMenuOpen && (
+                  <div className="absolute z-20 mt-1 w-full max-h-60 overflow-auto rounded-[10px] border border-border-soft bg-white shadow-card py-1.5">
+                    {productTypeOptions.map((opt) => {
+                      const on = productTypes.includes(opt);
+                      return (
+                        <button
+                          key={opt}
+                          type="button"
+                          onClick={() => toggleProductType(opt)}
+                          className="w-full flex items-center justify-between gap-2 px-3.5 py-2 text-[13px] text-text-body hover:bg-soft-bg transition-colors"
+                        >
+                          {opt}
+                          {on && <Check className="w-4 h-4 text-action-blue" strokeWidth={3} />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
+              {errors.productTypes && <p className={errCls}>{errors.productTypes}</p>}
               <div className="mt-5">
                 <Label>Any special handling or storage requirements?</Label>
-                <textarea rows={3} className="w-full px-4 py-3 rounded-[10px] border border-border-soft text-sm text-text-body focus:outline-none focus:border-teal focus:ring-1 focus:ring-teal transition-colors resize-none" placeholder="e.g., fragile items, temperature control, oversized products..." />
+                <textarea rows={3} value={handlingNotes} onChange={(e) => setHandlingNotes(e.target.value)} className="w-full px-4 py-3 rounded-[10px] border border-border-soft text-sm text-text-body focus:outline-none focus:border-teal focus:ring-1 focus:ring-teal transition-colors resize-none" placeholder="e.g., fragile items, temperature control, oversized products..." />
               </div>
             </div>
 
@@ -348,7 +586,7 @@ export default function OnboardingPage() {
                   <p className="text-[13px] text-text-muted mt-0.5">Optional details that help us provide better recommendations.</p>
                 </div>
               </div>
-              <textarea rows={3} className="w-full px-4 py-3 rounded-[10px] border border-border-soft text-sm text-text-body focus:outline-none focus:border-teal focus:ring-1 focus:ring-teal transition-colors resize-none" placeholder="Tell us about your business goals, challenges, or any specific needs..." />
+              <textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full px-4 py-3 rounded-[10px] border border-border-soft text-sm text-text-body focus:outline-none focus:border-teal focus:ring-1 focus:ring-teal transition-colors resize-none" placeholder="Tell us about your business goals, challenges, or any specific needs..." />
             </div>
           </div>
 
@@ -383,6 +621,7 @@ export default function OnboardingPage() {
             <h2 className="text-[18px] font-bold text-deep-navy">Select your sales channels</h2>
           </div>
           <p className="text-[13px] text-text-muted mb-5 pl-12">Choose all the channels where you sell your products.</p>
+          {errors.channels && <p id="onb-channels" className={`${errCls} pl-12 mb-3`}>{errors.channels}</p>}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
             {channels.map((c) => {
               const on = picked.includes(c);
@@ -399,13 +638,28 @@ export default function OnboardingPage() {
         </div>
 
         {/* Footer nav */}
-        <div className="mt-7 flex items-center justify-between">
-          <button className="inline-flex items-center gap-2 px-6 py-3 rounded-[10px] text-sm font-semibold text-deep-navy border border-border-soft bg-white hover:bg-soft-bg transition-colors">
-            Save &amp; Exit
-          </button>
-          <Link href="/get-started" className="inline-flex items-center gap-2 px-7 py-3 text-sm font-semibold text-white rounded-[10px] bg-action-blue hover:opacity-95 transition-opacity">
+        <div className="mt-7 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleSaveExit}
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-[10px] text-sm font-semibold text-deep-navy border border-border-soft bg-white hover:bg-soft-bg transition-colors"
+            >
+              Save &amp; Exit
+            </button>
+            {savedAt !== null && (
+              <span role="status" className="inline-flex items-center gap-1.5 text-[13px] font-medium text-teal animate-[fadeIn_0.15s_ease-out]">
+                <CheckCircle2 className="w-4 h-4" /> Draft saved
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={handleContinue}
+            className="inline-flex items-center justify-center gap-2 px-7 py-3 text-sm font-semibold text-white rounded-[10px] bg-action-blue hover:opacity-95 transition-opacity"
+          >
             Continue <ArrowRight className="w-4 h-4" />
-          </Link>
+          </button>
         </div>
       </div>
 
