@@ -114,22 +114,47 @@ export default function DashboardTopbar({
         setNotifOpen(false);
       }
     }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setUserDropdownOpen(false);
+        setNotifOpen(false);
+      }
+    }
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
   }, []);
 
+  // Load notifications on mount, then poll lightly (~30s) to keep the bell and
+  // unread badge fresh. A ref-guard prevents overlapping requests, and the
+  // interval is cleared on unmount.
   useEffect(() => {
     let cancelled = false;
-    api
-      .get<{ data: AppNotification[]; total: number }>("/api/notifications")
-      .then((res) => {
+    let inFlight = false;
+
+    async function loadNotifications() {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const res = await api.get<{ data: AppNotification[]; total: number }>(
+          "/api/notifications",
+        );
         if (!cancelled) setNotifications(res?.data ?? []);
-      })
-      .catch(() => {
-        /* keep the bell silent on load failure */
-      });
+      } catch {
+        /* keep the bell silent on load/poll failure */
+      } finally {
+        inFlight = false;
+      }
+    }
+
+    loadNotifications();
+    const intervalId = setInterval(loadNotifications, 30000);
     return () => {
       cancelled = true;
+      clearInterval(intervalId);
     };
   }, []);
 

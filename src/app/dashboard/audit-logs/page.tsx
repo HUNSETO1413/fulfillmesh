@@ -395,15 +395,15 @@ export default function AuditLogsPage() {
           <span className="text-text-light">–</span>
           <input type="date" value={toDate} onChange={(e) => { setToDate(e.target.value); setPage(1); }} className="text-[13px] text-text-primary bg-transparent focus:outline-none" aria-label="To date" />
         </div>
-        <select value={categoryFilter} onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }} className={selectCls}>
+        <select value={categoryFilter} onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }} className={selectCls} aria-label="Filter by category">
           <option value="">All Categories</option>
           {categoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
-        <select value={actorFilter} onChange={(e) => { setActorFilter(e.target.value); setPage(1); }} className={selectCls}>
+        <select value={actorFilter} onChange={(e) => { setActorFilter(e.target.value); setPage(1); }} className={selectCls} aria-label="Filter by actor">
           <option value="">All Actors</option>
           {actorOptions.map((u) => <option key={u} value={u}>{u}</option>)}
         </select>
-        <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} className={selectCls}>
+        <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} className={selectCls} aria-label="Filter by status">
           <option value="">All Statuses</option>
           <option value="Success">Success</option>
           <option value="Failed">Failed</option>

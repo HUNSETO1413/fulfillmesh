@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -8,7 +8,7 @@ import {
   Box, Lock, CheckCircle2, AlertTriangle,
   Clock, Tag, TrendingUp, Copy, FileText, Printer, SlidersHorizontal, Pencil,
 } from "lucide-react";
-import type { InventoryItem } from "@/types";
+import type { InventoryItem, InventoryMovement } from "@/types";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { Modal } from "@/components/dashboard/Modal";
 import { Field, NumberInput, TextInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
@@ -61,10 +61,6 @@ const SUPPLIERS = ["Shenzhen Hydrate Co.", "Pacific Bottling Inc.", "Global Pack
 const CUSTOMERS = ["Acme Retail", "Beta Supplies", "Gamma Corp", "Delta LLC", "Epsilon Goods", "Zeta Distribution", "Eta Wholesalers", "Theta Trading"];
 const PO_STATUSES = ["In Transit", "Confirmed", "Confirmed", "Received"];
 const ALLOC_STATUSES = ["Picking", "Packed", "Allocated", "Allocated"];
-const ADJ_TYPES = ["Cycle Count", "Damage", "Return", "Cycle Count"];
-const ADJ_REASONS = ["Cycle count recount", "Damaged in transit", "Customer return restock", "System adjustment"];
-const ADJ_USERS = ["John Smith", "Maria Lopez", "John Smith", "Alex Kim"];
-const LOCATIONS = ["LA-A12-R04-B02", "DAL-B03-R01-B05", "CHI-C02-R07-B01", "ATL-D05-R03-B04", "NYC-E01-R06-B03"];
 
 function barcodeFor(id: string): string {
   let code = "";
@@ -87,7 +83,6 @@ function warehouseDataFor(item: InventoryItem) {
   const rng = mulberry32(item.id, "wh");
   const totalOnHand = item.onHand;
   const totalReserved = item.reserved;
-  const totalAvailable = item.available;
   // Distribute across 5 warehouses with random fractions
   const fracs = Array.from({ length: 5 }, () => rng());
   const sumF = fracs.reduce((a, b) => a + b, 0);
@@ -140,45 +135,62 @@ function outboundAllocFor(id: string) {
   });
 }
 
-function adjustmentsFor(id: string) {
-  const rng = mulberry32(id, "adj");
-  const base = new Date("2026-05-16");
-  return Array.from({ length: 4 }, (_, i) => {
-    const dayOffset = i * 3;
-    const date = new Date(base); date.setDate(date.getDate() - dayOffset);
-    const qty = Math.floor(rng() * 30) + 1;
-    const isPositive = rng() > 0.4;
-    const type = ADJ_TYPES[i];
-    const loc = LOCATIONS[Math.floor(rng() * LOCATIONS.length)];
-    return {
-      date: formatDate(date),
-      type,
-      qty: `${isPositive ? "+" : "-"}${qty}`,
-      location: loc,
-      reason: ADJ_REASONS[i],
-      by: ADJ_USERS[i],
-    };
-  });
-}
-
-/* ── Movement data per range (seeded by item id) ──────────────── */
+/* ── Movement data per range (derived from REAL movements) ─────── */
 
 const RANGE_OPTIONS = ["30 Days", "90 Days"] as const;
 type MovementRange = (typeof RANGE_OPTIONS)[number];
 
-function movementDataFor(id: string, range: MovementRange) {
-  const rng = mulberry32(id, "move-" + range);
+/** Parse a movement date to a timestamp; returns NaN when unparseable. */
+function movementTime(m: InventoryMovement): number {
+  return new Date(m.date).getTime();
+}
+
+/**
+ * Aggregate real movements into the bar/net-line chart series + totals for the
+ * selected range. Buckets the window into ~16 slices, summing inbound (positive
+ * quantity) and outbound (negative quantity) per bucket, with a cumulative
+ * net-change line. Returns empty:true when there is nothing to chart.
+ */
+function buildMovementChart(movements: InventoryMovement[], range: MovementRange) {
+  const days = range === "30 Days" ? 30 : 90;
+  const now = Date.now();
+  const windowStart = now - days * 86400000;
+  const inRange = movements.filter((m) => {
+    const t = movementTime(m);
+    return Number.isFinite(t) && t >= windowStart && t <= now;
+  });
+
   const buckets = 16;
-  const bars = Array.from({ length: buckets }, () => ({
-    inH: Math.floor(rng() * 40) + 15,
-    outH: Math.floor(rng() * 30) + 12,
+  const bucketMs = (days * 86400000) / buckets;
+  const inByBucket = new Array<number>(buckets).fill(0);
+  const outByBucket = new Array<number>(buckets).fill(0);
+  let totalIn = 0;
+  let totalOut = 0;
+
+  for (const m of inRange) {
+    const t = movementTime(m);
+    let idx = Math.floor((t - windowStart) / bucketMs);
+    if (idx < 0) idx = 0; else if (idx >= buckets) idx = buckets - 1;
+    if (m.quantity >= 0) { inByBucket[idx] += m.quantity; totalIn += m.quantity; }
+    else { outByBucket[idx] += -m.quantity; totalOut += -m.quantity; }
+  }
+
+  // Scale bar heights to a 0..55px band so the tallest bar fits the chart.
+  const maxBar = Math.max(1, ...inByBucket, ...outByBucket);
+  const bars = inByBucket.map((inUnits, i) => ({
+    inH: Math.round((inUnits / maxBar) * 55),
+    outH: Math.round((outByBucket[i] / maxBar) * 55),
   }));
-  const net = Array.from({ length: buckets }, () => Math.floor(rng() * 35) + 2);
-  const scaleFactor = range === "30 Days" ? 1 : 3;
-  const totalIn = Math.floor(rng() * 8000 + 6000) * scaleFactor;
-  const totalOut = Math.floor(rng() * 5000 + 4000) * scaleFactor;
+
+  // Cumulative net line (units) scaled into the chart band.
+  let running = 0;
+  const cumulative = inByBucket.map((inUnits, i) => (running += inUnits - outByBucket[i]));
+  const maxAbsNet = Math.max(1, ...cumulative.map((v) => Math.abs(v)));
+  const net = cumulative.map((v) => Math.round((v / maxAbsNet) * 30) + 35);
+
   const netChange = totalIn - totalOut;
   return {
+    empty: inRange.length === 0,
     bars,
     net,
     totalIn: `${formatNumber(totalIn)} units`,
@@ -187,18 +199,35 @@ function movementDataFor(id: string, range: MovementRange) {
   };
 }
 
-/* ── Forecast data derived from item ──────────────────────────── */
+/* ── Forecast derived from item + REAL movement run-rate ───────── */
 
-function forecastDataFor(item: InventoryItem) {
-  const rng = mulberry32(item.id, "forecast");
-  const currentStock = item.onHand;
+/**
+ * Forecast on-hand decline. Daily usage is the average daily OUTBOUND units
+ * over the last 30 days of real movements (honest run-rate); falls back to a
+ * conservative 3% of stock when there is no outbound history yet.
+ */
+function buildForecast(item: InventoryItem, movements: InventoryMovement[]) {
+  const currentStock = Math.max(0, item.onHand);
   const reorderPoint = item.reorderPoint;
-  // Model: stock declines over 30 days; we compute when it hits zero
-  const dailyUsage = Math.max(1, Math.round((currentStock * (0.03 + rng() * 0.04))));
-  const daysToStockout = Math.max(1, Math.floor(currentStock / dailyUsage));
-  const stockoutDate = new Date("2026-05-18");
+
+  const now = Date.now();
+  const windowStart = now - 30 * 86400000;
+  let outbound30 = 0;
+  for (const m of movements) {
+    const t = movementTime(m);
+    if (Number.isFinite(t) && t >= windowStart && t <= now && m.quantity < 0) outbound30 += -m.quantity;
+  }
+  const measuredDaily = outbound30 / 30;
+  const dailyUsage = Math.max(1, Math.round(measuredDaily > 0 ? measuredDaily : currentStock * 0.03));
+  const hasRunRate = outbound30 > 0;
+  const daysToStockout = Math.max(1, Math.floor((currentStock || 1) / dailyUsage));
+
+  const today = new Date();
+  const stockoutDate = new Date(today);
   stockoutDate.setDate(stockoutDate.getDate() + daysToStockout);
-  // Build forecast line (7 points over ~30 days)
+
+  // Build forecast line (7 points over ~30 days) — straight-line depletion.
+  const denom = Math.max(1, currentStock);
   const points: [number, number][] = [];
   const svgW = 365;
   const svgH = 100;
@@ -206,22 +235,20 @@ function forecastDataFor(item: InventoryItem) {
   const usableW = svgW - marginL - 10;
   for (let i = 0; i < 7; i++) {
     const day = Math.round(i * (30 / 6));
-    const stock = Math.max(0, currentStock - dailyUsage * day + Math.round(rng() * dailyUsage * 0.3 - dailyUsage * 0.15));
+    const stock = Math.max(0, currentStock - dailyUsage * day);
     const x = marginL + (i / 6) * usableW;
-    const y = 10 + (1 - stock / currentStock) * (svgH - 20);
+    const y = 10 + (1 - stock / denom) * (svgH - 20);
     points.push([x, Math.min(y, svgH - 5)]);
   }
-  // Reorder point y-position
-  const reorderY = 10 + (1 - reorderPoint / currentStock) * (svgH - 20);
-  // Date labels (5 dates across)
+  const reorderY = 10 + (1 - reorderPoint / denom) * (svgH - 20);
+
   const dateLabels: string[] = [];
-  const baseDate = new Date("2026-05-18");
   for (let i = 0; i < 5; i++) {
-    const d = new Date(baseDate);
+    const d = new Date(today);
     d.setDate(d.getDate() + Math.round(i * (30 / 4)));
     dateLabels.push(d.toLocaleDateString("en-US", { month: "short", day: "numeric" }));
   }
-  return { points, reorderY, currentStock, reorderPoint, daysToStockout, stockoutDate, dailyUsage, dateLabels, svgW, svgH, marginL };
+  return { points, reorderY, currentStock, reorderPoint, daysToStockout, stockoutDate, dailyUsage, hasRunRate, dateLabels, svgW, svgH, marginL };
 }
 
 /* ── Replenishment recommendation derived from item ───────────── */
@@ -290,6 +317,9 @@ function Badge({ text }: { text: string }) {
     "Cycle Count": "bg-[#3B82F6]/10 text-[#3B82F6]",
     Damage: "bg-[#EF4444]/10 text-[#EF4444]",
     Return: "bg-[#10B981]/10 text-[#10B981]",
+    Inbound: "bg-[#10B981]/10 text-[#10B981]",
+    Outbound: "bg-[#EF4444]/10 text-[#EF4444]",
+    Adjustment: "bg-[#3B82F6]/10 text-[#3B82F6]",
   };
   return <span className={`inline-flex px-2.5 py-0.5 text-[11px] font-medium rounded-full ${styles[text] || "bg-[#F1F5F9] text-[#64748B]"}`}>{text}</span>;
 }
@@ -298,6 +328,7 @@ const card = "bg-white rounded-xl border border-[#E2E8F0] shadow-[0_1px_3px_rgba
 const thCls = "text-left text-[11px] font-medium text-[#94A3B8] uppercase tracking-wider px-4 py-2.5";
 
 const tabAnchors: Record<string, string> = {
+  "Overview": "overview",
   "Stock & Movements": "stock-movement",
   "Purchase Orders": "inbound-pos",
   "Allocations": "outbound-alloc",
@@ -328,9 +359,48 @@ export default function InventoryDetailView({ item }: { item: InventoryItem }) {
   const byWarehouse = useMemo(() => warehouseDataFor(item), [item]);
   const inboundPOs = useMemo(() => inboundPOsFor(item.id), [item.id]);
   const outboundAlloc = useMemo(() => outboundAllocFor(item.id), [item.id]);
-  const baseAdjustments = useMemo(() => adjustmentsFor(item.id), [item.id]);
-  const forecast = useMemo(() => forecastDataFor(item), [item]);
   const replenishment = useMemo(() => replenishmentFor(item), [item]);
+
+  // Real stock-movement ledger for this SKU.
+  const [movements, setMovements] = useState<InventoryMovement[]>([]);
+  const [movementsLoading, setMovementsLoading] = useState(true);
+  const [movementsError, setMovementsError] = useState(false);
+
+  // Newest-first sort for the history table.
+  const sortMovements = (rows: InventoryMovement[]) =>
+    [...rows].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  // Fetch the real movement ledger for this SKU; reused by mount + after adjust.
+  const loadMovements = useCallback(async () => {
+    setMovementsLoading(true);
+    setMovementsError(false);
+    try {
+      const res = await api.get<{ data: InventoryMovement[] }>(`/api/inventory-movements?sku=${encodeURIComponent(item.sku)}`);
+      setMovements(sortMovements(res.data));
+    } catch {
+      setMovementsError(true);
+    } finally {
+      setMovementsLoading(false);
+    }
+  }, [item.sku]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      setMovementsError(false);
+      try {
+        const res = await api.get<{ data: InventoryMovement[] }>(`/api/inventory-movements?sku=${encodeURIComponent(item.sku)}`);
+        if (!cancelled) setMovements(sortMovements(res.data));
+      } catch {
+        if (!cancelled) setMovementsError(true);
+      } finally {
+        if (!cancelled) setMovementsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [item.sku]);
+
+  const forecast = useMemo(() => buildForecast(item, movements), [item, movements]);
 
   // Editable lead time & unit cost (seeded defaults)
   const [leadTime, setLeadTime] = useState(() => 5 + seededHash(item.id, 300, 20));
@@ -346,9 +416,9 @@ export default function InventoryDetailView({ item }: { item: InventoryItem }) {
   function selectTab(t: string) {
     setActiveTab(t);
     const anchor = tabAnchors[t];
-    if (anchor) {
-      const el = document.getElementById(anchor);
-      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    const el = anchor ? document.getElementById(anchor) : null;
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
     } else {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
@@ -358,7 +428,17 @@ export default function InventoryDetailView({ item }: { item: InventoryItem }) {
   const [rangeMenuOpen, setRangeMenuOpen] = useState(false);
   const [calendarMenuOpen, setCalendarMenuOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
-  const movement = useMemo(() => movementDataFor(item.id, movementRange), [item.id, movementRange]);
+  const movement = useMemo(() => buildMovementChart(movements, movementRange), [movements, movementRange]);
+
+  // Close the stock-movement range dropdown on Escape (outside-click handled by backdrop).
+  useEffect(() => {
+    if (!rangeMenuOpen) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setRangeMenuOpen(false);
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [rangeMenuOpen]);
 
   const [poRef, setPoRef] = useState<string | null>(null);
   async function createPurchaseOrder() {
@@ -375,7 +455,6 @@ export default function InventoryDetailView({ item }: { item: InventoryItem }) {
   }
 
   // Stock adjustments
-  const [adjustmentRows, setAdjustmentRows] = useState(baseAdjustments);
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [adjustDraft, setAdjustDraft] = useState({ type: "Stock In", qty: "1", reason: "" });
 
@@ -391,18 +470,21 @@ export default function InventoryDetailView({ item }: { item: InventoryItem }) {
     setBusy(true);
     try {
       await api.put(`/api/inventory/${item.id}`, { onHand: newOnHand, available: newAvailable });
-      const today = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-      setAdjustmentRows((prev) => [{
-        date: today,
-        type: "Cycle Count",
-        qty: `${isIn ? "+" : "-"}${qty}`,
-        location: item.location ?? item.warehouse,
+      // Record the adjustment in the real movement ledger (signed quantity).
+      await api.post("/api/inventory-movements", {
+        sku: item.sku,
+        name: item.name,
+        warehouse: item.warehouse,
+        type: "Adjustment",
+        quantity: delta,
         reason: adjustDraft.reason.trim(),
-        by: "You",
-      }, ...prev]);
+        reference: item.location ?? item.warehouse,
+        date: new Date().toISOString(),
+      });
       toast(`Stock adjusted ${isIn ? "+" : "-"}${qty} for ${item.sku}`);
       setAdjustOpen(false);
       setAdjustDraft({ type: "Stock In", qty: "1", reason: "" });
+      await loadMovements();
       router.refresh();
     } catch (e) {
       toast(e instanceof Error ? e.message : "Could not adjust stock", "error");
@@ -445,13 +527,22 @@ export default function InventoryDetailView({ item }: { item: InventoryItem }) {
   }
 
   function exportMovements() {
-    exportToCsv(`${item.sku}-movements`, adjustmentRows, [
+    if (movements.length === 0) { toast("No movements to export", "error"); return; }
+    const rows = movements.map((m) => ({
+      date: formatDate(new Date(m.date)),
+      type: m.type,
+      qty: `${m.quantity >= 0 ? "+" : ""}${m.quantity}`,
+      warehouse: m.warehouse ?? "—",
+      reason: m.reason ?? "—",
+      reference: m.reference ?? "—",
+    }));
+    exportToCsv(`${item.sku}-movements`, rows, [
       { key: "date", header: "Date" },
       { key: "type", header: "Type" },
       { key: "qty", header: "Qty" },
-      { key: "location", header: "Location" },
+      { key: "warehouse", header: "Warehouse" },
       { key: "reason", header: "Reason" },
-      { key: "by", header: "Adjusted By" },
+      { key: "reference", header: "Reference" },
     ]);
     toast("Movements exported");
   }
@@ -520,7 +611,7 @@ export default function InventoryDetailView({ item }: { item: InventoryItem }) {
       <InventoryDetailActions item={item} />
 
       {/* Hero card: Product info + Metrics */}
-      <div className={`${card} p-5`}>
+      <div id="overview" className={`${card} p-5 scroll-mt-4`}>
         <div className="flex gap-6">
           {/* Product image */}
           <div className="shrink-0 self-start">
@@ -644,11 +735,14 @@ export default function InventoryDetailView({ item }: { item: InventoryItem }) {
               <div className="relative">
                 <button onClick={() => setRangeMenuOpen((v) => !v)} className="text-[12px] text-[#64748B] border border-[#E2E8F0] rounded px-2 py-1 flex items-center gap-1 hover:bg-[#F8FAFC]">{movementRange} <ChevronDown className="w-3 h-3" /></button>
                 {rangeMenuOpen && (
+                  <>
+                    <button type="button" aria-label="Close range menu" className="fixed inset-0 z-10 cursor-default" onClick={() => setRangeMenuOpen(false)} />
                   <div className="absolute right-0 mt-1 z-20 w-28 bg-white border border-[#E2E8F0] rounded-lg shadow-[0_4px_12px_rgba(0,0,0,0.12)] py-1">
                     {RANGE_OPTIONS.map((opt) => (
                       <button key={opt} onClick={() => { setMovementRange(opt); setRangeMenuOpen(false); }} className={`block w-full text-left px-3 py-1.5 text-[12px] hover:bg-[#F8FAFC] ${opt === movementRange ? "text-[#3B82F6] font-medium" : "text-[#64748B]"}`}>{opt}</button>
                     ))}
                   </div>
+                  </>
                 )}
               </div>
             </div>
@@ -658,20 +752,29 @@ export default function InventoryDetailView({ item }: { item: InventoryItem }) {
             <span className="flex items-center gap-1 text-[#64748B]"><span className="w-2.5 h-2.5 rounded-sm bg-[#EF4444]" /> Out</span>
             <span className="flex items-center gap-1 text-[#64748B]"><span className="w-3 h-0.5 bg-[#10B981]" /> Net Change</span>
           </div>
-          <svg viewBox="0 0 420 150" className="w-full h-[150px]">
-            {[0, 1, 2, 3].map((i) => <line key={i} x1="30" y1={i * 35 + 10} x2="415" y2={i * 35 + 10} stroke="#F1F5F9" />)}
-            {movement.bars.map((b, i) => {
-              const x = 40 + i * 24;
-              return (
-                <g key={i}>
-                  <rect x={x} y={80 - b.inH} width="6" height={b.inH} fill="#3B82F6" />
-                  <rect x={x + 7} y={80} width="6" height={b.outH} fill="#EF4444" />
-                </g>
-              );
-            })}
-            <polyline fill="none" stroke="#10B981" strokeWidth="2"
-              points={movement.net.map((v, i) => `${43 + i * 24},${70 - v}`).join(" ")} />
-          </svg>
+          {movementsLoading ? (
+            <div className="h-[150px] flex items-center justify-center text-[12px] text-[#94A3B8]">Loading movements…</div>
+          ) : movement.empty ? (
+            <div className="h-[150px] flex flex-col items-center justify-center text-center">
+              <p className="text-[12px] text-[#94A3B8]">No stock movements in the last {movementRange.toLowerCase()}.</p>
+              <button onClick={() => setAdjustOpen(true)} className="mt-2 text-[12px] font-medium text-[#3B82F6] hover:underline">Record an adjustment</button>
+            </div>
+          ) : (
+            <svg viewBox="0 0 420 150" className="w-full h-[150px]">
+              {[0, 1, 2, 3].map((i) => <line key={i} x1="30" y1={i * 35 + 10} x2="415" y2={i * 35 + 10} stroke="#F1F5F9" />)}
+              {movement.bars.map((b, i) => {
+                const x = 40 + i * 24;
+                return (
+                  <g key={i}>
+                    <rect x={x} y={80 - b.inH} width="6" height={b.inH} fill="#3B82F6" />
+                    <rect x={x + 7} y={80} width="6" height={b.outH} fill="#EF4444" />
+                  </g>
+                );
+              })}
+              <polyline fill="none" stroke="#10B981" strokeWidth="2"
+                points={movement.net.map((v, i) => `${43 + i * 24},${70 - v}`).join(" ")} />
+            </svg>
+          )}
           <div className="grid grid-cols-3 gap-2 mt-2 text-center">
             <div><p className="text-[11px] text-[#94A3B8]">Total In</p><p className="text-[13px] font-semibold text-[#3B82F6]">{movement.totalIn}</p></div>
             <div><p className="text-[11px] text-[#94A3B8]">Total Out</p><p className="text-[13px] font-semibold text-[#EF4444]">{movement.totalOut}</p></div>
@@ -779,6 +882,11 @@ export default function InventoryDetailView({ item }: { item: InventoryItem }) {
             <p className="text-[18px] font-bold text-[#1E293B]">{formatNumber(forecast.currentStock)} <span className="text-[11px] font-normal text-[#94A3B8]">units now</span></p>
             <p className="text-[12px] text-[#EF4444] font-medium">Stockout: {formatDate(forecast.stockoutDate)}</p>
           </div>
+          <p className="text-[11px] text-[#94A3B8] mb-1">
+            {forecast.hasRunRate
+              ? `Based on ~${formatNumber(forecast.dailyUsage)} units/day outbound (last 30d)`
+              : `No recent outbound history — using a conservative ${formatNumber(forecast.dailyUsage)} units/day estimate`}
+          </p>
           <svg viewBox={`0 0 ${forecast.svgW} ${forecast.svgH + 28}`} className="w-full" style={{ height: "130px" }}>
             {[0, 1, 2, 3].map((i) => <line key={i} x1={forecast.marginL} y1={i * 25 + 10} x2={forecast.svgW - 10} y2={i * 25 + 10} stroke="#F1F5F9" />)}
             <line x1={forecast.marginL} y1={forecast.reorderY} x2={forecast.svgW - 10} y2={forecast.reorderY} stroke="#EF4444" strokeWidth="1.5" strokeDasharray="4 3" />
@@ -790,28 +898,36 @@ export default function InventoryDetailView({ item }: { item: InventoryItem }) {
         </div>
       </div>
 
-      {/* Recent Adjustments */}
+      {/* Stock Movement History (real ledger) */}
       <div id="recent-adjustments" className={`${card} scroll-mt-4`}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#E2E8F0]">
-          <h3 className="text-[14px] font-semibold text-[#1E293B]">Recent Adjustments</h3>
+          <h3 className="text-[14px] font-semibold text-[#1E293B]">Stock Movement History</h3>
           <Link href="/dashboard/audit-logs" className="text-[12px] font-medium text-[#3B82F6] hover:underline">View all adjustments</Link>
         </div>
         <table className="w-full">
           <thead><tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
             <th className={thCls}>Date</th><th className={thCls}>Type</th><th className={thCls}>Qty</th>
-            <th className={thCls}>Location</th><th className={thCls}>Reason</th><th className={thCls}>Adjusted By</th>
+            <th className={thCls}>Warehouse</th><th className={thCls}>Reason</th><th className={thCls}>Reference</th>
           </tr></thead>
           <tbody>
-            {adjustmentRows.map((a, i) => (
-              <tr key={i} className="border-b border-[#E2E8F0] last:border-b-0">
-                <td className="px-4 py-3 text-[12px] text-[#64748B]">{a.date}</td>
-                <td className="px-4 py-3"><Badge text={a.type} /></td>
-                <td className={`px-4 py-3 text-[12px] font-medium ${a.qty.startsWith("+") ? "text-[#10B981]" : "text-[#EF4444]"}`}>{a.qty}</td>
-                <td className="px-4 py-3 text-[12px] text-[#64748B] font-mono">{a.location}</td>
-                <td className="px-4 py-3 text-[12px] text-[#64748B]">{a.reason}</td>
-                <td className="px-4 py-3 text-[12px] text-[#1E293B]">{a.by}</td>
-              </tr>
-            ))}
+            {movementsLoading ? (
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-[12px] text-[#94A3B8]">Loading movements…</td></tr>
+            ) : movementsError ? (
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-[12px] text-[#94A3B8]">Could not load stock movements.</td></tr>
+            ) : movements.length === 0 ? (
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-[12px] text-[#94A3B8]">No stock movements recorded yet for this SKU.</td></tr>
+            ) : (
+              movements.map((m) => (
+                <tr key={m.id} className="border-b border-[#E2E8F0] last:border-b-0">
+                  <td className="px-4 py-3 text-[12px] text-[#64748B]">{formatDate(new Date(m.date))}</td>
+                  <td className="px-4 py-3"><Badge text={m.type} /></td>
+                  <td className={`px-4 py-3 text-[12px] font-medium ${m.quantity >= 0 ? "text-[#10B981]" : "text-[#EF4444]"}`}>{m.quantity >= 0 ? "+" : ""}{formatNumber(m.quantity)}</td>
+                  <td className="px-4 py-3 text-[12px] text-[#64748B]">{m.warehouse ?? "—"}</td>
+                  <td className="px-4 py-3 text-[12px] text-[#64748B]">{m.reason ?? "—"}</td>
+                  <td className="px-4 py-3 text-[12px] text-[#64748B] font-mono">{m.reference ?? "—"}</td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>

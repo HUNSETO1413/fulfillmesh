@@ -8,10 +8,19 @@ import { Drawer, DrawerRow, DrawerSection } from "@/components/dashboard/Drawer"
 import { Field, TextInput, Select as FormSelect, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
 import { api, exportToCsv } from "@/lib/client";
-import type { OperationalReport } from "@/lib/analytics";
+import type { OperationalReport, OrderPerformanceReport } from "@/lib/analytics";
 
 const WH_COLORS = ["#3B82F6", "#10B981", "#F59E0B", "#8B5CF6", "#94A3B8", "#EF4444", "#06B6A4"];
+const CHANNEL_PALETTE = ["#3B82F6", "#10B981", "#F59E0B", "#8B5CF6", "#94A3B8", "#EF4444", "#06B6A4"];
 const fmtInt = (n: number) => n.toLocaleString("en-US");
+const fmtMoney = (n: number) => `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function monthLabel(bucket: string): string {
+  const [, m] = bucket.split("-");
+  const idx = Number(m) - 1;
+  return MONTH_NAMES[idx] ?? bucket;
+}
 
 const reportCats = [
   { name: "Order Performance", icon: BarChart3 },
@@ -24,19 +33,8 @@ const reportCats = [
   { name: "Custom Reports", icon: FileText },
 ];
 
-const FILTER_OPTIONS: Record<string, string[]> = {
-  Warehouse: ["All Warehouses", "ATL-1 · Atlanta", "DFW-1 · Dallas", "LAX-1 · Los Angeles", "MIA-1 · Miami", "ORD-1 · Chicago"],
-  Channel: ["All Channels", "Shopify", "Amazon", "Walmart", "eBay", "Other"],
-  "Order Type": ["All Order Types", "Standard", "Express", "Backorder", "Pre-order"],
-};
-
-const CHANNEL_NAMES = [
-  { name: "Shopify", color: "#3B82F6" },
-  { name: "Amazon", color: "#10B981" },
-  { name: "Walmart", color: "#F59E0B" },
-  { name: "eBay", color: "#8B5CF6" },
-  { name: "Other", color: "#94A3B8" },
-];
+const ALL_WAREHOUSES = "All Warehouses";
+const ALL_CHANNELS = "All Channels";
 
 /* ---- deterministic datasets per category + granularity ---- */
 
@@ -81,37 +79,15 @@ function seededSeries(key: string, n: number, min: number, max: number): number[
   });
 }
 
-type ChannelRow = { name: string; color: string; orders: string; shipped: string; delivered: string; onTime: string; cycle: string };
-
-const ORDER_PERFORMANCE_ROWS: ChannelRow[] = [
-  { name: "Shopify", orders: "5,678", shipped: "5,352", delivered: "5,102", onTime: "94.1%", cycle: "1.64 days", color: "#3B82F6" },
-  { name: "Amazon", orders: "3,245", shipped: "3,062", delivered: "2,896", onTime: "92.8%", cycle: "1.88 days", color: "#10B981" },
-  { name: "Walmart", orders: "1,876", shipped: "1,761", delivered: "1,672", onTime: "91.7%", cycle: "1.94 days", color: "#F59E0B" },
-  { name: "eBay", orders: "987", shipped: "911", delivered: "856", onTime: "89.6%", cycle: "2.04 days", color: "#8B5CF6" },
-  { name: "Other", orders: "670", shipped: "601", delivered: "546", onTime: "90.1%", cycle: "2.12 days", color: "#94A3B8" },
-];
-
-// Deterministic channel breakdown for every report category.
-function rowsForCategory(cat: string): ChannelRow[] {
-  if (cat === "Order Performance") return ORDER_PERFORMANCE_ROWS;
-  return CHANNEL_NAMES.map((ch) => {
-    const [a, b, c, d, e] = seededSeries(`op-table-${cat}-${ch.name}`, 5, 0, 999);
-    const orders = 620 + a * 5;
-    const shipped = Math.round(orders * (0.9 + (b / 999) * 0.08));
-    const delivered = Math.round(shipped * (0.92 + (c / 999) * 0.06));
-    const onTime = (88 + (d / 999) * 8).toFixed(1);
-    const cycle = (1.5 + (e / 999) * 0.7).toFixed(2);
-    return {
-      name: ch.name,
-      color: ch.color,
-      orders: orders.toLocaleString("en-US"),
-      shipped: shipped.toLocaleString("en-US"),
-      delivered: delivered.toLocaleString("en-US"),
-      onTime: `${onTime}%`,
-      cycle: `${cycle} days`,
-    };
-  });
-}
+// A real, channel-level row built from the live order-performance report.
+type ChannelRow = {
+  name: string;
+  color: string;
+  orders: string;
+  pct: string;
+  revenue: string;
+  aov: string;
+};
 
 function slugify(s: string): string {
   return s.toLowerCase().replace(/\s+/g, "-");
@@ -152,13 +128,13 @@ function FilterPill({ value, options, onSelect }: { value: string; options: stri
 export default function OperationalReportsPage() {
   const { toast } = useToast();
   const [report, setReport] = useState<OperationalReport | null>(null);
+  const [orderPerf, setOrderPerf] = useState<OrderPerformanceReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState("May 1 – May 31, 2025");
   const [activeCat, setActiveCat] = useState("Order Performance");
   const [gran, setGran] = useState<Gran>("Daily");
-  const [whFilter, setWhFilter] = useState("All Warehouses");
-  const [chFilter, setChFilter] = useState("All Channels");
-  const [otFilter, setOtFilter] = useState("All Order Types");
+  const [whFilter, setWhFilter] = useState(ALL_WAREHOUSES);
+  const [chFilter, setChFilter] = useState(ALL_CHANNELS);
 
   // insights drawer
   const [insightsOpen, setInsightsOpen] = useState(false);
@@ -172,8 +148,16 @@ export default function OperationalReportsPage() {
     let cancelled = false;
     (async () => {
       try {
-        const data = await api.get<OperationalReport>("/api/analytics/operational");
-        if (!cancelled) setReport(data);
+        // Operational KPIs + the channel/destination/trend breakdown together
+        // give every widget on this page a real backing dataset.
+        const [op, perf] = await Promise.all([
+          api.get<OperationalReport>("/api/analytics/operational"),
+          api.get<OrderPerformanceReport>("/api/analytics/order-performance"),
+        ]);
+        if (!cancelled) {
+          setReport(op);
+          setOrderPerf(perf);
+        }
       } catch {
         if (!cancelled) toast("Failed to load operational report", "error");
       } finally {
@@ -212,19 +196,50 @@ export default function OperationalReportsPage() {
     [report],
   );
 
-  // Warehouse performance summary table.
-  const whSummary = useMemo(
-    () =>
-      (report?.warehouses ?? []).map((w) => ({
-        name: w.warehouse,
-        orders: fmtInt(w.orders),
-        shipped: fmtInt(w.shipped),
-        onTime: `${w.onTimePct}%`,
-        cycle: `${w.tasks} tasks`,
-        perDay: fmtInt(w.units),
-      })),
+  // Real warehouse filter options, derived from the warehouses present in data.
+  const warehouseOptions = useMemo(
+    () => [ALL_WAREHOUSES, ...(report?.warehouses ?? []).map((w) => w.warehouse)],
     [report],
   );
+
+  // Real channel filter options, derived from the channels present in data.
+  const channelOptions = useMemo(
+    () => [ALL_CHANNELS, ...(orderPerf?.byChannel ?? []).map((c) => c.name)],
+    [orderPerf],
+  );
+
+  // Warehouse performance summary table, filtered by the selected warehouse.
+  const whSummary = useMemo(
+    () =>
+      (report?.warehouses ?? [])
+        .filter((w) => whFilter === ALL_WAREHOUSES || w.warehouse === whFilter)
+        .map((w) => ({
+          name: w.warehouse,
+          orders: fmtInt(w.orders),
+          shipped: fmtInt(w.shipped),
+          onTime: `${w.onTimePct}%`,
+          cycle: `${w.tasks} tasks`,
+          perDay: fmtInt(w.units),
+        })),
+    [report, whFilter],
+  );
+
+  // Real per-channel order breakdown from the live order-performance report,
+  // filtered by the selected channel. Only orders/revenue are genuinely known
+  // per channel, so the table surfaces exactly those (plus derived shares/AOV).
+  const channelRows = useMemo<ChannelRow[]>(() => {
+    const channels = orderPerf?.byChannel ?? [];
+    return channels
+      .filter((c) => chFilter === ALL_CHANNELS || c.name === chFilter)
+      .map((c, i) => ({
+        name: c.name,
+        color: CHANNEL_PALETTE[i % CHANNEL_PALETTE.length],
+        orders: fmtInt(c.orders),
+        pct: `${c.pct}%`,
+        revenue: fmtMoney(c.revenue),
+        aov: fmtMoney(c.orders > 0 ? c.revenue / c.orders : 0),
+      }));
+  }, [orderPerf, chFilter]);
 
   // Full set of insights derived from the already-loaded operational report.
   const fullInsights = useMemo(() => {
@@ -257,22 +272,29 @@ export default function OperationalReportsPage() {
     }));
   }, [activeCat, gran]);
 
-  const tableRows = useMemo(() => rowsForCategory(activeCat), [activeCat]);
-
   const nPts = GRAN_POINTS[gran];
   const x = (i: number) => padL + (i * (W - padL - 10)) / Math.max(1, nPts - 1);
   const y = (v: number) => padT + (1 - v / yMax) * (H - padT - padB);
 
+  // Real monthly order-volume trend, used for the trend sparkline below.
+  const trend = useMemo(() => {
+    const points = (orderPerf?.revenueByMonth ?? []).map((p) => ({
+      label: monthLabel(p.month),
+      value: p.orders,
+    }));
+    const max = points.reduce((m, p) => Math.max(m, p.value), 0);
+    return { points, max };
+  }, [orderPerf]);
+
   function exportCurrent() {
-    exportToCsv(`${slugify(activeCat)}-by-channel`, tableRows, [
+    exportToCsv("orders-by-channel", channelRows, [
       { key: "name", header: "Channel" },
       { key: "orders", header: "Orders" },
-      { key: "shipped", header: "Shipped" },
-      { key: "delivered", header: "Delivered" },
-      { key: "onTime", header: "On-Time Delivery" },
-      { key: "cycle", header: "Avg Cycle Time" },
+      { key: "pct", header: "% of Total" },
+      { key: "revenue", header: "Revenue" },
+      { key: "aov", header: "Avg Order Value" },
     ]);
-    toast(`Exported ${activeCat} (${tableRows.length} channels) to CSV`);
+    toast(`Exported orders by channel (${channelRows.length} channels) to CSV`);
   }
 
   function exportSeries() {
@@ -385,11 +407,11 @@ export default function OperationalReportsPage() {
         })}
       </div>
 
-      {/* Filter bar */}
+      {/* Filter bar — real dimensions only (channel filters the channel table,
+          warehouse filters the warehouse summary). */}
       <div className="flex items-center gap-2 flex-wrap">
-        <FilterPill value={whFilter} options={FILTER_OPTIONS.Warehouse} onSelect={(v) => { setWhFilter(v); toast(`Warehouse: ${v}`, "info"); }} />
-        <FilterPill value={chFilter} options={FILTER_OPTIONS.Channel} onSelect={(v) => { setChFilter(v); toast(`Channel: ${v}`, "info"); }} />
-        <FilterPill value={otFilter} options={FILTER_OPTIONS["Order Type"]} onSelect={(v) => { setOtFilter(v); toast(`Order type: ${v}`, "info"); }} />
+        <FilterPill value={whFilter} options={warehouseOptions} onSelect={(v) => { setWhFilter(v); toast(`Warehouse: ${v}`, "info"); }} />
+        <FilterPill value={chFilter} options={channelOptions} onSelect={(v) => { setChFilter(v); toast(`Channel: ${v}`, "info"); }} />
       </div>
 
       {/* Volume chart + Report Categories */}
@@ -446,25 +468,27 @@ export default function OperationalReportsPage() {
       {/* Channel table + Top Warehouses donut */}
       <div className="grid gap-4" style={{ gridTemplateColumns: "1.9fr 1fr" }}>
         <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-[0_1px_3px_0_rgba(0,0,0,0.1),0_1px_2px_0_rgba(0,0,0,0.06)]">
-          <div className="px-5 py-4 border-b border-[#E2E8F0]"><h3 className="text-[16px] font-semibold text-[#1E293B]">{activeCat} by Channel</h3></div>
+          <div className="px-5 py-4 border-b border-[#E2E8F0]"><h3 className="text-[16px] font-semibold text-[#1E293B]">Orders by Channel</h3></div>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
-                  {["Channel", "Orders", "Shipped", "Delivered", "On-Time Delivery", "Avg. Cycle Time"].map((h, i) => (
+                  {["Channel", "Orders", "% of Total", "Revenue", "Avg. Order Value"].map((h, i) => (
                     <th key={h} className={`text-[12px] font-semibold text-[#475569] px-5 py-3 uppercase tracking-wide ${i === 0 ? "text-left" : "text-right"}`}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {tableRows.map((c) => (
+                {channelRows.length === 0 && !loading && (
+                  <tr><td colSpan={5} className="px-5 py-6 text-center text-[13px] text-[#94A3B8]">No channel orders yet</td></tr>
+                )}
+                {channelRows.map((c) => (
                   <tr key={c.name} className="border-b border-[#E2E8F0] last:border-b-0 hover:bg-[#F8FAFC] transition-colors">
                     <td className="px-5 py-3.5"><div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: c.color }} /><span className="text-[13px] font-medium text-[#1E293B]">{c.name}</span></div></td>
                     <td className="px-5 py-3.5 text-[13px] text-[#1E293B] text-right">{c.orders}</td>
-                    <td className="px-5 py-3.5 text-[13px] text-[#64748B] text-right">{c.shipped}</td>
-                    <td className="px-5 py-3.5 text-[13px] text-[#64748B] text-right">{c.delivered}</td>
-                    <td className="px-5 py-3.5 text-[13px] font-semibold text-[#065F46] text-right">{c.onTime}</td>
-                    <td className="px-5 py-3.5 text-[13px] text-[#64748B] text-right">{c.cycle}</td>
+                    <td className="px-5 py-3.5 text-[13px] text-[#64748B] text-right">{c.pct}</td>
+                    <td className="px-5 py-3.5 text-[13px] font-semibold text-[#065F46] text-right">{c.revenue}</td>
+                    <td className="px-5 py-3.5 text-[13px] text-[#64748B] text-right">{c.aov}</td>
                   </tr>
                 ))}
               </tbody>
@@ -544,28 +568,33 @@ export default function OperationalReportsPage() {
         <div className="space-y-4">
           <div className="bg-white rounded-xl border border-[#E2E8F0] p-5 shadow-[0_1px_3px_0_rgba(0,0,0,0.1),0_1px_2px_0_rgba(0,0,0,0.06)]">
             <div className="flex items-center justify-between mb-1">
-              <h3 className="text-[15px] font-semibold text-[#1E293B]">On-Time Delivery Trend</h3>
-              <span className="text-[13px] font-bold text-[#1E293B]">93.2% <span className="text-[11px] font-medium text-[#10B981]">+4.6 pp</span></span>
+              <h3 className="text-[15px] font-semibold text-[#1E293B]">Order Volume Trend</h3>
+              <span className="text-[13px] font-bold text-[#1E293B]">{fmtInt(report?.totalOrders ?? 0)} <span className="text-[11px] font-medium text-[#10B981]">orders</span></span>
             </div>
-            <p className="text-[11px] text-[#94A3B8] mb-3">vs Apr 1 – Apr 30</p>
+            <p className="text-[11px] text-[#94A3B8] mb-3">Monthly orders · {report?.onTimeDeliveryPct ?? 0}% on-time delivery</p>
             <svg viewBox="0 0 360 150" className="w-full" style={{ height: 150 }}>
               {[0, 1, 2, 3, 4].map((i) => (<line key={i} x1="30" y1={8 + i * 28} x2="352" y2={8 + i * 28} stroke="#F1F5F9" strokeWidth="1" />))}
-              {["100%", "75%", "50%", "25%", "0"].map((l, i) => (<text key={i} x="26" y={11 + i * 28} textAnchor="end" fontSize="8" fill="#94A3B8">{l}</text>))}
-              <polyline fill="none" stroke="#3B82F6" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" points={[78, 74, 76, 70, 72, 64, 60, 56, 50, 44].map((v, i) => `${30 + i * 35.7},${8 + (v / 100) * 112}`).join(" ")} />
-              {[78, 74, 76, 70, 72, 64, 60, 56, 50, 44].map((v, i) => <circle key={i} cx={30 + i * 35.7} cy={8 + (v / 100) * 112} r="2.5" fill="white" stroke="#3B82F6" strokeWidth="1.5" />)}
-              {["May 1", "May 11", "May 21", "May 31"].map((l, i) => (<text key={i} x={30 + i * 107} y="146" textAnchor="middle" fontSize="8" fill="#94A3B8">{l}</text>))}
+              {Array.from({ length: 5 }, (_, i) => fmtInt(Math.round((trend.max * (4 - i)) / 4))).map((l, i) => (<text key={i} x="26" y={11 + i * 28} textAnchor="end" fontSize="8" fill="#94A3B8">{l}</text>))}
+              {trend.points.length > 0 && (() => {
+                const tx = (i: number) => 30 + (i * 322) / Math.max(1, trend.points.length - 1);
+                const ty = (v: number) => 8 + (1 - v / Math.max(1, trend.max)) * 112;
+                return (
+                  <>
+                    <polyline fill="none" stroke="#3B82F6" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" points={trend.points.map((p, i) => `${tx(i)},${ty(p.value)}`).join(" ")} />
+                    {trend.points.map((p, i) => <circle key={i} cx={tx(i)} cy={ty(p.value)} r="2.5" fill="white" stroke="#3B82F6" strokeWidth="1.5" />)}
+                    {trend.points.map((p, i) => (i % Math.ceil(trend.points.length / 4) === 0 || i === trend.points.length - 1) ? <text key={`l${i}`} x={tx(i)} y="146" textAnchor="middle" fontSize="8" fill="#94A3B8">{p.label}</text> : null)}
+                  </>
+                );
+              })()}
             </svg>
+            {trend.points.length === 0 && !loading && <p className="text-[12px] text-[#94A3B8] text-center -mt-12 mb-8">No order history yet</p>}
           </div>
 
           <div className="bg-white rounded-xl border border-[#E2E8F0] p-5 shadow-[0_1px_3px_0_rgba(0,0,0,0.1),0_1px_2px_0_rgba(0,0,0,0.06)]">
             <h3 className="text-[15px] font-semibold text-[#1E293B] mb-4">Report Insights</h3>
             <div className="space-y-3">
-              {[
-                { dot: "#3B82F6", text: "Order volume increased by 10.8% compared to the previous 30 days." },
-                { dot: "#10B981", text: "On-time delivery improved by 4.6 pp after route optimization." },
-                { dot: "#F59E0B", text: "Fulfillment cost per order decreased by 4.2% with batch processing." },
-              ].map((ins, i) => (
-                <div key={i} className="flex gap-3"><span className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ backgroundColor: ins.dot }} /><p className="text-[13px] text-[#475569] leading-relaxed">{ins.text}</p></div>
+              {fullInsights.slice(0, 3).map((ins, i) => (
+                <div key={i} className="flex gap-3"><span className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ backgroundColor: ins.dot }} /><p className="text-[13px] text-[#475569] leading-relaxed"><span className="font-medium text-[#1E293B]">{ins.title}.</span> {ins.text}</p></div>
               ))}
             </div>
             <button onClick={() => setInsightsOpen(true)} className="inline-block mt-4 text-[13px] font-medium text-action-blue hover:underline">View all insights →</button>

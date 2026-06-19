@@ -1,20 +1,39 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
 import {
   ArrowLeft, Check, ExternalLink, ArrowRight,
   Search, Wrench, Warehouse, Truck, DollarSign, FileText,
-  Edit2, Download, Package,
+  Edit2, Download, Package, ImageOff, Upload, Trash2, Loader2, File as FileIcon,
 } from "lucide-react";
-import type { ReturnRecord } from "@/types";
+import type { ReturnRecord, Attachment } from "@/types";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { Modal } from "@/components/dashboard/Modal";
-import { Field as FormField, TextArea, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
+import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
+import { Field as FormField, TextArea, NumberInput, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
-import { exportToCsv } from "@/lib/client";
+import { api, exportToCsv } from "@/lib/client";
 import { formatCurrency, formatDate } from "@/lib/format";
 import ReturnDetailActions from "./ReturnDetailActions";
+
+const MAX_UPLOAD_BYTES = 3_000_000; // mirror the server's 3MB cap
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** Read a File into a base64 data URL. */
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"));
+    reader.readAsDataURL(file);
+  });
+}
 
 /** Simple deterministic hash from a string to a positive integer. */
 function hashStr(s: string): number {
@@ -23,18 +42,10 @@ function hashStr(s: string): number {
   return Math.abs(h);
 }
 
-const PHOTO_GRADIENTS = [
-  "from-[#DBEAFE] to-[#E0E7FF]",
-  "from-[#D1FAE5] to-[#CFFAFE]",
-  "from-[#FEF3C7] to-[#FFEDD5]",
-  "from-[#EDE9FE] to-[#FCE7F3]",
-  "from-[#FEE2E2] to-[#FEF3C7]",
-];
-
-/** Neutral placeholder used wherever a returned-item photo would appear. */
-function BottleThumb({ className = "", gradient }: { className?: string; gradient?: string }) {
+/** Neutral placeholder used wherever a returned-item product image would appear. */
+function BottleThumb({ className = "" }: { className?: string }) {
   return (
-    <div className={`relative overflow-hidden ${gradient ? `bg-gradient-to-br ${gradient}` : "bg-[#F7FAFC]"} border border-[#E6EDF5] flex items-center justify-center ${className}`}>
+    <div className={`relative overflow-hidden bg-[#F7FAFC] border border-[#E6EDF5] flex items-center justify-center ${className}`}>
       <Package className="w-1/3 h-1/3 text-[#9AA8B8]" />
     </div>
   );
@@ -114,20 +125,67 @@ export default function ReturnDetailView({ ret }: { ret: ReturnRecord }) {
   const refund = ret.refundAmount ?? 0;
   const email = `${ret.customer.toLowerCase().replace(/[^a-z]/g, "")}@example.com`;
 
-  // Derive deterministic values from the return ID
+  // Hash retained only for the qualitative customer comment below.
   const h = useMemo(() => hashStr(ret.id), [ret.id]);
-  const shippingCost = parseFloat(((h % 800) / 100 + 3).toFixed(2)); // $3.00–$10.99
-  const recoveryValue = parseFloat(((h % 500) / 100).toFixed(2));   // $0.00–$4.99
-  const restockingFee = parseFloat((((h >> 4) % 300) / 100).toFixed(2)); // $0.00–$2.99
+
+  // Real, persisted cost breakdown (defaults to 0 when not yet recorded).
+  const [costs, setCosts] = useState({
+    shippingCost: ret.shippingCost ?? 0,
+    restockingFee: ret.restockingFee ?? 0,
+    recoveryValue: ret.recoveryValue ?? 0,
+  });
+  const { shippingCost, restockingFee, recoveryValue } = costs;
+  const netCost = refund + shippingCost + restockingFee - recoveryValue;
 
   const progress = useMemo(() => buildProgress(ret), [ret]);
   const timelineEntries = useMemo(() => buildTimeline(ret), [ret]);
 
-  const [showAllPhotos, setShowAllPhotos] = useState(false);
   const [showFullTimeline, setShowFullTimeline] = useState(false);
 
-  const allPhotos = useMemo(() => [0, 1, 2, 3, 4], []);
-  const visiblePhotos = showAllPhotos ? allPhotos : allPhotos.slice(0, 3);
+  // Edit-costs modal state
+  const [costsOpen, setCostsOpen] = useState(false);
+  const [costsSaving, setCostsSaving] = useState(false);
+  const [costDraft, setCostDraft] = useState({ shippingCost: "", restockingFee: "", recoveryValue: "" });
+
+  function openEditCosts() {
+    setCostDraft({
+      shippingCost: String(shippingCost),
+      restockingFee: String(restockingFee),
+      recoveryValue: String(recoveryValue),
+    });
+    setCostsOpen(true);
+  }
+
+  async function saveCosts() {
+    const parsed = {
+      shippingCost: Number(costDraft.shippingCost),
+      restockingFee: Number(costDraft.restockingFee),
+      recoveryValue: Number(costDraft.recoveryValue),
+    };
+    const values = Object.values(parsed);
+    if (values.some((v) => !Number.isFinite(v) || v < 0)) {
+      toast("Enter non-negative numbers for all cost fields", "error");
+      return;
+    }
+    const prev = costs;
+    setCosts(parsed); // optimistic
+    setCostsSaving(true);
+    try {
+      const updated = await api.put<ReturnRecord>(`/api/returns/${ret.id}`, parsed);
+      setCosts({
+        shippingCost: updated.shippingCost ?? parsed.shippingCost,
+        restockingFee: updated.restockingFee ?? parsed.restockingFee,
+        recoveryValue: updated.recoveryValue ?? parsed.recoveryValue,
+      });
+      setCostsOpen(false);
+      toast("Cost breakdown updated");
+    } catch {
+      setCosts(prev); // roll back
+      toast("Failed to save costs", "error");
+    } finally {
+      setCostsSaving(false);
+    }
+  }
 
   // Deterministic customer description from return ID
   const customerDescription = useMemo(() => {
@@ -193,6 +251,75 @@ export default function ReturnDetailView({ ret }: { ret: ReturnRecord }) {
       { field: "Estimated Delivery", value: "May 21, 2025" },
     ], [{ key: "field", header: "Field" }, { key: "value", header: "Value" }]);
     toast(`Return label for ${ret.id} downloaded`);
+  }
+
+  // ---- Attachments (real photo/file feature) ----
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [attachmentsLoading, setAttachmentsLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<Attachment | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get<{ data: Attachment[] }>(`/api/attachments?entityType=return&entityId=${encodeURIComponent(ret.id)}`);
+        if (!cancelled) setAttachments(res.data);
+      } catch {
+        if (!cancelled) toast("Failed to load attachments", "error");
+      } finally {
+        if (!cancelled) setAttachmentsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [ret.id, toast]);
+
+  async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file
+    if (!file) return;
+    if (file.size > MAX_UPLOAD_BYTES) {
+      toast("File is too large (max 3MB)", "error");
+      return;
+    }
+    setUploading(true);
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      const created = await api.post<Attachment>("/api/attachments", {
+        entityType: "return",
+        entityId: ret.id,
+        name: file.name,
+        mime: file.type || "application/octet-stream",
+        dataUrl,
+        size: file.size,
+      });
+      setAttachments((prev) => [...prev, created]);
+      toast("File uploaded");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Failed to upload file", "error");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function confirmDeleteAttachment() {
+    if (!pendingDelete) return;
+    const target = pendingDelete;
+    const prev = attachments;
+    setDeleting(true);
+    setAttachments((list) => list.filter((a) => a.id !== target.id)); // optimistic
+    try {
+      await api.del(`/api/attachments/${target.id}`);
+      toast("Attachment deleted");
+      setPendingDelete(null);
+    } catch (err) {
+      setAttachments(prev); // roll back
+      toast(err instanceof Error ? err.message : "Failed to delete attachment", "error");
+    } finally {
+      setDeleting(false);
+    }
   }
 
   return (
@@ -312,18 +439,68 @@ export default function ReturnDetailView({ ret }: { ret: ReturnRecord }) {
           </div>
         </div>
 
-        {/* Submitted Photos */}
+        {/* Submitted Photos & Files */}
         <div className="bg-white rounded-xl border border-[#E6EDF5] shadow-[0_1px_3px_rgba(0,0,0,0.1)] overflow-hidden">
           <div className="flex items-center justify-between px-5 py-3 bg-[#F7FAFC] border-b border-[#E6EDF5]">
-            <h3 className="text-[15px] font-semibold text-[#061A3D]">Submitted Photos <span className="text-[11px] font-normal text-[#9AA8B8]">({visiblePhotos.length})</span></h3>
-            <button onClick={() => setShowAllPhotos((v) => !v)} className="text-[12px] font-medium text-[#0057D8] hover:underline">{showAllPhotos ? "Show less" : "View all"}</button>
+            <h3 className="text-[15px] font-semibold text-[#061A3D]">Submitted Photos &amp; Files <span className="text-[11px] font-normal text-[#9AA8B8]">({attachments.length})</span></h3>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,application/pdf"
+              className="hidden"
+              onChange={handleFileSelected}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="text-[12px] font-medium text-[#0057D8] inline-flex items-center gap-1 hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {uploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+              {uploading ? "Uploading…" : "Upload"}
+            </button>
           </div>
           <div className="p-5">
-            <div className="grid grid-cols-3 gap-2">
-              {visiblePhotos.map((n) => (
-                <BottleThumb key={n} className="aspect-square rounded-lg" gradient={PHOTO_GRADIENTS[n % PHOTO_GRADIENTS.length]} />
-              ))}
-            </div>
+            {attachmentsLoading ? (
+              <div className="flex flex-col items-center justify-center text-center py-6 text-[#9AA8B8]">
+                <Loader2 className="w-5 h-5 animate-spin mb-2" />
+                <p className="text-[11px]">Loading attachments…</p>
+              </div>
+            ) : attachments.length === 0 ? (
+              <div className="flex flex-col items-center justify-center text-center py-6 rounded-lg border border-dashed border-[#E6EDF5] bg-[#F7FAFC]">
+                <ImageOff className="w-6 h-6 text-[#9AA8B8] mb-2" />
+                <p className="text-[12px] font-medium text-[#4A5A73]">No photos uploaded</p>
+                <p className="text-[11px] text-[#9AA8B8] mt-0.5">Use Upload to attach images or PDFs to this return.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                {attachments.map((a) => {
+                  const isImage = a.mime.startsWith("image/");
+                  return (
+                    <div key={a.id} className="group relative">
+                      {isImage ? (
+                        <a href={a.dataUrl} target="_blank" rel="noopener noreferrer" className="block">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={a.dataUrl} alt={a.name} className="aspect-square w-full rounded-lg object-cover border border-[#E6EDF5] bg-[#F7FAFC]" />
+                        </a>
+                      ) : (
+                        <a href={a.dataUrl} target="_blank" rel="noopener noreferrer" className="flex aspect-square w-full flex-col items-center justify-center rounded-lg border border-[#E6EDF5] bg-[#F7FAFC] p-1 text-center">
+                          <FileIcon className="w-6 h-6 text-[#9AA8B8] mb-1" />
+                          <span className="text-[9px] text-[#66758C] truncate w-full px-0.5">{a.name}</span>
+                        </a>
+                      )}
+                      <button
+                        onClick={() => setPendingDelete(a)}
+                        className="absolute top-1 right-1 rounded-md bg-white/90 p-1 text-[#EF4444] opacity-0 shadow-sm transition-opacity group-hover:opacity-100 hover:bg-white"
+                        aria-label={`Delete ${a.name}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                      <p className="text-[9px] text-[#9AA8B8] mt-1 truncate text-center" title={a.name}>{formatBytes(a.size)}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -435,18 +612,20 @@ export default function ReturnDetailView({ ret }: { ret: ReturnRecord }) {
 
         {/* Financial Impact */}
         <div className="bg-white rounded-xl border border-[#E6EDF5] shadow-[0_1px_3px_rgba(0,0,0,0.1)] overflow-hidden">
-          <div className="flex items-center gap-2 px-5 py-3 bg-[#F7FAFC] border-b border-[#E6EDF5]">
-            <DollarSign className="w-4 h-4 text-[#00B894]" />
-            <h3 className="text-[15px] font-semibold text-[#061A3D]">Financial Impact</h3>
+          <div className="flex items-center justify-between px-5 py-3 bg-[#F7FAFC] border-b border-[#E6EDF5]">
+            <div className="flex items-center gap-2">
+              <DollarSign className="w-4 h-4 text-[#00B894]" />
+              <h3 className="text-[15px] font-semibold text-[#061A3D]">Financial Impact</h3>
+            </div>
+            <button onClick={openEditCosts} className="text-[12px] font-medium text-[#0057D8] flex items-center gap-1 hover:underline"><Edit2 className="w-3 h-3" /> Edit costs</button>
           </div>
           <div className="p-5">
             <div className="space-y-2.5 text-[12px]">
               <div><p className="text-[#9AA8B8]">Refund Amount</p><p className="font-bold text-[#061A3D]">{formatCurrency(refund)}</p></div>
               <div><p className="text-[#9AA8B8]">Return Shipping Cost</p><p className="font-bold text-[#EF4444]">{formatCurrency(shippingCost)}</p></div>
-              <div><p className="text-[#9AA8B8]">Net Impact</p><p className="font-bold text-[#EF4444]">{formatCurrency(refund + shippingCost)}</p></div>
-              <div><p className="text-[#9AA8B8]">Recovery Value</p><p className="font-bold text-[#061A3D]">{formatCurrency(recoveryValue)}</p></div>
               <div><p className="text-[#9AA8B8]">Restocking Fee</p><p className="font-bold text-[#061A3D]">{formatCurrency(restockingFee)}</p></div>
-              <div className="pt-2 border-t border-[#E6EDF5]"><p className="text-[#9AA8B8]">Total Impact</p><p className="font-bold text-[#EF4444]">{formatCurrency(refund + shippingCost - recoveryValue - restockingFee)}</p></div>
+              <div><p className="text-[#9AA8B8]">Recovery Value</p><p className="font-bold text-[#00B894]">−{formatCurrency(recoveryValue)}</p></div>
+              <div className="pt-2 border-t border-[#E6EDF5]"><p className="text-[#9AA8B8]">Net Cost</p><p className="font-bold text-[#EF4444]">{formatCurrency(netCost)}</p></div>
             </div>
           </div>
         </div>
@@ -504,6 +683,59 @@ export default function ReturnDetailView({ ret }: { ret: ReturnRecord }) {
           <TextArea value={addDraft} onChange={(e) => setAddDraft(e.target.value)} rows={4} placeholder="Type your note…" />
         </FormField>
       </Modal>
+
+      {/* Edit costs modal */}
+      <Modal
+        open={costsOpen}
+        onClose={() => { if (!costsSaving) setCostsOpen(false); }}
+        title="Edit Costs"
+        description="Update the cost breakdown for this return. Net cost = refund + shipping + restocking − recovery."
+        footer={
+          <>
+            <SecondaryButton onClick={() => setCostsOpen(false)} disabled={costsSaving}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={saveCosts} disabled={costsSaving}>{costsSaving ? "Saving…" : "Save costs"}</PrimaryButton>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <FormField label="Return Shipping Cost ($)">
+            <NumberInput
+              min={0}
+              step="0.01"
+              value={costDraft.shippingCost}
+              onChange={(e) => setCostDraft((d) => ({ ...d, shippingCost: e.target.value }))}
+            />
+          </FormField>
+          <FormField label="Restocking Fee ($)">
+            <NumberInput
+              min={0}
+              step="0.01"
+              value={costDraft.restockingFee}
+              onChange={(e) => setCostDraft((d) => ({ ...d, restockingFee: e.target.value }))}
+            />
+          </FormField>
+          <FormField label="Recovery Value ($)">
+            <NumberInput
+              min={0}
+              step="0.01"
+              value={costDraft.recoveryValue}
+              onChange={(e) => setCostDraft((d) => ({ ...d, recoveryValue: e.target.value }))}
+            />
+          </FormField>
+        </div>
+      </Modal>
+
+      {/* Delete attachment confirm */}
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onClose={() => { if (!deleting) setPendingDelete(null); }}
+        onConfirm={confirmDeleteAttachment}
+        title="Delete attachment"
+        message={`Remove "${pendingDelete?.name ?? ""}" from this return? This cannot be undone.`}
+        confirmLabel="Delete"
+        destructive
+        loading={deleting}
+      />
     </div>
   );
 }

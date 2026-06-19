@@ -1,11 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ClipboardCheck, CheckCircle2, AlertTriangle, Clock,
-  ArrowUpRight, ArrowDownRight,
   Search, ChevronDown, Pencil, Trash2, Plus, Calendar, Bell, Download,
   ChevronLeft, ChevronRight, ChevronUp, ArrowUpDown,
 } from "lucide-react";
@@ -80,6 +79,14 @@ function NotificationBell() {
       return next;
     });
   }
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const unread = notes.filter((n) => !n.read).length;
 
@@ -170,18 +177,20 @@ const emptyDraft: Draft = {
   scheduledDate: new Date().toISOString().slice(0, 10), defectRate: "", sampleSize: "",
 };
 
-function QcFields({ draft, set }: { draft: Draft; set: (d: Partial<Draft>) => void }) {
+type Errors = Partial<Record<"product" | "supplier" | "defectRate" | "sampleSize", string>>;
+
+function QcFields({ draft, set, errors }: { draft: Draft; set: (d: Partial<Draft>) => void; errors: Errors }) {
   return (
     <div className="grid grid-cols-2 gap-4">
       <div className="col-span-2">
-        <Field label="Product" required>
+        <Field label="Product" required error={errors.product}>
           <TextInput value={draft.product} onChange={(e) => set({ product: e.target.value })} placeholder="Wireless Speaker" />
         </Field>
       </div>
       <Field label="SKU">
         <TextInput value={draft.sku} onChange={(e) => set({ sku: e.target.value })} placeholder="SKU-1024" />
       </Field>
-      <Field label="Supplier" required>
+      <Field label="Supplier" required error={errors.supplier}>
         <TextInput value={draft.supplier} onChange={(e) => set({ supplier: e.target.value })} placeholder="Shenzhen Topway" />
       </Field>
       <Field label="Inspector">
@@ -193,35 +202,30 @@ function QcFields({ draft, set }: { draft: Draft; set: (d: Partial<Draft>) => vo
       <Field label="Scheduled date">
         <TextInput type="date" value={draft.scheduledDate} onChange={(e) => set({ scheduledDate: e.target.value })} />
       </Field>
-      <Field label="Sample size">
+      <Field label="Sample size" error={errors.sampleSize}>
         <NumberInput value={draft.sampleSize} onChange={(e) => set({ sampleSize: e.target.value })} placeholder="800" step="1" min="0" />
       </Field>
       <div className="col-span-2">
-        <Field label="Defect rate (%)">
-          <NumberInput value={draft.defectRate} onChange={(e) => set({ defectRate: e.target.value })} placeholder="0" step="0.1" min="0" />
+        <Field label="Defect rate (%)" error={errors.defectRate}>
+          <NumberInput value={draft.defectRate} onChange={(e) => set({ defectRate: e.target.value })} placeholder="0" step="0.1" min="0" max="100" />
         </Field>
       </div>
     </div>
   );
 }
 
-/* stats computed inside component from items */
+/* stats + charts computed inside component from items */
 
-const results = [
-  { name: "Passed", count: "214", pct: "86.3%", color: "#00B894" },
-  { name: "Failed", count: "22", pct: "8.9%", color: "#EF4444" },
-  { name: "Re-Inspection", count: "22", pct: "8.9%", color: "#7C6FF6" },
-  { name: "Cancelled", count: "6", pct: "2.4%", color: "#D9E5F2" },
+// Donut colors per QC status (drives the real results breakdown).
+const RESULT_DEFS: { name: string; status: QcStatus; color: string }[] = [
+  { name: "Passed", status: "Passed", color: "#00B894" },
+  { name: "Failed", status: "Failed", color: "#EF4444" },
+  { name: "In Progress", status: "In Progress", color: "#7C6FF6" },
+  { name: "Scheduled", status: "Scheduled", color: "#0057D8" },
+  { name: "On Hold", status: "On Hold", color: "#D9E5F2" },
 ];
 
-const STAGE_NAMES = ["Pre-production", "During Production", "Pre-shipment", "Container Loading", "In-transit"];
 const CHART_RANGES = ["This Week", "Last Week", "This Month"];
-
-function hashString(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-  return h;
-}
 
 const tabs = ["All", "Scheduled", "In Progress", "Passed", "Failed", "On Hold"];
 
@@ -259,23 +263,32 @@ export default function QcInspectionsView({ items }: { items: QcInspection[] }) 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<QcInspection | null>(null);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const [errors, setErrors] = useState<Errors>({});
   const [busy, setBusy] = useState(false);
 
   // delete
   const [deleting, setDeleting] = useState<QcInspection | null>(null);
 
-  // computed stats from items
+  // computed stats from items. No historical snapshots exist, so each card shows
+  // a real derived context line rather than an invented "% change".
   const stats = useMemo(() => {
     const total = items.length;
     const passed = items.filter((q) => q.status === "Passed").length;
     const failed = items.filter((q) => q.status === "Failed").length;
     const pending = items.filter((q) => q.status === "Scheduled" || q.status === "In Progress").length;
-    const rate = total > 0 ? ((passed / total) * 100).toFixed(1) : "0";
+    const completed = passed + failed;
+    const rate = completed > 0 ? ((passed / completed) * 100).toFixed(1) : "0";
+    // Average measured defect rate across inspections that recorded one.
+    const withDefect = items.filter((q) => q.defectRate != null);
+    const avgDefect = withDefect.length > 0
+      ? (withDefect.reduce((sum, q) => sum + (q.defectRate ?? 0), 0) / withDefect.length).toFixed(1)
+      : null;
+    const pct = (n: number) => (total > 0 ? `${Math.round((n / total) * 100)}% of total` : "—");
     return [
-      { title: "Total Inspections", value: String(total), change: total > 0 ? `+${Math.round(total * 0.05)}%` : "0%", positive: true, icon: ClipboardCheck, iconBg: "bg-[#0057D8]/10", iconColor: "text-[#0057D8]" },
-      { title: "Pass Rate", value: `${rate}%`, change: "+2.1%", positive: true, icon: CheckCircle2, iconBg: "bg-[#00B894]/10", iconColor: "text-[#00B894]" },
-      { title: "Failed Inspections", value: String(failed), change: failed > 0 ? `-5%` : "0%", positive: false, icon: AlertTriangle, iconBg: "bg-[#EF4444]/10", iconColor: "text-[#EF4444]" },
-      { title: "Pending Inspections", value: String(pending), change: pending > 0 ? `+${Math.round(pending * 0.1)}%` : "0%", positive: true, icon: Clock, iconBg: "bg-[#7C6FF6]/10", iconColor: "text-[#7C6FF6]" },
+      { title: "Total Inspections", value: String(total), sub: "in workspace", icon: ClipboardCheck, iconBg: "bg-[#0057D8]/10", iconColor: "text-[#0057D8]" },
+      { title: "Pass Rate", value: `${rate}%`, sub: completed > 0 ? `${completed} completed` : "No results yet", icon: CheckCircle2, iconBg: "bg-[#00B894]/10", iconColor: "text-[#00B894]" },
+      { title: "Failed Inspections", value: String(failed), sub: avgDefect != null ? `${avgDefect}% avg defect` : pct(failed), icon: AlertTriangle, iconBg: "bg-[#EF4444]/10", iconColor: "text-[#EF4444]" },
+      { title: "Pending Inspections", value: String(pending), sub: pct(pending), icon: Clock, iconBg: "bg-[#7C6FF6]/10", iconColor: "text-[#7C6FF6]" },
     ];
   }, [items]);
 
@@ -283,22 +296,59 @@ export default function QcInspectionsView({ items }: { items: QcInspection[] }) 
   const [chartRange, setChartRange] = useState("This Week");
   const [chartRangeOpen, setChartRangeOpen] = useState(false);
 
+  // Close any open custom dropdown on Escape (outside-click handled per-dropdown).
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setDateRangeOpen(false);
+        setChartRangeOpen(false);
+        setPageSizeOpen(false);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const circumference = 2 * Math.PI * 40;
 
-  // Stage chart: a deterministic transform of the live inspection list, so the
-  // bars react to both the data and the selected range without random jitter.
+  // Real results breakdown by QC status drives the donut + legend.
+  const resultBreakdown = useMemo(() => {
+    const total = items.length;
+    const rows = RESULT_DEFS.map((d) => {
+      const count = items.filter((q) => q.status === d.status).length;
+      const pct = total > 0 ? (count / total) * 100 : 0;
+      return { ...d, count, pct };
+    });
+    return { rows, total };
+  }, [items]);
+
+  // "Inspections by Supplier": the range dropdown windows the real scheduledDate,
+  // and bars count the top suppliers within that window — no synthetic jitter.
   const stageData = useMemo(() => {
-    const counts = STAGE_NAMES.map(() => 0);
-    for (const it of items) {
-      const h = hashString(it.id);
-      const stage = h % STAGE_NAMES.length;
-      const weight =
-        chartRange === "This Week" ? 1 + (h % 3)
-        : chartRange === "Last Week" ? 1 + ((h >> 3) % 4)
-        : 4 + (h % 6);
-      counts[stage] += weight;
+    const refIso = REF_DATE.toISOString().slice(0, 10);
+    const start = new Date(REF_DATE);
+    if (chartRange === "This Week") {
+      start.setUTCDate(start.getUTCDate() - 7);
+    } else if (chartRange === "Last Week") {
+      start.setUTCDate(start.getUTCDate() - 14);
+    } else {
+      start.setUTCDate(start.getUTCDate() - 30);
     }
-    return STAGE_NAMES.map((name, i) => ({ name, value: counts[i] }));
+    const startIso = start.toISOString().slice(0, 10);
+    // "Last Week" = the 7-day window before the most recent 7 days.
+    const endIso = chartRange === "Last Week"
+      ? new Date(REF_DATE.getTime() - 7 * 86400000).toISOString().slice(0, 10)
+      : refIso;
+
+    const counts = new Map<string, number>();
+    for (const it of items) {
+      if (it.scheduledDate < startIso || it.scheduledDate > endIso) continue;
+      counts.set(it.supplier, (counts.get(it.supplier) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([name, value]) => ({ name, value }));
   }, [items, chartRange]);
 
   const maxBar = Math.max(1, ...stageData.map((s) => s.value));
@@ -410,11 +460,13 @@ export default function QcInspectionsView({ items }: { items: QcInspection[] }) 
   function openCreate() {
     setEditing(null);
     setDraft(emptyDraft);
+    setErrors({});
     setFormOpen(true);
   }
 
   function openEdit(it: QcInspection) {
     setEditing(it);
+    setErrors({});
     setDraft({
       product: it.product,
       sku: it.sku ?? "",
@@ -429,14 +481,22 @@ export default function QcInspectionsView({ items }: { items: QcInspection[] }) 
   }
 
   async function saveInspection() {
-    if (!draft.product.trim()) {
-      toast("Product is required", "error");
+    const nextErrors: Errors = {};
+    if (!draft.product.trim()) nextErrors.product = "Product is required";
+    if (!draft.supplier.trim()) nextErrors.supplier = "Supplier is required";
+    if (draft.defectRate.trim() !== "") {
+      const dr = Number(draft.defectRate);
+      if (Number.isNaN(dr) || dr < 0 || dr > 100) nextErrors.defectRate = "Defect rate must be between 0 and 100";
+    }
+    if (draft.sampleSize.trim() !== "" && (Number.isNaN(Number(draft.sampleSize)) || Number(draft.sampleSize) < 0)) {
+      nextErrors.sampleSize = "Sample size must be a non-negative number";
+    }
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors(nextErrors);
+      toast("Please fix the highlighted fields", "error");
       return;
     }
-    if (!draft.supplier.trim()) {
-      toast("Supplier is required", "error");
-      return;
-    }
+    setErrors({});
     setBusy(true);
     const payload = {
       product: draft.product.trim(),
@@ -562,18 +622,7 @@ export default function QcInspectionsView({ items }: { items: QcInspection[] }) 
               </div>
               <p className="text-[28px] font-bold text-deep-navy leading-none">{s.value}</p>
               <div className="flex items-center gap-1 mt-2">
-                {s.positive ? (
-                  <>
-                    <ArrowUpRight className="w-3.5 h-3.5 text-teal" />
-                    <span className="text-[12px] font-medium text-teal">{s.change}</span>
-                  </>
-                ) : (
-                  <>
-                    <ArrowDownRight className="w-3.5 h-3.5 text-[#EF4444]" />
-                    <span className="text-[12px] font-medium text-[#EF4444]">{s.change}</span>
-                  </>
-                )}
-                <span className="text-[11px] text-text-light">vs last period</span>
+                <span className="text-[11px] text-text-light">{s.sub}</span>
               </div>
             </div>
           );
@@ -589,13 +638,12 @@ export default function QcInspectionsView({ items }: { items: QcInspection[] }) 
             <div className="relative w-[140px] h-[140px] shrink-0">
               <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
                 <circle cx="50" cy="50" r="40" fill="none" stroke="#D9E5F2" strokeWidth="12" />
-                {results.map((r, i) => {
-                  const p = parseFloat(r.pct);
-                  const len = (p / 100) * circumference;
-                  const prior = results.slice(0, i).reduce((sum, x) => sum + parseFloat(x.pct), 0);
+                {resultBreakdown.rows.map((r, i) => {
+                  const len = (r.pct / 100) * circumference;
+                  const prior = resultBreakdown.rows.slice(0, i).reduce((sum, x) => sum + x.pct, 0);
                   return (
                     <circle
-                      key={i}
+                      key={r.status}
                       cx="50"
                       cy="50"
                       r="40"
@@ -612,18 +660,18 @@ export default function QcInspectionsView({ items }: { items: QcInspection[] }) 
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="text-center">
                   <p className="text-[10px] text-text-light">Total</p>
-                  <p className="text-[20px] font-bold text-deep-navy">248</p>
+                  <p className="text-[20px] font-bold text-deep-navy">{resultBreakdown.total}</p>
                 </div>
               </div>
             </div>
             <div className="flex-1 space-y-2.5">
-              {results.map((r) => (
-                <div key={r.name} className="flex items-center justify-between text-[12px]">
+              {resultBreakdown.rows.map((r) => (
+                <div key={r.status} className="flex items-center justify-between text-[12px]">
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: r.color }} />
                     <span className="text-text-body truncate">{r.name}</span>
                   </div>
-                  <span className="font-medium text-deep-navy shrink-0 ml-2">{r.count} <span className="text-text-light">({r.pct})</span></span>
+                  <span className="font-medium text-deep-navy shrink-0 ml-2">{r.count} <span className="text-text-light">({resultBreakdown.total > 0 ? r.pct.toFixed(1) : "0.0"}%)</span></span>
                 </div>
               ))}
             </div>
@@ -633,7 +681,7 @@ export default function QcInspectionsView({ items }: { items: QcInspection[] }) 
         {/* Stage bar chart */}
         <div className="bg-white rounded-xl border border-border-soft p-5 shadow-soft">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-[14px] font-semibold text-deep-navy">Inspections by Stage</h3>
+            <h3 className="text-[14px] font-semibold text-deep-navy">Inspections by Supplier</h3>
             <div className="relative">
               <button
                 onClick={() => setChartRangeOpen((v) => !v)}
@@ -661,13 +709,19 @@ export default function QcInspectionsView({ items }: { items: QcInspection[] }) 
             </div>
           </div>
           <div className="flex items-end justify-between gap-3 h-[160px] px-2">
-            {stageData.map((s) => (
-              <div key={s.name} className="flex-1 flex flex-col items-center justify-end h-full">
-                <span className="text-[12px] font-semibold text-deep-navy mb-1">{s.value}</span>
-                <div className="w-full bg-[#0057D8] rounded-t transition-all duration-300" style={{ height: `${(s.value / maxBar) * 100}%` }} />
-                <span className="text-[10px] text-text-light mt-2 text-center leading-tight">{s.name}</span>
+            {stageData.length === 0 ? (
+              <div className="w-full h-full flex items-center justify-center">
+                <span className="text-[12px] text-text-light">No inspections scheduled in this range.</span>
               </div>
-            ))}
+            ) : (
+              stageData.map((s) => (
+                <div key={s.name} className="flex-1 flex flex-col items-center justify-end h-full">
+                  <span className="text-[12px] font-semibold text-deep-navy mb-1">{s.value}</span>
+                  <div className="w-full bg-[#0057D8] rounded-t transition-all duration-300" style={{ height: `${(s.value / maxBar) * 100}%` }} />
+                  <span className="text-[10px] text-text-light mt-2 text-center leading-tight truncate w-full" title={s.name}>{s.name}</span>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>
@@ -920,7 +974,7 @@ export default function QcInspectionsView({ items }: { items: QcInspection[] }) 
           </>
         }
       >
-        <QcFields draft={draft} set={(d) => setDraft((prev) => ({ ...prev, ...d }))} />
+        <QcFields draft={draft} set={(d) => setDraft((prev) => ({ ...prev, ...d }))} errors={errors} />
       </Modal>
 
       {/* Delete confirm */}

@@ -214,6 +214,16 @@ export default function MessagesPage() {
     return () => { timers.forEach(clearTimeout); };
   }, []);
 
+  // Close the conversation context menu on Escape (mirrors outside-click close).
+  useEffect(() => {
+    if (!openMenu) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpenMenu(null);
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [openMenu]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -291,6 +301,10 @@ export default function MessagesPage() {
     if (!deleting) return;
     const target = deleting;
     setDeleting(null);
+    // Snapshot prior state so we can roll back if the API call fails.
+    const prevConvos = convos;
+    const prevThreads = threads;
+    const prevSelected = selectedRef.current;
     setConvos((cur) => {
       const next = cur.filter((c) => c.id !== target.id);
       if (selectedRef.current === target.id) setSelected(next[0]?.id ?? "");
@@ -303,7 +317,13 @@ export default function MessagesPage() {
     });
     api.del(`/api/messages/${target.id}`)
       .then(() => toast(`Conversation with ${target.name} deleted`))
-      .catch(() => toast("Failed to delete conversation", "error"));
+      .catch(() => {
+        // Restore the removed conversation, its thread, and the prior selection.
+        setConvos(prevConvos);
+        setThreads(prevThreads);
+        setSelected(prevSelected);
+        toast("Failed to delete conversation", "error");
+      });
   }
 
   function nowStamp() {
@@ -791,6 +811,7 @@ export default function MessagesPage() {
               options={MESSAGE_CHANNELS}
               value={msgSettings.defaultChannel}
               onChange={(e) => setMsgSettings((s) => ({ ...s, defaultChannel: e.target.value }))}
+              aria-label="Default channel"
             />
           </Field>
           <div className="pt-1 divide-y divide-border-soft">

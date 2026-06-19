@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -35,6 +35,9 @@ const tabs = ["All Customers", "Active", "Inactive", "Lead"];
 const accentColor = "#0057D8";
 
 const STATUSES: Customer["status"][] = ["Active", "Inactive", "Lead"];
+
+// Pragmatic email format check used for inline field-level validation.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // The demo workspace anchors "today" to the end of the header range so the
 // joined-date filter stays deterministic.
@@ -82,13 +85,13 @@ const emptyDraft: Draft = {
   joinedDate: new Date().toISOString().slice(0, 10),
 };
 
-function CustomerFields({ draft, set }: { draft: Draft; set: (d: Partial<Draft>) => void }) {
+function CustomerFields({ draft, set, emailError }: { draft: Draft; set: (d: Partial<Draft>) => void; emailError?: string }) {
   return (
     <div className="grid grid-cols-2 gap-4">
       <Field label="Name" required>
         <TextInput value={draft.name} onChange={(e) => set({ name: e.target.value })} placeholder="Jane Doe" />
       </Field>
-      <Field label="Email" required>
+      <Field label="Email" required error={emailError}>
         <TextInput type="email" value={draft.email} onChange={(e) => set({ email: e.target.value })} placeholder="jane@acme.com" />
       </Field>
       <Field label="Company">
@@ -160,6 +163,27 @@ export default function CustomersView({ items }: { items: Customer[] }) {
 
   // delete
   const [deleting, setDeleting] = useState<Customer | null>(null);
+
+  // tracks whether the user has attempted to submit, so the email error only
+  // surfaces after interaction rather than on a pristine form.
+  const [emailTouched, setEmailTouched] = useState(false);
+  const emailError =
+    emailTouched && draft.email.trim() && !EMAIL_RE.test(draft.email.trim())
+      ? "Enter a valid email address."
+      : undefined;
+
+  // Close any open custom dropdown on Escape.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      setDateOpen(false);
+      setRangeOpen(false);
+      setFilterOpen(false);
+      setPageSizeOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const stats = useMemo(() => {
     const total = items.length;
@@ -291,6 +315,7 @@ export default function CustomersView({ items }: { items: Customer[] }) {
   function openCreate() {
     setEditing(null);
     setDraft(emptyDraft);
+    setEmailTouched(false);
     setFormOpen(true);
   }
 
@@ -301,12 +326,15 @@ export default function CustomersView({ items }: { items: Customer[] }) {
       country: c.country ?? "", orders: String(c.orders), totalSpent: String(c.totalSpent),
       status: c.status, joinedDate: c.joinedDate ?? "",
     });
+    setEmailTouched(false);
     setFormOpen(true);
   }
 
   async function saveCustomer() {
+    setEmailTouched(true);
     if (!draft.name.trim()) { toast("Name is required", "error"); return; }
     if (!draft.email.trim()) { toast("Email is required", "error"); return; }
+    if (!EMAIL_RE.test(draft.email.trim())) { toast("Enter a valid email address", "error"); return; }
     setBusy(true);
     const payload = {
       name: draft.name.trim(),
@@ -671,8 +699,20 @@ export default function CustomersView({ items }: { items: Customer[] }) {
               ))}
               {pageRows.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-5 py-10 text-center text-[13px] text-text-muted">
-                    No customers match your filters.
+                  <td colSpan={9} className="px-5 py-12 text-center">
+                    {items.length === 0 ? (
+                      <>
+                        <p className="text-[13px] text-text-muted">No customers yet.</p>
+                        <button
+                          onClick={openCreate}
+                          className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 bg-action-blue hover:bg-navy rounded-lg text-[13px] font-medium text-white transition-colors"
+                        >
+                          <Plus className="w-4 h-4" /> Create your first customer
+                        </button>
+                      </>
+                    ) : (
+                      <p className="text-[13px] text-text-muted">No customers match your filters.</p>
+                    )}
                   </td>
                 </tr>
               )}
@@ -761,7 +801,7 @@ export default function CustomersView({ items }: { items: Customer[] }) {
           </>
         }
       >
-        <CustomerFields draft={draft} set={(d) => setDraft((prev) => ({ ...prev, ...d }))} />
+        <CustomerFields draft={draft} set={(d) => setDraft((prev) => ({ ...prev, ...d }))} emailError={emailError} />
       </Modal>
 
       {/* Delete confirm */}

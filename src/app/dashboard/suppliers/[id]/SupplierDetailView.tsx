@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ChevronRight, ShieldCheck, Star, FileText, ClipboardCheck, Award,
   MapPin, CheckCircle, TrendingDown, MoreHorizontal, Copy, Printer, Pencil, Download, Plus, X,
 } from "lucide-react";
-import type { Supplier } from "@/types";
+import type { Supplier, QcInspection } from "@/types";
 import { Modal } from "@/components/dashboard/Modal";
 import { Field, TextInput, NumberInput, TextArea, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
@@ -15,29 +15,9 @@ import { api, exportToCsv } from "@/lib/client";
 import { formatNumber } from "@/lib/format";
 import SupplierDetailActions from "./SupplierDetailActions";
 
-const productCategories = [
-  { name: "Electronics", pct: "45%" },
-  { name: "Plastics", pct: "30%" },
-  { name: "Metals", pct: "20%" },
-  { name: "Textiles", pct: "5%" },
-];
+type RadarAxis = { label: string; value: number };
 
 const certifications = ["ISO 9001:2015", "RoHS Compliance", "CE Mark"];
-
-const radar = [
-  { label: "Quality", value: 9 },
-  { label: "Delivery", value: 8 },
-  { label: "Cost", value: 7 },
-  { label: "Service", value: 8 },
-  { label: "Innovation", value: 7 },
-];
-
-const performanceMetrics = [
-  { label: "On-Time Delivery", value: "99%", color: "text-[#10B981]" },
-  { label: "Defect Rate", value: "0.5%", color: "text-[#EF4444]" },
-  { label: "Lead Time", value: "7 days", color: "text-[#3B82F6]" },
-  { label: "Response Time", value: "2 hours", color: "text-[#10B981]" },
-];
 
 const sampleHistorySeed = [
   { date: "2024-05-10", id: "SMP-001", product: "Circuit Board", status: "Approved", result: "Pass" },
@@ -71,29 +51,29 @@ const statusStyle: Record<string, string> = {
   Requested: "bg-[#F59E0B]/10 text-[#F59E0B]",
 };
 
-function Radar() {
+function Radar({ axes }: { axes: RadarAxis[] }) {
   const cx = 90, cy = 80, r = 55;
-  const pts = radar.map((d, i) => {
-    const angle = (Math.PI * 2 * i) / radar.length - Math.PI / 2;
+  const pts = axes.map((d, i) => {
+    const angle = (Math.PI * 2 * i) / axes.length - Math.PI / 2;
     const dist = (d.value / 10) * r;
     return `${cx + dist * Math.cos(angle)},${cy + dist * Math.sin(angle)}`;
   }).join(" ");
   return (
     <svg viewBox="0 0 180 170" className="w-full h-[150px]">
       {[0.25, 0.5, 0.75, 1].map((scale, si) => {
-        const ringPts = radar.map((_, i) => {
-          const angle = (Math.PI * 2 * i) / radar.length - Math.PI / 2;
+        const ringPts = axes.map((_, i) => {
+          const angle = (Math.PI * 2 * i) / axes.length - Math.PI / 2;
           return `${cx + r * scale * Math.cos(angle)},${cy + r * scale * Math.sin(angle)}`;
         }).join(" ");
         return <polygon key={si} points={ringPts} fill="none" stroke="#E2E8F0" strokeWidth="1" />;
       })}
-      {radar.map((d, i) => {
-        const angle = (Math.PI * 2 * i) / radar.length - Math.PI / 2;
+      {axes.map((d, i) => {
+        const angle = (Math.PI * 2 * i) / axes.length - Math.PI / 2;
         return <line key={i} x1={cx} y1={cy} x2={cx + r * Math.cos(angle)} y2={cy + r * Math.sin(angle)} stroke="#E2E8F0" strokeWidth="1" />;
       })}
       <polygon points={pts} fill="#3B82F6" fillOpacity="0.15" stroke="#3B82F6" strokeWidth="2" />
-      {radar.map((d, i) => {
-        const angle = (Math.PI * 2 * i) / radar.length - Math.PI / 2;
+      {axes.map((d, i) => {
+        const angle = (Math.PI * 2 * i) / axes.length - Math.PI / 2;
         return <text key={i} x={cx + (r + 14) * Math.cos(angle)} y={cy + (r + 14) * Math.sin(angle)} textAnchor="middle" dominantBaseline="middle" fontSize="8" fill="#64748B">{d.label}</text>;
       })}
     </svg>
@@ -102,27 +82,6 @@ function Radar() {
 
 function scrollToSection(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
-}
-
-/** Generate a pseudo-random number 0-1 from a string seed. */
-function hashSeed(str: string): number {
-  let h = 0;
-  for (let i = 0; i < str.length; i++) {
-    h = ((h << 5) - h + str.charCodeAt(i)) | 0;
-  }
-  return (Math.abs(h) % 10000) / 10000;
-}
-
-function generateQualityHistory(supplierId: string) {
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  let seed = hashSeed(supplierId);
-  return months.map((month, i) => {
-    // Deterministic but varied: combine supplier hash with month index
-    const raw = Math.sin(seed * 1000 + i * 137.5) * 10000;
-    const val = 0.3 + (raw - Math.floor(raw)) * 1.1; // range 0.3 – 1.4
-    seed += 0.1; // shift seed slightly each month for variation
-    return { month, value: Math.round(val * 10) / 10 };
-  });
 }
 
 export default function SupplierDetailView({ supplier }: { supplier: Supplier }) {
@@ -156,8 +115,90 @@ export default function SupplierDetailView({ supplier }: { supplier: Supplier })
   // Sample history — live list
   const [samples, setSamples] = useState(sampleHistorySeed);
 
-  // Quality history — seeded from supplier ID
-  const qualityHistory = useMemo(() => generateQualityHistory(supplier.id), [supplier.id]);
+  // Real QC inspections for this supplier (powers defect rate, pass rate, radar, quality trend)
+  const [qcInspections, setQcInspections] = useState<QcInspection[] | null>(null);
+  const [qcError, setQcError] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    api.get<{ data: QcInspection[] }>("/api/qc-inspections")
+      .then((res) => { if (active) setQcInspections(res.data ?? []); })
+      .catch(() => { if (active) { setQcInspections([]); setQcError(true); } });
+    return () => { active = false; };
+  }, []);
+
+  const supplierInspections = useMemo(() => {
+    if (!qcInspections) return [];
+    const target = supplier.name.trim().toLowerCase();
+    return qcInspections.filter((q) => q.supplier.trim().toLowerCase() === target);
+  }, [qcInspections, supplier.name]);
+
+  // Derive defect rate / pass rate from real QC inspections (null when no data)
+  const qcSummary = useMemo(() => {
+    const withDefect = supplierInspections.filter((q) => typeof q.defectRate === "number");
+    const avgDefectRate = withDefect.length
+      ? withDefect.reduce((sum, q) => sum + (q.defectRate ?? 0), 0) / withDefect.length
+      : null;
+    const decided = supplierInspections.filter((q) => q.status === "Passed" || q.status === "Failed");
+    const passRate = decided.length
+      ? (decided.filter((q) => q.status === "Passed").length / decided.length) * 100
+      : null;
+    return { avgDefectRate, passRate, count: supplierInspections.length };
+  }, [supplierInspections]);
+
+  // Quality history — real defect rate over time, bucketed by month from QC inspections
+  const qualityHistory = useMemo(() => {
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const buckets = new Map<number, { sum: number; n: number }>();
+    for (const q of supplierInspections) {
+      if (typeof q.defectRate !== "number") continue;
+      const m = new Date(q.scheduledDate).getMonth();
+      if (Number.isNaN(m)) continue;
+      const b = buckets.get(m) ?? { sum: 0, n: 0 };
+      b.sum += q.defectRate;
+      b.n += 1;
+      buckets.set(m, b);
+    }
+    return [...buckets.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([m, b]) => ({ month: months[m], value: Math.round((b.sum / b.n) * 10) / 10 }));
+  }, [supplierInspections]);
+
+  // Real performance metrics from supplier scorecard fields + QC pass rate
+  const performanceMetrics = useMemo(() => [
+    { label: "On-Time Delivery", value: supplier.onTimePct != null ? `${Math.round(supplier.onTimePct)}%` : "—", color: "text-[#10B981]" },
+    { label: "Defect Rate", value: qcSummary.avgDefectRate != null ? `${qcSummary.avgDefectRate.toFixed(1)}%` : "—", color: "text-[#EF4444]" },
+    { label: "Lead Time", value: supplier.leadTimeDays != null ? `${supplier.leadTimeDays} days` : "—", color: "text-[#3B82F6]" },
+    { label: "Response Time", value: supplier.avgResponseHours != null ? `${supplier.avgResponseHours}h` : "—", color: "text-[#10B981]" },
+  ], [supplier.onTimePct, supplier.leadTimeDays, supplier.avgResponseHours, qcSummary.avgDefectRate]);
+
+  // Radar axes mapped to REAL metrics (0-10 scale)
+  const radarAxes = useMemo<RadarAxis[]>(() => {
+    const clamp = (n: number) => Math.max(0, Math.min(10, Math.round(n * 10) / 10));
+    // Quality: prefer QC pass rate, else invert defect rate; neutral 0 when no QC data
+    const quality = qcSummary.passRate != null
+      ? clamp(qcSummary.passRate / 10)
+      : qcSummary.avgDefectRate != null
+        ? clamp(10 - qcSummary.avgDefectRate)
+        : 0;
+    // On-time delivery → /10
+    const delivery = supplier.onTimePct != null ? clamp(supplier.onTimePct / 10) : 0;
+    // Lead time → shorter is better; 0 days→10, 30+ days→0
+    const leadTime = supplier.leadTimeDays != null ? clamp(10 - (supplier.leadTimeDays / 3)) : 0;
+    // Responsiveness → faster is better; 0h→10, 48h+→0
+    const responsiveness = supplier.avgResponseHours != null ? clamp(10 - (supplier.avgResponseHours / 4.8)) : 0;
+    // Rating (0-5) → /10
+    const rating = clamp(supplier.rating * 2);
+    return [
+      { label: "Quality", value: quality },
+      { label: "On-Time", value: delivery },
+      { label: "Lead Time", value: leadTime },
+      { label: "Response", value: responsiveness },
+      { label: "Rating", value: rating },
+    ];
+  }, [qcSummary, supplier.onTimePct, supplier.leadTimeDays, supplier.avgResponseHours, supplier.rating]);
+
+  const qcLoading = qcInspections === null;
 
   // Request Quote form
   const [quoteDraft, setQuoteDraft] = useState({
@@ -393,16 +434,16 @@ export default function SupplierDetailView({ supplier }: { supplier: Supplier })
             </ul>
           </div>
 
-          {/* Product Categories */}
+          {/* Product Categories — honest: only the supplier's known category + product count */}
           <div className="mb-4">
             <h4 className="text-[13px] font-semibold text-[#1E293B] mb-2">Product Categories</h4>
             <div className="grid grid-cols-2 gap-2">
-              {productCategories.map((c) => (
-                <div key={c.name} className="flex items-center justify-between px-3 py-2 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0]">
-                  <span className="text-[12px] font-medium text-[#1E293B]">{c.name}</span>
-                  <span className="text-[11px] text-[#64748B]">{c.pct} of revenue</span>
-                </div>
-              ))}
+              <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0]">
+                <span className="text-[12px] font-medium text-[#1E293B]">{supplier.category ?? "General"}</span>
+                <span className="text-[11px] text-[#64748B]">
+                  {supplier.productsSupplied != null ? `${formatNumber(supplier.productsSupplied)} products` : "primary"}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -425,7 +466,7 @@ export default function SupplierDetailView({ supplier }: { supplier: Supplier })
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-[15px] font-semibold text-[#1E293B]">Performance Metrics</h3>
             <button
-              onClick={() => exportToCsv(`${supplier.id}-performance`, radar, [
+              onClick={() => exportToCsv(`${supplier.id}-performance`, radarAxes, [
                 { key: "label", header: "Metric" },
                 { key: "value", header: "Score (out of 10)" },
               ])}
@@ -435,9 +476,9 @@ export default function SupplierDetailView({ supplier }: { supplier: Supplier })
             </button>
           </div>
           <div className="flex items-center gap-3 mb-5">
-            <div className="flex-1"><Radar /></div>
+            <div className="flex-1"><Radar axes={radarAxes} /></div>
             <div className="space-y-2 shrink-0">
-              {radar.map((r) => (
+              {radarAxes.map((r) => (
                 <div key={r.label} className="flex items-center justify-between gap-6 text-[12px]">
                   <span className="text-[#64748B]">{r.label}</span>
                   <span className="text-[#1E293B] font-medium">{r.value} / 10</span>
@@ -450,11 +491,21 @@ export default function SupplierDetailView({ supplier }: { supplier: Supplier })
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4 border-t border-[#E2E8F0]">
             {performanceMetrics.map((m) => (
               <div key={m.label} className="text-center">
-                <p className={`text-[16px] font-bold ${m.color}`}>{m.value}</p>
+                <p className={`text-[16px] font-bold ${m.color}`}>{qcLoading && m.label === "Defect Rate" ? "…" : m.value}</p>
                 <p className="text-[11px] text-[#64748B] mt-0.5">{m.label}</p>
               </div>
             ))}
           </div>
+          {qcSummary.passRate != null && (
+            <p className="text-[11px] text-[#64748B] mt-3">
+              Quality derived from {qcSummary.count} QC inspection{qcSummary.count === 1 ? "" : "s"} · pass rate {Math.round(qcSummary.passRate)}%
+            </p>
+          )}
+          {!qcLoading && qcSummary.count === 0 && (
+            <p className="text-[11px] text-[#94A3B8] mt-3">
+              {qcError ? "Could not load QC inspection data." : "No QC inspections on record for this supplier yet."}
+            </p>
+          )}
         </div>
       </div>
 
@@ -474,20 +525,40 @@ export default function SupplierDetailView({ supplier }: { supplier: Supplier })
               View full report
             </button>
           </div>
-          <div className="h-[120px]">
-            <svg viewBox="0 0 300 120" className="w-full h-full" preserveAspectRatio="none">
-              {/* Grid lines */}
-              {[0, 1, 2, 3].map((i) => <line key={i} x1="0" y1={i * 30 + 10} x2="300" y2={i * 30 + 10} stroke="#E2E8F0" strokeWidth="1" />)}
-              {/* Defect rate line - higher values = worse, so we invert: map 0-1.5 range to 110-10 */}
-              <polyline fill="none" stroke="#3B82F6" strokeWidth="2" points={qualityHistory.map((d, i) => `${i * 27},${110 - (d.value / 1.5) * 100}`).join(" ")} />
-              {qualityHistory.map((d, i) => <circle key={i} cx={i * 27} cy={110 - (d.value / 1.5) * 100} r="2.5" fill="white" stroke="#3B82F6" strokeWidth="1.5" />)}
-            </svg>
-          </div>
-          <div className="flex justify-between text-[10px] text-[#94A3B8]">{qualityHistory.map((m) => <span key={m.month}>{m.month}</span>)}</div>
-          <div className="flex items-center gap-1.5 mt-2">
-            <TrendingDown className="w-3.5 h-3.5 text-[#10B981]" />
-            <span className="text-[12px] text-[#10B981] font-medium">Improving</span>
-          </div>
+          {qcLoading ? (
+            <div className="h-[120px] flex items-center justify-center">
+              <div className="h-3 w-32 rounded bg-[#E2E8F0] animate-pulse" />
+            </div>
+          ) : qualityHistory.length === 0 ? (
+            <div className="h-[120px] flex items-center justify-center">
+              <p className="text-[12px] text-[#94A3B8]">No defect-rate history yet.</p>
+            </div>
+          ) : (() => {
+            const maxVal = Math.max(...qualityHistory.map((d) => d.value), 1);
+            const step = qualityHistory.length > 1 ? 300 / (qualityHistory.length - 1) : 0;
+            const y = (v: number) => 110 - (v / maxVal) * 100;
+            const first = qualityHistory[0].value;
+            const last = qualityHistory[qualityHistory.length - 1].value;
+            const improving = last <= first;
+            return (
+              <>
+                <div className="h-[120px]">
+                  <svg viewBox="0 0 300 120" className="w-full h-full" preserveAspectRatio="none">
+                    {/* Grid lines */}
+                    {[0, 1, 2, 3].map((i) => <line key={i} x1="0" y1={i * 30 + 10} x2="300" y2={i * 30 + 10} stroke="#E2E8F0" strokeWidth="1" />)}
+                    {/* Defect rate line — scaled so higher defect = higher on chart */}
+                    <polyline fill="none" stroke="#3B82F6" strokeWidth="2" points={qualityHistory.map((d, i) => `${i * step},${y(d.value)}`).join(" ")} />
+                    {qualityHistory.map((d, i) => <circle key={i} cx={i * step} cy={y(d.value)} r="2.5" fill="white" stroke="#3B82F6" strokeWidth="1.5" />)}
+                  </svg>
+                </div>
+                <div className="flex justify-between text-[10px] text-[#94A3B8]">{qualityHistory.map((m) => <span key={m.month}>{m.month}</span>)}</div>
+                <div className="flex items-center gap-1.5 mt-2">
+                  <TrendingDown className={`w-3.5 h-3.5 ${improving ? "text-[#10B981]" : "text-[#EF4444] rotate-180"}`} />
+                  <span className={`text-[12px] font-medium ${improving ? "text-[#10B981]" : "text-[#EF4444]"}`}>{improving ? "Improving" : "Worsening"}</span>
+                </div>
+              </>
+            );
+          })()}
         </div>
 
         {/* Sample History */}

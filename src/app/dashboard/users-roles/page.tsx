@@ -249,6 +249,16 @@ export default function UsersRolesPage() {
     return () => { alive = false; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Close the open user-row "more" menu on Escape (mirrors outside-click behavior).
+  useEffect(() => {
+    if (openMenu === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpenMenu(null);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [openMenu]);
+
   const filteredUsers = useMemo(() => {
     const q = query.trim().toLowerCase();
     return rows.filter((u) => {
@@ -470,11 +480,11 @@ export default function UsersRolesPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-light" />
           <input value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }} placeholder="Search users by name, email, or role..." className="w-full pl-9 pr-4 py-2 border border-border-soft rounded-lg text-[13px] text-text-primary placeholder:text-text-light focus:outline-none focus:ring-2 focus:ring-action-blue/20" />
         </div>
-        <select value={roleFilter} onChange={(e) => { setRoleFilter(e.target.value); setPage(1); }} className={selectCls}>
+        <select aria-label="Filter by role" value={roleFilter} onChange={(e) => { setRoleFilter(e.target.value); setPage(1); }} className={selectCls}>
           <option value="">All Roles</option>
           {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
         </select>
-        <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} className={selectCls}>
+        <select aria-label="Filter by status" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} className={selectCls}>
           <option value="">All Statuses</option>
           <option value="Active">Active</option>
           <option value="Inactive">Inactive</option>

@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Plug, CheckCircle2, RefreshCw, AlertTriangle, Clock, Shield,
-  Search, Plus, ScrollText, ArrowUpRight, ArrowDownRight,
+  Plug, CheckCircle2, RefreshCw, AlertTriangle, Shield,
+  Search, Plus, ScrollText,
   MoreHorizontal, ArrowRight, ArrowLeft, ExternalLink,
   ShoppingBag, Boxes, Truck, Calculator, Bell, FileSpreadsheet,
   Store, KeyRound, Webhook, GitMerge, Download,
@@ -19,13 +19,8 @@ import type { IntegrationRecord } from "@/types";
 
 /* ---------------- data ---------------- */
 
-const stats = [
-  { title: "Connected Integrations", value: "12", change: "20%", dir: "up", icon: Plug, iconBg: "bg-[#0057D8]/10", iconColor: "text-[#0057D8]", note: "vs last 30 days" },
-  { title: "Active Connections", value: "11", change: "10%", dir: "up", icon: CheckCircle2, iconBg: "bg-[#00B894]/10", iconColor: "text-[#00B894]", note: "vs last 30 days" },
-  { title: "Data Syncs (24h)", value: "1,248", change: "15%", dir: "up", icon: RefreshCw, iconBg: "bg-[#7C6FF6]/10", iconColor: "text-[#7C6FF6]", note: "vs yesterday" },
-  { title: "Failed Syncs (24h)", value: "8", change: "5%", dir: "down", icon: AlertTriangle, iconBg: "bg-[#EF4444]/10", iconColor: "text-[#EF4444]", note: "vs yesterday" },
-  { title: "Last Sync", value: "2 min ago", change: "", dir: "flat", icon: Clock, iconBg: "bg-[#F59E0B]/10", iconColor: "text-[#F59E0B]", note: "All systems operational" },
-];
+// Circumference of the r=40 donut ring used by the Integration Health chart.
+const DONUT_C = 2 * Math.PI * 40;
 
 const catStyle: Record<string, string> = {
   "Sales Channel": "bg-[#0057D8]/10 text-[#0057D8]",
@@ -93,12 +88,6 @@ function toRow(rec: IntegrationRecord): IntegrationRow {
     icon: style.icon,
   };
 }
-
-const health = [
-  { name: "Connected", count: 11, pct: "91.7%", color: "#00B894" },
-  { name: "Active", count: 11, pct: "91.7%", color: "#0057D8" },
-  { name: "Not Connected", count: 1, pct: "8.3%", color: "#EF4444" },
-];
 
 const popular = [
   { name: "Shopify", desc: "Sync orders, inventory, and fulfillment", action: "Connect", iconBg: "bg-[#00B894]/10", iconColor: "text-[#00B894]", icon: ShoppingBag },
@@ -179,6 +168,8 @@ export default function IntegrationsPage() {
 
   // Sync-in-progress indicator (keyed by integration id)
   const [syncing, setSyncing] = useState<Set<string>>(new Set());
+  // Connect/Disconnect-in-flight indicator (keyed by integration id)
+  const [statusBusy, setStatusBusy] = useState<Set<string>>(new Set());
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
@@ -203,6 +194,16 @@ export default function IntegrationsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Close the open row "more" menu on Escape (mirrors outside-click behavior).
+  useEffect(() => {
+    if (openMenu === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpenMenu(null);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [openMenu]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return rows.filter((r) => {
@@ -217,16 +218,56 @@ export default function IntegrationsPage() {
     return rows.find((r) => r.name === name);
   }
 
+  // Stat cards derived from the loaded integrations — counts by status plus distinct categories.
+  const statCards = useMemo(() => {
+    const total = rows.length;
+    const connected = rows.filter((r) => r.status === "Connected").length;
+    const available = rows.filter((r) => r.status === "Available").length;
+    const errored = rows.filter((r) => r.status === "Error").length;
+    const categories = new Set(rows.map((r) => r.cat)).size;
+    return [
+      { title: "Total Integrations", value: total.toLocaleString(), icon: Plug, iconBg: "bg-[#0057D8]/10", iconColor: "text-[#0057D8]", note: total === 1 ? "integration available" : "integrations available" },
+      { title: "Connected", value: connected.toLocaleString(), icon: CheckCircle2, iconBg: "bg-[#00B894]/10", iconColor: "text-[#00B894]", note: total > 0 ? `${Math.round((connected / total) * 100)}% of catalog` : "0% of catalog" },
+      { title: "Available", value: available.toLocaleString(), icon: RefreshCw, iconBg: "bg-[#7C6FF6]/10", iconColor: "text-[#7C6FF6]", note: "ready to connect" },
+      { title: "Errors", value: errored.toLocaleString(), icon: AlertTriangle, iconBg: "bg-[#EF4444]/10", iconColor: "text-[#EF4444]", note: errored === 0 ? "no issues" : errored === 1 ? "needs attention" : "need attention" },
+      { title: "Categories", value: categories.toLocaleString(), icon: Boxes, iconBg: "bg-[#F59E0B]/10", iconColor: "text-[#F59E0B]", note: "across your catalog" },
+    ];
+  }, [rows]);
+
+  // Integration health breakdown for the sidebar donut (derived from loaded integrations).
+  const health = useMemo(() => {
+    const total = rows.length;
+    const connected = rows.filter((r) => r.status === "Connected").length;
+    const available = rows.filter((r) => r.status === "Available").length;
+    const errored = rows.filter((r) => r.status === "Error").length;
+    const pct = (n: number) => (total > 0 ? `${((n / total) * 100).toFixed(1)}%` : "0%");
+    return {
+      total,
+      segments: [
+        { name: "Connected", count: connected, pct: pct(connected), value: total > 0 ? (connected / total) * 100 : 0, color: "#00B894" },
+        { name: "Available", count: available, pct: pct(available), value: total > 0 ? (available / total) * 100 : 0, color: "#0057D8" },
+        { name: "Error", count: errored, pct: pct(errored), value: total > 0 ? (errored / total) * 100 : 0, color: "#EF4444" },
+      ],
+    };
+  }, [rows]);
+
   // Persist a status change (Connect/Disconnect) to the API.
   function persistStatus(row: IntegrationRow, status: IntegrationStatus, successMsg: string) {
     const prev = row.status;
     setRows((cur) => cur.map((r) => (r.id === row.id ? { ...r, status, sync: status === "Connected" ? "Just now" : "—" } : r)));
+    setStatusBusy((cur) => new Set(cur).add(row.id));
+    const clearBusy = () => setStatusBusy((cur) => {
+      const next = new Set(cur);
+      next.delete(row.id);
+      return next;
+    });
     api.put<IntegrationRecord>(`/api/integrations/${row.id}`, { status })
       .then(() => toast(successMsg))
       .catch(() => {
         setRows((cur) => cur.map((r) => (r.id === row.id ? { ...r, status: prev } : r)));
         toast(`Failed to update ${row.name}`, "error");
-      });
+      })
+      .finally(clearBusy);
   }
 
   function openConfigure(row: IntegrationRow) {
@@ -313,7 +354,7 @@ export default function IntegrationsPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        {stats.map((s) => {
+        {statCards.map((s) => {
           const Icon = s.icon;
           return (
             <div key={s.title} className="bg-white rounded-lg border border-border-soft shadow-[0_1px_3px_rgba(0,0,0,0.05)] p-4">
@@ -325,9 +366,6 @@ export default function IntegrationsPage() {
               </div>
               <p className="text-[28px] font-bold text-text-primary leading-none">{s.value}</p>
               <div className="flex items-center gap-1 mt-2">
-                {s.dir === "up" && <ArrowUpRight className="w-3.5 h-3.5 text-teal" />}
-                {s.dir === "down" && <ArrowDownRight className="w-3.5 h-3.5 text-[#EF4444]" />}
-                {s.change && <span className={`text-[12px] font-medium ${s.dir === "up" ? "text-teal" : "text-[#EF4444]"}`}>{s.change}</span>}
                 <span className="text-[11px] text-text-light">{s.note}</span>
               </div>
             </div>
@@ -341,11 +379,11 @@ export default function IntegrationsPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-light" />
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search integrations..." className="w-full pl-9 pr-4 py-2 text-[13px] bg-white border border-border-soft rounded-lg text-text-primary placeholder:text-text-light focus:outline-none focus:ring-2 focus:ring-action-blue/20" />
         </div>
-        <select value={catFilter} onChange={(e) => setCatFilter(e.target.value)} className={selectCls}>
+        <select aria-label="Filter by category" value={catFilter} onChange={(e) => setCatFilter(e.target.value)} className={selectCls}>
           <option value="">All Categories</option>
           {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={selectCls}>
+        <select aria-label="Filter by status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={selectCls}>
           <option value="">All Statuses</option>
           <option value="Connected">Connected</option>
           <option value="Available">Available</option>
@@ -402,7 +440,7 @@ export default function IntegrationsPage() {
                         {connected ? (
                           <button onClick={() => openConfigure(r)} className="text-[12px] font-medium text-action-blue hover:underline">Configure</button>
                         ) : (
-                          <button onClick={() => connect(r)} className="text-[12px] font-medium text-action-blue hover:underline">Connect</button>
+                          <button onClick={() => connect(r)} disabled={statusBusy.has(r.id)} className="text-[12px] font-medium text-action-blue hover:underline disabled:opacity-50 disabled:cursor-not-allowed disabled:no-underline">{statusBusy.has(r.id) ? "Connecting…" : "Connect"}</button>
                         )}
                         <div className="relative inline-block">
                           <button onClick={() => setOpenMenu(openMenu === r.id ? null : r.id)} className="p-1 rounded hover:bg-soft-bg text-text-light" aria-label="Integration actions"><MoreHorizontal className="w-4 h-4" /></button>
@@ -413,9 +451,9 @@ export default function IntegrationsPage() {
                                 <button onClick={() => syncNow(r)} disabled={!connected || syncing.has(r.id)} className="w-full text-left px-3 py-1.5 text-[13px] text-text-primary hover:bg-soft-bg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"><RefreshCw className={`w-3.5 h-3.5 ${syncing.has(r.id) ? "animate-spin" : ""}`} /> {syncing.has(r.id) ? "Syncing…" : "Sync now"}</button>
                                 <button onClick={() => openConfigure(r)} className="w-full text-left px-3 py-1.5 text-[13px] text-text-primary hover:bg-soft-bg flex items-center gap-2"><Plug className="w-3.5 h-3.5" /> Configure</button>
                                 {connected ? (
-                                  <button onClick={() => { setOpenMenu(null); setDisconnecting(r); }} className="w-full text-left px-3 py-1.5 text-[13px] text-[#EF4444] hover:bg-[#FEF2F2] flex items-center gap-2"><AlertTriangle className="w-3.5 h-3.5" /> Disconnect</button>
+                                  <button onClick={() => { setOpenMenu(null); setDisconnecting(r); }} disabled={statusBusy.has(r.id)} className="w-full text-left px-3 py-1.5 text-[13px] text-[#EF4444] hover:bg-[#FEF2F2] flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"><AlertTriangle className="w-3.5 h-3.5" /> Disconnect</button>
                                 ) : (
-                                  <button onClick={() => connect(r)} className="w-full text-left px-3 py-1.5 text-[13px] text-teal hover:bg-soft-bg flex items-center gap-2"><CheckCircle2 className="w-3.5 h-3.5" /> Connect</button>
+                                  <button onClick={() => connect(r)} disabled={statusBusy.has(r.id)} className="w-full text-left px-3 py-1.5 text-[13px] text-teal hover:bg-soft-bg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"><CheckCircle2 className="w-3.5 h-3.5" /> {statusBusy.has(r.id) ? "Connecting…" : "Connect"}</button>
                                 )}
                               </div>
                             </>
@@ -451,16 +489,27 @@ export default function IntegrationsPage() {
               <div className="relative w-[120px] h-[120px]">
                 <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
                   <circle cx="50" cy="50" r="40" fill="none" stroke="#F1F5F9" strokeWidth="12" />
-                  <circle cx="50" cy="50" r="40" fill="none" stroke="#00B894" strokeWidth="12" strokeDasharray={`${91.7 * 2.51327} ${251.327 - 91.7 * 2.51327}`} />
-                  <circle cx="50" cy="50" r="40" fill="none" stroke="#EF4444" strokeWidth="12" strokeDasharray={`${8.3 * 2.51327} ${251.327 - 8.3 * 2.51327}`} strokeDashoffset={-91.7 * 2.51327} />
+                  {health.segments.map((seg, i) => {
+                    const offset = health.segments.slice(0, i).reduce((s, x) => s + x.value, 0);
+                    return (
+                      <circle
+                        key={seg.name}
+                        cx="50" cy="50" r="40" fill="none"
+                        stroke={seg.color}
+                        strokeWidth="12"
+                        strokeDasharray={`${(seg.value / 100) * DONUT_C} ${DONUT_C - (seg.value / 100) * DONUT_C}`}
+                        strokeDashoffset={-(offset / 100) * DONUT_C}
+                      />
+                    );
+                  })}
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <p className="text-[20px] font-bold text-text-primary">12</p>
+                  <p className="text-[20px] font-bold text-text-primary">{health.total.toLocaleString()}</p>
                   <p className="text-[10px] text-text-muted">Total</p>
                 </div>
               </div>
               <div className="w-full mt-4 space-y-2">
-                {health.map((h) => (
+                {health.segments.map((h) => (
                   <div key={h.name} className="flex items-center justify-between text-[12px]">
                     <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: h.color }} /><span className="text-text-muted">{h.name}</span></div>
                     <span className="font-medium text-text-primary">{h.count} ({h.pct})</span>

@@ -1,13 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Search, Filter, ChevronDown, Download, Plus, Calendar,
   ChevronLeft, ChevronRight, ArrowUpDown, ChevronUp,
   Package, Truck, CheckCircle2, AlertTriangle,
-  ArrowUpRight, ArrowDownRight, Pencil, Trash2,
+  Pencil, Trash2,
 } from "lucide-react";
 import type { Shipment, ShipmentStatus } from "@/types";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
@@ -95,7 +95,9 @@ const emptyDraft: Draft = {
   estimatedDelivery: "", weight: "",
 };
 
-function ShipmentFields({ draft, set }: { draft: Draft; set: (d: Partial<Draft>) => void }) {
+type Errors = Partial<Record<"trackingNumber" | "origin" | "destination", string>>;
+
+function ShipmentFields({ draft, set, errors }: { draft: Draft; set: (d: Partial<Draft>) => void; errors: Errors }) {
   return (
     <div className="grid grid-cols-2 gap-4">
       <Field label="Carrier">
@@ -105,14 +107,14 @@ function ShipmentFields({ draft, set }: { draft: Draft; set: (d: Partial<Draft>)
         <Select options={STATUSES} value={draft.status} onChange={(e) => set({ status: e.target.value as ShipmentStatus })} />
       </Field>
       <div className="col-span-2">
-        <Field label="Tracking number" required>
+        <Field label="Tracking number" required error={errors.trackingNumber}>
           <TextInput value={draft.trackingNumber} onChange={(e) => set({ trackingNumber: e.target.value })} placeholder="1Z999AA10123456784" />
         </Field>
       </div>
-      <Field label="Origin" required>
+      <Field label="Origin" required error={errors.origin}>
         <TextInput value={draft.origin} onChange={(e) => set({ origin: e.target.value })} placeholder="Shenzhen, CN" />
       </Field>
-      <Field label="Destination" required>
+      <Field label="Destination" required error={errors.destination}>
         <TextInput value={draft.destination} onChange={(e) => set({ destination: e.target.value })} placeholder="Los Angeles, CA" />
       </Field>
       <Field label="Order ID">
@@ -146,6 +148,20 @@ export default function ShipmentsView({ items }: { items: Shipment[] }) {
   const [carrierFilter, setCarrierFilter] = useState<string>("");
   const [filterOpen, setFilterOpen] = useState(false);
 
+  // Close any open custom dropdown on Escape (outside-click is already handled
+  // by each dropdown's overlay).
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setDateOpen(false);
+        setFilterOpen(false);
+        setPageSizeOpen(false);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   // sorting
   type SortKey = "id" | "orderId" | "carrier" | "status" | "origin" | "destination" | "estimatedDelivery";
   const [sortKey, setSortKey] = useState<SortKey>("estimatedDelivery");
@@ -168,6 +184,7 @@ export default function ShipmentsView({ items }: { items: Shipment[] }) {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Shipment | null>(null);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const [errors, setErrors] = useState<Errors>({});
   const [busy, setBusy] = useState(false);
 
   // delete
@@ -178,11 +195,14 @@ export default function ShipmentsView({ items }: { items: Shipment[] }) {
     const inTransit = items.filter((s) => s.status === "In Transit").length;
     const delivered = items.filter((s) => s.status === "Delivered").length;
     const exceptions = items.filter((s) => s.status === "Exception").length;
+    const pct = (n: number) => (total > 0 ? `${Math.round((n / total) * 100)}% of total` : "—");
+    // No historical snapshots exist, so we surface each status's real share of the
+    // current book of shipments instead of an invented "% change vs last week".
     return [
-      { title: "Total Shipments", value: formatNumber(total), change: "8.2%", positive: true, sub: "vs last week", icon: Package, iconBg: "bg-[#0057D8]/10", iconColor: "text-[#0057D8]" },
-      { title: "In Transit", value: formatNumber(inTransit), change: "3.1%", positive: true, sub: "vs last week", icon: Truck, iconBg: "bg-[#00B894]/10", iconColor: "text-[#00B894]" },
-      { title: "Delivered", value: formatNumber(delivered), change: "12.5%", positive: true, sub: "vs last week", icon: CheckCircle2, iconBg: "bg-[#8B5CF6]/10", iconColor: "text-[#8B5CF6]" },
-      { title: "Exceptions", value: formatNumber(exceptions), change: "4.7%", positive: false, sub: "vs last week", icon: AlertTriangle, iconBg: "bg-[#EF4444]/10", iconColor: "text-[#EF4444]" },
+      { title: "Total Shipments", value: formatNumber(total), sub: "in workspace", icon: Package, iconBg: "bg-[#0057D8]/10", iconColor: "text-[#0057D8]" },
+      { title: "In Transit", value: formatNumber(inTransit), sub: pct(inTransit), icon: Truck, iconBg: "bg-[#00B894]/10", iconColor: "text-[#00B894]" },
+      { title: "Delivered", value: formatNumber(delivered), sub: pct(delivered), icon: CheckCircle2, iconBg: "bg-[#8B5CF6]/10", iconColor: "text-[#8B5CF6]" },
+      { title: "Exceptions", value: formatNumber(exceptions), sub: pct(exceptions), icon: AlertTriangle, iconBg: "bg-[#EF4444]/10", iconColor: "text-[#EF4444]" },
     ];
   }, [items]);
 
@@ -290,11 +310,13 @@ export default function ShipmentsView({ items }: { items: Shipment[] }) {
   function openCreate() {
     setEditing(null);
     setDraft(emptyDraft);
+    setErrors({});
     setFormOpen(true);
   }
 
   function openEdit(s: Shipment) {
     setEditing(s);
+    setErrors({});
     setDraft({
       orderId: s.orderId ?? "",
       carrier: s.carrier,
@@ -310,8 +332,20 @@ export default function ShipmentsView({ items }: { items: Shipment[] }) {
   }
 
   async function saveShipment() {
-    if (!draft.trackingNumber.trim()) { toast("Tracking number is required", "error"); return; }
-    if (!draft.origin.trim() || !draft.destination.trim()) { toast("Origin and destination are required", "error"); return; }
+    const nextErrors: Errors = {};
+    if (!draft.trackingNumber.trim()) {
+      nextErrors.trackingNumber = "Tracking number is required";
+    } else if (draft.trackingNumber.trim().length < 6) {
+      nextErrors.trackingNumber = "Tracking number looks too short";
+    }
+    if (!draft.origin.trim()) nextErrors.origin = "Origin is required";
+    if (!draft.destination.trim()) nextErrors.destination = "Destination is required";
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors(nextErrors);
+      toast("Please fix the highlighted fields", "error");
+      return;
+    }
+    setErrors({});
     setBusy(true);
     const payload = {
       orderId: draft.orderId.trim() || undefined,
@@ -429,8 +463,6 @@ export default function ShipmentsView({ items }: { items: Shipment[] }) {
               </div>
               <p className="text-[28px] font-bold text-[#1E293B] leading-none">{s.value}</p>
               <div className="flex items-center gap-1 mt-2">
-                {s.positive ? <ArrowUpRight className="w-3.5 h-3.5 text-[#10B981]" /> : <ArrowDownRight className="w-3.5 h-3.5 text-[#EF4444]" />}
-                <span className={`text-[12px] font-medium ${s.positive ? "text-[#10B981]" : "text-[#EF4444]"}`}>{s.change}</span>
                 <span className="text-[11px] text-[#94A3B8]">{s.sub}</span>
               </div>
             </div>
@@ -720,7 +752,7 @@ export default function ShipmentsView({ items }: { items: Shipment[] }) {
           </>
         }
       >
-        <ShipmentFields draft={draft} set={(d) => setDraft((prev) => ({ ...prev, ...d }))} />
+        <ShipmentFields draft={draft} set={(d) => setDraft((prev) => ({ ...prev, ...d }))} errors={errors} />
       </Modal>
 
       {/* Delete confirm */}

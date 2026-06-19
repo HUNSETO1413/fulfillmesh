@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -126,9 +126,6 @@ function scoreColor(score: number): string {
   return "#9AA8B8";
 }
 
-const onTimePts = [60, 45, 62, 50, 70, 58, 75];
-const onTimeDates = ["May 12", "May 13", "May 14", "May 15", "May 16", "May 17", "May 18"];
-
 function PerfRing({ pct }: { pct: number }) {
   const c = 2 * Math.PI * 14;
   const len = (pct / 100) * c;
@@ -174,6 +171,14 @@ function NotificationBell() {
       return next;
     });
   }
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const unread = notes.filter((n) => !n.read).length;
 
@@ -297,6 +302,20 @@ export default function SuppliersView({ items }: { items: Supplier[] }) {
 
   // delete
   const [deleting, setDeleting] = useState<Supplier | null>(null);
+
+  // Close any open custom dropdown on Escape.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      setFilterOpen(false);
+      setLocationOpen(false);
+      setCertOpen(false);
+      setMoreOpen(false);
+      setPageSizeOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const stats = useMemo(() => {
     const total = items.length;
@@ -467,6 +486,38 @@ export default function SuppliersView({ items }: { items: Supplier[] }) {
       })),
     [categories],
   );
+
+  // Real categorical breakdown to replace the fabricated on-time time-series:
+  // suppliers carry a 0-5 rating but no historical on-time points, so we bucket
+  // the live ratings and surface the share rated "good" (4.0+) as the headline.
+  const ratingBands = useMemo(() => {
+    const bands = [
+      { label: "Excellent", hint: "4.5 – 5.0", min: 4.5, color: "#00B894" },
+      { label: "Good", hint: "4.0 – 4.4", min: 4.0, color: "#0057D8" },
+      { label: "Fair", hint: "3.0 – 3.9", min: 3.0, color: "#F59E0B" },
+      { label: "Needs review", hint: "Below 3.0", min: 0, color: "#EF4444" },
+    ];
+    const total = items.length;
+    let remaining = [...items];
+    const rows = bands.map((b) => {
+      const inBand = remaining.filter((s) => s.rating >= b.min);
+      remaining = remaining.filter((s) => s.rating < b.min);
+      const count = inBand.length;
+      return { ...b, count, pct: total > 0 ? Math.round((count / total) * 100) : 0 };
+    });
+    const goodOrBetter = items.filter((s) => s.rating >= 4).length;
+    const avgLead = (() => {
+      const withLead = items.filter((s) => s.leadTimeDays != null);
+      if (withLead.length === 0) return null;
+      return Math.round(withLead.reduce((sum, s) => sum + (s.leadTimeDays ?? 0), 0) / withLead.length);
+    })();
+    return {
+      rows,
+      total,
+      goodPct: total > 0 ? Math.round((goodOrBetter / total) * 100) : 0,
+      avgLead,
+    };
+  }, [items]);
 
   function selectTab(t: string) {
     setTab(t);
@@ -1070,32 +1121,37 @@ export default function SuppliersView({ items }: { items: Supplier[] }) {
             <button onClick={() => { setTab("All Suppliers"); setPage(1); }} className="text-[12px] text-action-blue font-medium mt-3 hover:underline">View all suppliers →</button>
           </div>
 
-          {/* On-Time chart */}
+          {/* Supplier rating quality — real categorical breakdown computed from
+              the live supplier ratings (no fabricated time-series). */}
           <div className="bg-white rounded-xl border border-border-soft p-5 shadow-soft">
-            <h3 className="text-[15px] font-semibold text-deep-navy mb-1">Supplier On-Time Sample Rate</h3>
+            <h3 className="text-[15px] font-semibold text-deep-navy mb-1">Supplier Rating Quality</h3>
             <div className="flex items-center gap-2 mb-3">
-              <span className="text-[22px] font-bold text-deep-navy">95.3%</span>
-              <span className="text-[11px] text-teal font-medium flex items-center gap-0.5">
-                <ArrowUpRight className="w-3 h-3" />2.8%
-              </span>
-              <span className="text-[11px] text-text-light">vs May 5 – May 11</span>
+              <span className="text-[22px] font-bold text-deep-navy">{ratingBands.goodPct}%</span>
+              <span className="text-[11px] text-text-light">rated 4.0★ or higher</span>
             </div>
-            <div className="h-[90px]">
-              <svg viewBox="0 0 200 90" className="w-full h-full" preserveAspectRatio="none">
-                <defs>
-                  <linearGradient id="otGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#0057D8" stopOpacity="0.2" />
-                    <stop offset="100%" stopColor="#0057D8" stopOpacity="0" />
-                  </linearGradient>
-                </defs>
-                <path d={`M0,${80 - onTimePts[0]} ${onTimePts.map((v, i) => `L${i * 33},${80 - v}`).join(" ")} L198,80 L0,80 Z`} fill="url(#otGrad)" />
-                <polyline fill="none" stroke="#0057D8" strokeWidth="2" points={onTimePts.map((v, i) => `${i * 33},${80 - v}`).join(" ")} />
-                {onTimePts.map((v, i) => <circle key={i} cx={i * 33} cy={80 - v} r="2.5" fill="white" stroke="#0057D8" strokeWidth="1.5" />)}
-              </svg>
+            <div className="space-y-2.5">
+              {ratingBands.rows.map((b) => (
+                <div key={b.label}>
+                  <div className="flex items-center justify-between text-[12px] mb-1">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: b.color }} />
+                      <span className="text-text-muted truncate">{b.label}</span>
+                      <span className="text-text-light text-[10px] shrink-0">{b.hint}</span>
+                    </div>
+                    <span className="font-medium text-deep-navy shrink-0 ml-2">{b.count}</span>
+                  </div>
+                  <div className="w-full h-1.5 rounded-full bg-border-soft overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: `${b.pct}%`, backgroundColor: b.color }} />
+                  </div>
+                </div>
+              ))}
             </div>
-            <div className="flex justify-between text-[9px] text-text-light mt-1">
-              {onTimeDates.map((d) => <span key={d}>{d}</span>)}
-            </div>
+            {ratingBands.avgLead != null && (
+              <div className="flex items-center justify-between mt-4 pt-3 border-t border-border-soft text-[12px]">
+                <span className="text-text-muted">Avg lead time</span>
+                <span className="font-semibold text-deep-navy">{ratingBands.avgLead} days</span>
+              </div>
+            )}
           </div>
         </div>
       </div>

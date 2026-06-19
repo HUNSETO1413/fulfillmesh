@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   CheckCircle2,
@@ -53,11 +53,13 @@ const emptyDraft: Draft = {
   dueDate: new Date().toISOString().slice(0, 10), amount: "",
 };
 
-function InvoiceFields({ draft, set }: { draft: Draft; set: (d: Partial<Draft>) => void }) {
+type DraftErrors = Partial<Record<keyof Draft, string>>;
+
+function InvoiceFields({ draft, set, errors }: { draft: Draft; set: (d: Partial<Draft>) => void; errors: DraftErrors }) {
   return (
     <div className="grid grid-cols-2 gap-4">
       <div className="col-span-2">
-        <Field label="Customer" required>
+        <Field label="Customer" required error={errors.customer}>
           <TextInput value={draft.customer} onChange={(e) => set({ customer: e.target.value })} placeholder="Acme Retail" />
         </Field>
       </div>
@@ -67,14 +69,14 @@ function InvoiceFields({ draft, set }: { draft: Draft; set: (d: Partial<Draft>) 
       <Field label="Status">
         <Select options={STATUSES} value={draft.status} onChange={(e) => set({ status: e.target.value as InvoiceStatus })} />
       </Field>
-      <Field label="Issued date">
+      <Field label="Issued date" error={errors.issuedDate}>
         <TextInput type="date" value={draft.issuedDate} onChange={(e) => set({ issuedDate: e.target.value })} />
       </Field>
-      <Field label="Due date">
+      <Field label="Due date" error={errors.dueDate}>
         <TextInput type="date" value={draft.dueDate} onChange={(e) => set({ dueDate: e.target.value })} />
       </Field>
       <div className="col-span-2">
-        <Field label="Amount (USD)">
+        <Field label="Amount (USD)" error={errors.amount}>
           <NumberInput value={draft.amount} onChange={(e) => set({ amount: e.target.value })} placeholder="0.00" step="0.01" min="0" />
         </Field>
       </div>
@@ -93,33 +95,25 @@ const tabs: { label: string; status: string | null }[] = [
   { label: "Void", status: "Void" },
 ];
 
-const aging = [
-  { label: "Current", value: "$10,000", pct: 41, color: "#10B981" },
-  { label: "1–30 Days", value: "$6,148", pct: 25, color: "#3B82F6" },
-  { label: "31–60 Days", value: "$4,000", pct: 16, color: "#F59E0B" },
-  { label: "61–90 Days", value: "$2,700", pct: 11, color: "#EF4444" },
-  { label: "90+ Days", value: "$1,720", pct: 7, color: "#8B5CF6" },
-];
+const money = (n: number) =>
+  "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-const recentPayments = [
-  { id: "PAY-2025-0312", date: "May 24, 2025", amount: "$4,310.00" },
-  { id: "PAY-2025-0311", date: "May 23, 2025", amount: "$3,250.75" },
-  { id: "PAY-2025-0310", date: "May 21, 2025", amount: "$5,760.00" },
-  { id: "PAY-2025-0308", date: "May 19, 2025", amount: "$1,560.00" },
-];
+const AGING_COLORS = {
+  current: "#10B981",
+  d30: "#3B82F6",
+  d60: "#F59E0B",
+  d90: "#EF4444",
+  d90plus: "#8B5CF6",
+};
 
-const byStatus = [
-  { label: "Paid", value: "32 (82%)", pct: 82, color: "#10B981" },
-  { label: "Pending", value: "5 (13%)", pct: 13, color: "#3B82F6" },
-  { label: "Overdue", value: "2 (5%)", pct: 5, color: "#EF4444" },
-];
-
-const statement = [
-  { label: "Opening Balance (May 1, 2025)", value: "$13,240.00" },
-  { label: "Invoices", value: "$38,916.25" },
-  { label: "Payments", value: "−$26,868.00" },
-  { label: "Credits / Adjustments", value: "−$0.00" },
-];
+// Status share colors for the "Invoices by Status" donut.
+const STATUS_COLORS: Record<InvoiceStatus, string> = {
+  Paid: "#10B981",
+  Sent: "#3B82F6",
+  Overdue: "#EF4444",
+  Draft: "#94A3B8",
+  Void: "#CBD5E1",
+};
 
 const quickActions = [
   { label: "Make a Payment", icon: CreditCard },
@@ -194,6 +188,7 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Invoice | null>(null);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const [formErrors, setFormErrors] = useState<DraftErrors>({});
   const [busy, setBusy] = useState(false);
 
   // delete
@@ -209,12 +204,14 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
     const paidTotal = paid.reduce((s, i) => s + i.amount, 0);
     const overdueTotal = overdue.reduce((s, i) => s + i.amount, 0);
     const fmt = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const draftTotal = items.filter((i) => i.status === "Draft").reduce((s, i) => s + i.amount, 0);
+    const draftCount = items.filter((i) => i.status === "Draft").length;
     return [
       { title: "Total Outstanding", value: fmt(outTotal), sub: `${outstanding.length} invoices`, color: "#3B82F6", icon: DollarSign },
-      { title: "Total Paid (This Year)", value: fmt(paidTotal), sub: `${paid.length} invoices`, color: "#10B981", icon: CheckCircle2 },
+      { title: "Total Paid", value: fmt(paidTotal), sub: `${paid.length} invoices`, color: "#10B981", icon: CheckCircle2 },
       { title: "Overdue Amount", value: fmt(overdueTotal), sub: `${overdue.length} invoices`, color: "#EF4444", icon: AlertTriangle },
       { title: "Due Soon", value: fmt(sent.reduce((s, i) => s + i.amount, 0)), sub: `${sent.length} invoices`, color: "#F59E0B", icon: Clock },
-      { title: "Credit Balance", value: "$1,250.00", sub: "Available Credit", color: "#8B5CF6", icon: Wallet },
+      { title: "In Draft", value: fmt(draftTotal), sub: `${draftCount} invoices`, color: "#8B5CF6", icon: Wallet },
     ];
   }, [items]);
 
@@ -233,12 +230,100 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
 
   const tableRef = useRef<HTMLDivElement | null>(null);
 
+  // Close any open custom dropdown / row menu when Escape is pressed.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setStatusOpen(false);
+        setDateOpen(false);
+        setMoreOpen(false);
+        setPageSizeOpen(false);
+        setMenuFor(null);
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+
   const circumference = 2 * Math.PI * 40;
 
   const counts = useMemo(() => {
     const map: Record<string, number> = {};
     for (const inv of items) map[inv.status] = (map[inv.status] ?? 0) + 1;
     return map;
+  }, [items]);
+
+  // Anchor "today" to the latest due date in the dataset so aging buckets stay
+  // deterministic regardless of the wall clock.
+  const refToday = useMemo(() => {
+    const max = items.reduce((m, i) => (i.dueDate > m ? i.dueDate : m), "");
+    return max || new Date().toISOString().slice(0, 10);
+  }, [items]);
+
+  // Aging of outstanding (Sent + Overdue) invoices, bucketed by how many days
+  // past the due date each invoice is relative to refToday.
+  const aging = useMemo(() => {
+    const outstanding = items.filter((i) => i.status === "Sent" || i.status === "Overdue");
+    const today = new Date(`${refToday}T00:00:00Z`).getTime();
+    const buckets = { current: 0, d30: 0, d60: 0, d90: 0, d90plus: 0 };
+    for (const inv of outstanding) {
+      const due = new Date(`${inv.dueDate}T00:00:00Z`).getTime();
+      const daysPast = Math.floor((today - due) / 86_400_000);
+      if (daysPast <= 0) buckets.current += inv.amount;
+      else if (daysPast <= 30) buckets.d30 += inv.amount;
+      else if (daysPast <= 60) buckets.d60 += inv.amount;
+      else if (daysPast <= 90) buckets.d90 += inv.amount;
+      else buckets.d90plus += inv.amount;
+    }
+    const total = buckets.current + buckets.d30 + buckets.d60 + buckets.d90 + buckets.d90plus;
+    const pct = (v: number) => (total > 0 ? (v / total) * 100 : 0);
+    return {
+      total,
+      rows: [
+        { label: "Current", value: money(buckets.current), pct: pct(buckets.current), color: AGING_COLORS.current },
+        { label: "1–30 Days", value: money(buckets.d30), pct: pct(buckets.d30), color: AGING_COLORS.d30 },
+        { label: "31–60 Days", value: money(buckets.d60), pct: pct(buckets.d60), color: AGING_COLORS.d60 },
+        { label: "61–90 Days", value: money(buckets.d90), pct: pct(buckets.d90), color: AGING_COLORS.d90 },
+        { label: "90+ Days", value: money(buckets.d90plus), pct: pct(buckets.d90plus), color: AGING_COLORS.d90plus },
+      ],
+    };
+  }, [items, refToday]);
+
+  // "Recent payments" are the paid invoices, treated as received payments and
+  // shown newest-first by issue date.
+  const recentPayments = useMemo(
+    () =>
+      items
+        .filter((i) => i.status === "Paid")
+        .sort((a, b) => b.issuedDate.localeCompare(a.issuedDate))
+        .slice(0, 4)
+        .map((i) => ({ id: i.id, customer: i.customer, date: formatDate(i.issuedDate), amount: formatCurrency(i.amount) })),
+    [items],
+  );
+
+  // Share of invoices by status (count-based) for the donut + legend.
+  const byStatus = useMemo(() => {
+    const total = items.length;
+    const order: InvoiceStatus[] = ["Paid", "Sent", "Overdue", "Draft", "Void"];
+    const rows = order
+      .map((status) => {
+        const count = items.filter((i) => i.status === status).length;
+        return { label: status, count, pct: total > 0 ? (count / total) * 100 : 0, color: STATUS_COLORS[status] };
+      })
+      .filter((r) => r.count > 0)
+      .map((r) => ({ ...r, value: `${r.count} (${Math.round(r.pct)}%)` }));
+    return { total, rows };
+  }, [items]);
+
+  // Account-statement summary derived from the dataset.
+  const statement = useMemo(() => {
+    const invoiced = items.reduce((s, i) => s + i.amount, 0);
+    const payments = items.filter((i) => i.status === "Paid").reduce((s, i) => s + i.amount, 0);
+    return [
+      { label: "Total invoiced", value: money(invoiced) },
+      { label: "Payments received", value: "−" + money(payments) },
+      { label: "Credits / Adjustments", value: "−" + money(0) },
+    ];
   }, [items]);
 
   const filtered = useMemo(() => {
@@ -345,12 +430,14 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
 
   function openCreate() {
     setEditing(null);
+    setFormErrors({});
     setDraft(emptyDraft);
     setFormOpen(true);
   }
 
   function openEdit(inv: Invoice) {
     setEditing(inv);
+    setFormErrors({});
     setDraft({
       customer: inv.customer,
       orderId: inv.orderId ?? "",
@@ -362,9 +449,24 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
     setFormOpen(true);
   }
 
+  function validateDraft(): DraftErrors {
+    const errs: DraftErrors = {};
+    if (!draft.customer.trim()) errs.customer = "Customer is required";
+    if (draft.amount.trim() !== "") {
+      const n = Number(draft.amount);
+      if (!Number.isFinite(n) || n < 0) errs.amount = "Enter a valid non-negative amount";
+    }
+    if (draft.issuedDate && draft.dueDate && draft.dueDate < draft.issuedDate) {
+      errs.dueDate = "Due date cannot be before the issued date";
+    }
+    return errs;
+  }
+
   async function saveInvoice() {
-    if (!draft.customer.trim()) {
-      toast("Customer is required", "error");
+    const errs = validateDraft();
+    setFormErrors(errs);
+    if (Object.keys(errs).length > 0) {
+      toast("Please fix the highlighted fields", "error");
       return;
     }
     setBusy(true);
@@ -937,9 +1039,9 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
               <div className="relative w-[140px] h-[140px]">
                 <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
                   <circle cx="50" cy="50" r="40" fill="none" stroke="#F1F5F9" strokeWidth="11" />
-                  {aging.map((a, i) => {
+                  {aging.rows.map((a, i) => {
                     const len = (a.pct / 100) * circumference;
-                    const prior = aging.slice(0, i).reduce((sum, x) => sum + x.pct, 0);
+                    const prior = aging.rows.slice(0, i).reduce((sum, x) => sum + x.pct, 0);
                     return (
                       <circle
                         key={i}
@@ -956,13 +1058,13 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
                   })}
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <p className="text-[16px] font-bold text-[#1E293B]">$24,568.75</p>
+                  <p className="text-[16px] font-bold text-[#1E293B]">{money(aging.total)}</p>
                   <p className="text-[10px] text-[#94A3B8]">Total Outstanding</p>
                 </div>
               </div>
             </div>
             <div className="space-y-2.5">
-              {aging.map((a) => (
+              {aging.rows.map((a) => (
                 <div key={a.label} className="flex items-center justify-between text-[12px]">
                   <div className="flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: a.color }} />
@@ -985,11 +1087,14 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
                 <div key={p.id} className="flex items-center justify-between">
                   <div>
                     <p className="text-[13px] font-medium text-[#3B82F6]">{p.id}</p>
-                    <p className="text-[11px] text-[#94A3B8]">{p.date}</p>
+                    <p className="text-[11px] text-[#94A3B8]">{p.customer} · {p.date}</p>
                   </div>
                   <span className="text-[13px] font-semibold text-[#10B981]">{p.amount}</span>
                 </div>
               ))}
+              {recentPayments.length === 0 && (
+                <p className="text-[12px] text-[#94A3B8]">No payments recorded yet.</p>
+              )}
             </div>
           </div>
 
@@ -1026,9 +1131,9 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
             <div className="relative w-[110px] h-[110px] shrink-0">
               <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
                 <circle cx="50" cy="50" r="40" fill="none" stroke="#F1F5F9" strokeWidth="11" />
-                {byStatus.map((b, i) => {
+                {byStatus.rows.map((b, i) => {
                   const len = (b.pct / 100) * circumference;
-                  const prior = byStatus.slice(0, i).reduce((sum, x) => sum + x.pct, 0);
+                  const prior = byStatus.rows.slice(0, i).reduce((sum, x) => sum + x.pct, 0);
                   return (
                     <circle
                       key={i}
@@ -1045,12 +1150,12 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
                 })}
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <p className="text-[16px] font-bold text-[#1E293B]">39</p>
+                <p className="text-[16px] font-bold text-[#1E293B]">{byStatus.total}</p>
                 <p className="text-[10px] text-[#94A3B8]">Total</p>
               </div>
             </div>
             <div className="flex-1 space-y-2.5">
-              {byStatus.map((b) => (
+              {byStatus.rows.map((b) => (
                 <div key={b.label} className="flex items-center justify-between text-[12px]">
                   <div className="flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: b.color }} />
@@ -1077,8 +1182,8 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
               </div>
             ))}
             <div className="flex items-center justify-between pt-3 mt-1 border-t border-[#E2E8F0]">
-              <span className="text-[13px] font-semibold text-[#1E293B]">Closing Balance (May 31, 2025)</span>
-              <span className="text-[14px] font-bold text-[#EF4444]">$24,568.75</span>
+              <span className="text-[13px] font-semibold text-[#1E293B]">Outstanding balance</span>
+              <span className="text-[14px] font-bold text-[#EF4444]">{money(statementTotals.outstanding)}</span>
             </div>
           </div>
         </div>
@@ -1140,7 +1245,7 @@ export default function InvoicesView({ items }: { items: Invoice[] }) {
           </>
         }
       >
-        <InvoiceFields draft={draft} set={(d) => setDraft((prev) => ({ ...prev, ...d }))} />
+        <InvoiceFields draft={draft} set={(d) => setDraft((prev) => ({ ...prev, ...d }))} errors={formErrors} />
       </Modal>
 
       {/* View invoice modal */}

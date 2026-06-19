@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   ChevronDown, Building2, Globe, Palette, Database, Languages,
-  Upload, Image, Save, RotateCcw, CheckCircle2, AlertTriangle,
+  Upload, Image as ImageIcon, RotateCcw, CheckCircle2, AlertTriangle,
 } from "lucide-react";
 import { useToast } from "@/components/dashboard/Toast";
 import { api } from "@/lib/client";
@@ -179,9 +179,10 @@ export default function GeneralSettingsPage() {
             <div className="flex items-center gap-4 mt-1">
               <div className="w-16 h-16 rounded-xl border-2 border-dashed border-[#E2E8F0] flex items-center justify-center overflow-hidden bg-[#F8FAFC]">
                 {logoPreview ? (
-                  <img src={logoPreview} alt="Logo" className="w-full h-full object-cover" />
+                  // eslint-disable-next-line @next/next/no-img-element -- logo is a client-side data-URL preview, not a static asset for next/image
+                  <img src={logoPreview} alt="Company logo preview" className="w-full h-full object-cover" />
                 ) : (
-                  <Image className="w-6 h-6 text-[#94A3B8]" />
+                  <ImageIcon className="w-6 h-6 text-[#94A3B8]" />
                 )}
               </div>
               <div>

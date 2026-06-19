@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -8,7 +8,7 @@ import {
   ShieldCheck, ClipboardCheck, BadgeCheck, Search as SearchIcon, Pencil,
   Plus, Trash2,
 } from "lucide-react";
-import type { Product } from "@/types";
+import type { Product, InventoryItem } from "@/types";
 import { Modal } from "@/components/dashboard/Modal";
 import { Field as FormField, TextInput, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
@@ -194,10 +194,20 @@ export default function ProductDetailView({ product }: { product: Product }) {
   // Pricing edit — persists via PUT (price/cost are accepted by the products API).
   const [pricingOpen, setPricingOpen] = useState(false);
   const [pricingDraft, setPricingDraft] = useState({ price: String(product.price), cost: product.cost != null ? String(product.cost) : "" });
+  const [pricingErrors, setPricingErrors] = useState<{ price?: string; cost?: string }>({});
 
   async function savePricing() {
     const price = Number(pricingDraft.price);
-    if (!Number.isFinite(price) || price < 0) { toast("Enter a valid selling price", "error"); return; }
+    const errors: { price?: string; cost?: string } = {};
+    if (pricingDraft.price.trim() === "" || !Number.isFinite(price) || price < 0) {
+      errors.price = "Enter a valid selling price (0 or more).";
+    }
+    if (pricingDraft.cost.trim() !== "") {
+      const cost = Number(pricingDraft.cost);
+      if (!Number.isFinite(cost) || cost < 0) errors.cost = "Enter a valid unit cost.";
+    }
+    setPricingErrors(errors);
+    if (Object.keys(errors).length > 0) return;
     setBusy(true);
     try {
       await api.put(`/api/products/${product.id}`, {
@@ -208,6 +218,9 @@ export default function ProductDetailView({ product }: { product: Product }) {
       setPricingOpen(false);
       router.refresh();
     } catch (e) {
+      // Surface the failure inline on the field; the modal stays open so the
+      // user can retry without losing their draft.
+      setPricingErrors({ price: e instanceof Error ? e.message : "Could not update pricing" });
       toast(e instanceof Error ? e.message : "Could not update pricing", "error");
     } finally { setBusy(false); }
   }
@@ -216,12 +229,15 @@ export default function ProductDetailView({ product }: { product: Product }) {
   const [specs, setSpecs] = useState(defaultSpecs);
   const [specsEditOpen, setSpecsEditOpen] = useState(false);
   const [specsDraft, setSpecsDraft] = useState(specs);
+  const [specsError, setSpecsError] = useState(false);
 
   function saveSpecs() {
     if (specsDraft.some((s) => !s.label.trim())) {
+      setSpecsError(true);
       toast("Specification labels cannot be empty", "error");
       return;
     }
+    setSpecsError(false);
     setSpecs(specsDraft.map((s) => ({ ...s, label: s.label.trim(), value: s.value.trim() })));
     setSpecsEditOpen(false);
     toast("Specifications updated");
@@ -242,6 +258,41 @@ export default function ProductDetailView({ product }: { product: Product }) {
 
   // ---- 4. Deterministic Performance Trends ----
   const perf = useMemo(() => derivePerformanceData(product.id), [product.id]);
+
+  // ---- Real inventory tiles (Reorder Point / Committed / On Hand / Available) ----
+  // The Product entity carries only `stock`; reorder-point and committed quantities
+  // live on the matching InventoryItem(s) (same SKU). Fetch them on mount and
+  // aggregate across warehouses. `null` = still loading; `[]` = loaded, no match.
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[] | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    api.get<{ data: InventoryItem[]; total: number }>("/api/inventory")
+      .then((res) => { if (active) setInventoryItems(res.data ?? []); })
+      .catch(() => { if (active) setInventoryItems([]); });
+    return () => { active = false; };
+  }, []);
+
+  // Aggregate the real inventory rows that match this product's SKU. Returns null
+  // while loading and when no matching item exists, so the tiles can fall back to
+  // honest values (the product's own stock / "—") instead of invented constants.
+  const inventorySummary = useMemo(() => {
+    if (!inventoryItems) return null;
+    const target = product.sku.trim().toLowerCase();
+    const matches = inventoryItems.filter((i) => i.sku.trim().toLowerCase() === target);
+    if (matches.length === 0) return null;
+    return matches.reduce(
+      (acc, i) => ({
+        onHand: acc.onHand + i.onHand,
+        reserved: acc.reserved + i.reserved,
+        available: acc.available + i.available,
+        reorderPoint: acc.reorderPoint + i.reorderPoint,
+      }),
+      { onHand: 0, reserved: 0, available: 0, reorderPoint: 0 },
+    );
+  }, [inventoryItems, product.sku]);
+
+  const inventoryLoading = inventoryItems === null;
 
   // ---- 5. Editable Quality Rules ----
   const [qualityRules, setQualityRules] = useState(defaultQuality);
@@ -321,11 +372,31 @@ export default function ProductDetailView({ product }: { product: Product }) {
 
   const supplierHref = "/dashboard/suppliers";
 
-  const metricCards = [
-    { label: "On Hand", value: formatNumber(product.stock), unit: "units", icon: Box, color: "#0057D8", bg: "#0057D81A" },
-    { label: "Reorder Point", value: "1,500", unit: "units", icon: Boxes, color: "#7C6FF6", bg: "#7C6FF61A" },
-    { label: "Days of Supply", value: "28", unit: "days", icon: Package, color: "#F59E0B", bg: "#F59E0B1A" },
-    { label: "Committed", value: "1,245", unit: "units", icon: Boxes, color: "#00B894", bg: "#00B8941A" },
+  // Inventory tiles backed by the real matching InventoryItem(s). On Hand falls
+  // back to the product's own stock when no inventory item matches the SKU; the
+  // remaining metrics show "—" rather than an invented constant. `null` value
+  // renders a brief loading placeholder while the fetch is in flight.
+  const metricCards: { label: string; value: string | null; unit: string; icon: typeof Box; color: string; bg: string }[] = [
+    {
+      label: "On Hand",
+      value: inventoryLoading ? null : formatNumber(inventorySummary?.onHand ?? product.stock),
+      unit: "units", icon: Box, color: "#0057D8", bg: "#0057D81A",
+    },
+    {
+      label: "Reorder Point",
+      value: inventoryLoading ? null : inventorySummary ? formatNumber(inventorySummary.reorderPoint) : "—",
+      unit: "units", icon: Boxes, color: "#7C6FF6", bg: "#7C6FF61A",
+    },
+    {
+      label: "Available",
+      value: inventoryLoading ? null : inventorySummary ? formatNumber(inventorySummary.available) : "—",
+      unit: "units", icon: Package, color: "#F59E0B", bg: "#F59E0B1A",
+    },
+    {
+      label: "Committed",
+      value: inventoryLoading ? null : inventorySummary ? formatNumber(inventorySummary.reserved) : "—",
+      unit: "units", icon: Boxes, color: "#00B894", bg: "#00B8941A",
+    },
   ];
 
   return (
@@ -379,7 +450,7 @@ export default function ProductDetailView({ product }: { product: Product }) {
                   <div className="flex items-center justify-between">
                     <span className="text-[12px] text-[#94A3B8]">Pricing</span>
                     <button
-                      onClick={() => { setPricingDraft({ price: String(product.price), cost: product.cost != null ? String(product.cost) : "" }); setPricingOpen(true); }}
+                      onClick={() => { setPricingDraft({ price: String(product.price), cost: product.cost != null ? String(product.cost) : "" }); setPricingErrors({}); setPricingOpen(true); }}
                       aria-label="Edit pricing"
                       className="text-[#94A3B8] hover:text-[#3B82F6] transition-colors"
                     >
@@ -408,7 +479,11 @@ export default function ProductDetailView({ product }: { product: Product }) {
                     <Icon className="w-3.5 h-3.5" style={{ color: m.color }} />
                   </div>
                 </div>
-                <p className="text-[22px] font-bold text-[#1E293B] leading-none">{m.value}</p>
+                {m.value === null ? (
+                  <div className="h-[22px] w-16 rounded bg-[#F1F5F9] animate-pulse" aria-label="Loading" />
+                ) : (
+                  <p className="text-[22px] font-bold text-[#1E293B] leading-none">{m.value}</p>
+                )}
                 <p className="text-[11px] text-[#94A3B8] mt-1">{m.unit}</p>
               </div>
             );
@@ -434,7 +509,7 @@ export default function ProductDetailView({ product }: { product: Product }) {
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-[14px] font-semibold text-[#1E293B]">Specifications</h3>
             <button
-              onClick={() => { setSpecsDraft(specs); setSpecsEditOpen(true); }}
+              onClick={() => { setSpecsDraft(specs); setSpecsError(false); setSpecsEditOpen(true); }}
               aria-label="Edit specifications"
               className="text-[#94A3B8] hover:text-[#3B82F6] transition-colors"
             >
@@ -655,7 +730,7 @@ export default function ProductDetailView({ product }: { product: Product }) {
       {/* Edit pricing modal */}
       <Modal
         open={pricingOpen}
-        onClose={() => setPricingOpen(false)}
+        onClose={() => { setPricingOpen(false); setPricingErrors({}); }}
         title="Edit Pricing"
         description={`Update the pricing for ${product.sku}.`}
         size="sm"
@@ -667,11 +742,11 @@ export default function ProductDetailView({ product }: { product: Product }) {
         }
       >
         <div className="space-y-4">
-          <FormField label="Selling price (USD)" required>
-            <TextInput type="number" value={pricingDraft.price} onChange={(e) => setPricingDraft({ ...pricingDraft, price: e.target.value })} step="0.01" min="0" />
+          <FormField label="Selling price (USD)" required error={pricingErrors.price}>
+            <TextInput type="number" value={pricingDraft.price} onChange={(e) => { setPricingDraft({ ...pricingDraft, price: e.target.value }); setPricingErrors((p) => ({ ...p, price: undefined })); }} step="0.01" min="0" />
           </FormField>
-          <FormField label="Unit cost (USD)">
-            <TextInput type="number" value={pricingDraft.cost} onChange={(e) => setPricingDraft({ ...pricingDraft, cost: e.target.value })} step="0.01" min="0" />
+          <FormField label="Unit cost (USD)" error={pricingErrors.cost}>
+            <TextInput type="number" value={pricingDraft.cost} onChange={(e) => { setPricingDraft({ ...pricingDraft, cost: e.target.value }); setPricingErrors((p) => ({ ...p, cost: undefined })); }} step="0.01" min="0" />
           </FormField>
         </div>
       </Modal>
@@ -693,10 +768,10 @@ export default function ProductDetailView({ product }: { product: Product }) {
         <div className="space-y-3">
           {specsDraft.map((s, i) => (
             <div key={i} className="grid grid-cols-[1fr_1fr_32px] gap-3 items-end">
-              <FormField label={i === 0 ? "Label" : ""}>
+              <FormField label={i === 0 ? "Label" : ""} error={specsError && !s.label.trim() ? "Required" : undefined}>
                 <TextInput
                   value={s.label}
-                  onChange={(e) => setSpecsDraft((prev) => prev.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))}
+                  onChange={(e) => { setSpecsDraft((prev) => prev.map((x, j) => (j === i ? { ...x, label: e.target.value } : x))); if (specsError) setSpecsError(false); }}
                   placeholder="e.g. Material"
                 />
               </FormField>

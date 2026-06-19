@@ -1,15 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Search, Filter, ChevronDown, Download, Plus, Calendar,
   ChevronLeft, ChevronRight, Pencil, Trash2, ChevronUp, ArrowUpDown,
+  ShoppingCart, Loader, Truck, DollarSign, ArrowUpRight,
 } from "lucide-react";
 import type { Order, OrderStatus } from "@/types";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency, formatDate, formatNumber } from "@/lib/format";
 import { Modal } from "@/components/dashboard/Modal";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { Field, TextInput, NumberInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
@@ -135,6 +136,35 @@ export default function OrdersView({ orders }: { orders: Order[] }) {
 
   // delete
   const [deleting, setDeleting] = useState<Order | null>(null);
+
+  // Close any open custom dropdown on Escape.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      setDateOpen(false);
+      setFilterOpen(false);
+      setPageSizeOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // Stat cards computed from the real order rows (excluding cancelled from
+  // active-revenue figures so AOV reflects realised sales).
+  const stats = useMemo(() => {
+    const total = orders.length;
+    const inProgress = orders.filter((o) => o.status === "Processing" || o.status === "Pending").length;
+    const inTransit = orders.filter((o) => o.status === "In Transit").length;
+    const revenueOrders = orders.filter((o) => o.status !== "Cancelled");
+    const revenue = revenueOrders.reduce((sum, o) => sum + o.total, 0);
+    const aov = revenueOrders.length > 0 ? revenue / revenueOrders.length : 0;
+    return [
+      { title: "Total Orders", value: formatNumber(total), sub: "all channels", icon: ShoppingCart, iconBg: "bg-[#3B82F6]/10", iconColor: "text-[#3B82F6]" },
+      { title: "In Progress", value: formatNumber(inProgress), sub: "pending & processing", icon: Loader, iconBg: "bg-[#F59E0B]/10", iconColor: "text-[#F59E0B]" },
+      { title: "In Transit", value: formatNumber(inTransit), sub: "shipments en route", icon: Truck, iconBg: "bg-[#7C6FF6]/10", iconColor: "text-[#7C6FF6]" },
+      { title: "Revenue · AOV", value: formatCurrency(revenue), sub: `${formatCurrency(aov)} avg order`, icon: DollarSign, iconBg: "bg-[#00B894]/10", iconColor: "text-[#00B894]" },
+    ];
+  }, [orders]);
 
   const filtered = useMemo(() => {
     return orders.filter((o) => {
@@ -350,6 +380,28 @@ export default function OrdersView({ orders }: { orders: Order[] }) {
             New Order
           </button>
         </div>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {stats.map((s) => {
+          const Icon = s.icon;
+          return (
+            <div key={s.title} className="bg-white rounded-xl border border-[#E5E7EB] p-5 shadow-[0_1px_3px_rgba(0,0,0,0.1)]">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[13px] text-[#6B7280]">{s.title}</span>
+                <div className={`w-8 h-8 rounded-lg ${s.iconBg} flex items-center justify-center`}>
+                  <Icon className={`w-4 h-4 ${s.iconColor}`} />
+                </div>
+              </div>
+              <p className="text-[28px] font-bold text-[#1A1A1A] leading-none">{s.value}</p>
+              <div className="flex items-center gap-1 mt-2">
+                <ArrowUpRight className="w-3.5 h-3.5 text-[#00B894]" />
+                <span className="text-[11px] text-[#9CA3AF]">{s.sub}</span>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* Tabs */}

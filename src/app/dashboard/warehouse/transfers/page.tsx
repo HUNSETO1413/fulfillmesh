@@ -15,6 +15,7 @@ import { useToast } from "@/components/dashboard/Toast";
 import { api, exportToCsv } from "@/lib/client";
 
 type StatItem = { title: string; value: string; sub?: string; change: string; note: string; positive: boolean; icon: typeof ArrowLeftRight; iconBg: string; iconColor: string };
+type SummaryStat = { label: string; value: string; icon: typeof Boxes; color: string };
 
 const tabs = ["All Transfers", "In Transit", "Pending", "Completed", "Cancelled"];
 
@@ -31,26 +32,17 @@ const WH_CITY: Record<string, string> = {
 };
 const STATUSES: Status[] = ["Pending", "In Transit", "Completed", "Cancelled"];
 
-const summary = [
-  { label: "Total Units Moved", value: "48,652", change: "+8.2%", up: true, icon: Boxes, color: "var(--color-action-blue)" },
-  { label: "Total SKUs Moved", value: "412", change: "+9.6%", up: true, icon: Layers, color: "var(--color-teal)" },
-  { label: "Avg. Transit Time", value: "2.3 days", change: "-6.7%", up: false, icon: Clock, color: "#7C6FF6" },
-  { label: "On-Time Rate", value: "95.6%", change: "+3.4%", up: true, icon: Gauge, color: "#F59E0B" },
-];
+// The Transfer Summary stats below are computed from the loaded rows (see
+// summaryStats in the component) — no hardcoded values.
+// "Top Transfer Routes" and "Recent Activity" are computed from the loaded
+// transfer rows (see topRoutes / recentActivity below) — no hardcoded data.
 
-const routes = [
-  { route: "ATL-1 → LAX-1", count: "48 transfers" },
-  { route: "DFW-1 → ATL-1", count: "42 transfers" },
-  { route: "ORD-1 → MIA-1", count: "37 transfers" },
-  { route: "LAX-1 → ATL-1", count: "35 transfers" },
-  { route: "MIA-1 → DFW-1", count: "31 transfers" },
-];
-
-const activity = [
-  { text: "Transfer TR-00987 is in transit", info: "ATL-1 → LAX-1", time: "1h ago", color: "var(--color-action-blue)" },
-  { text: "Transfer TR-00986 completed", info: "DFW-1 → MIA-1", time: "3h ago", color: "var(--color-teal)" },
-  { text: "Transfer TR-00984 pending approval", info: "LAX-1 → SEA-1", time: "5h ago", color: "#F59E0B" },
-];
+const STATUS_COLOR: Record<Status, string> = {
+  "In Transit": "var(--color-action-blue)",
+  Completed: "var(--color-teal)",
+  Pending: "#F59E0B",
+  Cancelled: "#EF4444",
+};
 
 function Badge({ text }: { text: string }) {
   const styles: Record<string, string> = {
@@ -161,6 +153,8 @@ export default function StockTransfersPage() {
   const [editDraft, setEditDraft] = useState<Draft>(emptyDraft);
   const [detailRow, setDetailRow] = useState<Row | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
+  const [routesOpen, setRoutesOpen] = useState(false);
+  const [activityOpen, setActivityOpen] = useState(false);
 
   /* ── Transfer report derived from loaded rows ──
      Aggregates the in-memory transfer rows into status counts and parses the
@@ -191,6 +185,75 @@ export default function StockTransfersPage() {
     const topRoutes = Array.from(routeMap.values()).sort((a, b) => b.units - a.units).slice(0, 5);
 
     return { byStatus, totalUnits, totalSkus, totalTransfers: rows.length, topRoutes };
+  }, [rows]);
+
+  /* ── Transfer Summary stats derived from the loaded rows ──
+     Total units and SKUs come from the same aggregation as the report. Avg.
+     transit time is the mean planned duration (requested → ETA) across rows
+     that have valid dates. Completion rate is the share of non-cancelled
+     transfers that have completed — an honest substitute for the old
+     hardcoded "On-Time Rate" which had no actual-delivery data to back it. */
+  const summaryStats = useMemo<SummaryStat[]>(() => {
+    const transitDays: number[] = [];
+    for (const r of rows) {
+      const start = new Date(r.req).getTime();
+      const end = new Date(r.eta).getTime();
+      if (Number.isFinite(start) && Number.isFinite(end) && end >= start) {
+        transitDays.push((end - start) / 86_400_000);
+      }
+    }
+    const avgTransit = transitDays.length
+      ? transitDays.reduce((s, d) => s + d, 0) / transitDays.length
+      : 0;
+
+    const completed = rows.filter((r) => r.status === "Completed").length;
+    const settled = rows.filter((r) => r.status !== "Cancelled").length;
+    const completionRate = settled > 0 ? (completed / settled) * 100 : 0;
+
+    return [
+      { label: "Total Units Moved", value: transferReport.totalUnits.toLocaleString(), icon: Boxes, color: "var(--color-action-blue)" },
+      { label: "Total SKUs Moved", value: transferReport.totalSkus.toLocaleString(), icon: Layers, color: "var(--color-teal)" },
+      { label: "Avg. Transit Time", value: transitDays.length ? `${avgTransit.toFixed(1)} days` : "—", icon: Clock, color: "#7C6FF6" },
+      { label: "Completion Rate", value: settled > 0 ? `${completionRate.toFixed(1)}%` : "—", icon: Gauge, color: "#F59E0B" },
+    ];
+  }, [rows, transferReport.totalUnits, transferReport.totalSkus]);
+
+  /* ── Top transfer routes computed from rows (grouped fromWarehouse→toWarehouse) ──
+     Counts transfers and sums units per directed route, sorted by transfer count
+     then units, so the sidebar and drawer reflect the real loaded data. */
+  const routeBreakdown = useMemo(() => {
+    const num = (s: string) => Number(s.replace(/[^\d]/g, "")) || 0;
+    const map = new Map<string, { route: string; from: string; to: string; count: number; units: number }>();
+    for (const r of rows) {
+      const key = `${r.from} → ${r.to}`;
+      const g = map.get(key) ?? { route: key, from: r.from, to: r.to, count: 0, units: 0 };
+      g.count += 1;
+      g.units += num(r.units);
+      map.set(key, g);
+    }
+    return Array.from(map.values()).sort((a, b) => b.count - a.count || b.units - a.units);
+  }, [rows]);
+
+  /* ── Recent activity derived from the loaded transfer rows ──
+     Each transfer's current status produces an honest activity entry; ordered
+     by status priority (active moves first) so the feed mirrors the page. */
+  const recentActivity = useMemo(() => {
+    const verb: Record<Status, string> = {
+      "In Transit": "is in transit",
+      Pending: "is pending approval",
+      Completed: "completed",
+      Cancelled: "was cancelled",
+    };
+    const rank: Record<Status, number> = { "In Transit": 0, Pending: 1, Completed: 2, Cancelled: 3 };
+    return rows
+      .map((r) => ({
+        tr: r.tr,
+        text: `Transfer ${r.tr} ${verb[r.status]}`,
+        info: `${r.from} → ${r.to}`,
+        color: STATUS_COLOR[r.status],
+        rank: rank[r.status],
+      }))
+      .sort((a, b) => a.rank - b.rank);
   }, [rows]);
 
   const filtered = useMemo(() => {
@@ -505,14 +568,13 @@ export default function StockTransfersPage() {
           <div className={card + " p-5"}>
             <div className="flex items-center justify-between mb-3"><h3 className="text-[14px] font-semibold text-text-primary">Transfer Summary</h3><button onClick={() => setReportOpen(true)} className="text-[12px] text-action-blue hover:underline">View report</button></div>
             <div className="space-y-3">
-              {summary.map((s) => {
+              {summaryStats.map((s) => {
                 const Icon = s.icon;
                 return (
                   <div key={s.label} className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: s.color + "1a" }}><Icon className="w-4 h-4" style={{ color: s.color }} /></div>
                     <span className="text-[12px] text-text-muted flex-1">{s.label}</span>
                     <span className="text-[13px] font-semibold text-text-primary">{s.value}</span>
-                    <span className={`text-[11px] font-medium w-12 text-right ${s.up ? "text-teal" : "text-[#EF4444]"}`}>{s.change}</span>
                   </div>
                 );
               })}
@@ -521,12 +583,13 @@ export default function StockTransfersPage() {
 
           {/* Top Transfer Routes */}
           <div className={card + " p-5"}>
-            <div className="flex items-center justify-between mb-3"><h3 className="text-[14px] font-semibold text-text-primary">Top Transfer Routes</h3><button onClick={() => toast("Showing all routes", "info")} className="text-[12px] text-action-blue hover:underline">View all</button></div>
+            <div className="flex items-center justify-between mb-3"><h3 className="text-[14px] font-semibold text-text-primary">Top Transfer Routes</h3>{routeBreakdown.length > 5 && <button onClick={() => setRoutesOpen(true)} className="text-[12px] text-action-blue hover:underline">View all</button>}</div>
             <div className="space-y-3">
-              {routes.map((r) => (
+              {routeBreakdown.length === 0 && <p className="text-[12px] text-text-muted">No transfer routes yet.</p>}
+              {routeBreakdown.slice(0, 5).map((r) => (
                 <div key={r.route} className="flex items-center gap-3">
                   <div className="w-9 h-9 rounded-lg bg-soft-bg flex items-center justify-center shrink-0"><ArrowLeftRight className="w-4 h-4 text-action-blue" /></div>
-                  <div className="flex-1 min-w-0"><p className="text-[12px] font-medium text-text-primary truncate">{r.route}</p><p className="text-[11px] text-text-light">{r.count}</p></div>
+                  <div className="flex-1 min-w-0"><p className="text-[12px] font-medium text-text-primary truncate">{r.route}</p><p className="text-[11px] text-text-light">{r.count} transfer{r.count === 1 ? "" : "s"} • {r.units.toLocaleString()} units</p></div>
                 </div>
               ))}
             </div>
@@ -534,10 +597,11 @@ export default function StockTransfersPage() {
 
           {/* Recent Activity */}
           <div className={card + " p-5"}>
-            <div className="flex items-center justify-between mb-3"><h3 className="text-[14px] font-semibold text-text-primary">Recent Activity</h3><button onClick={() => toast("Showing full activity log", "info")} className="text-[12px] text-action-blue hover:underline">View all</button></div>
+            <div className="flex items-center justify-between mb-3"><h3 className="text-[14px] font-semibold text-text-primary">Recent Activity</h3>{recentActivity.length > 4 && <button onClick={() => setActivityOpen(true)} className="text-[12px] text-action-blue hover:underline">View all</button>}</div>
             <div className="space-y-3">
-              {activity.map((a, i) => (
-                <div key={i} className="flex items-start gap-2.5"><span className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ backgroundColor: a.color }} /><div className="flex-1 min-w-0"><p className="text-[12px] text-text-primary">{a.text}</p><p className="text-[11px] text-text-light">{a.info}</p></div><span className="text-[11px] text-text-light shrink-0">{a.time}</span></div>
+              {recentActivity.length === 0 && <p className="text-[12px] text-text-muted">No transfer activity yet.</p>}
+              {recentActivity.slice(0, 4).map((a) => (
+                <div key={a.tr} className="flex items-start gap-2.5"><span className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ backgroundColor: a.color }} /><div className="flex-1 min-w-0"><p className="text-[12px] text-text-primary">{a.text}</p><p className="text-[11px] text-text-light">{a.info}</p></div></div>
               ))}
             </div>
           </div>
@@ -762,6 +826,56 @@ export default function StockTransfersPage() {
                   <div className="flex-1 min-w-0"><p className="text-[12px] font-medium text-text-primary truncate">{r.route}</p><p className="text-[11px] text-text-light">{r.count} transfer{r.count === 1 ? "" : "s"}</p></div>
                   <span className="text-[12px] font-semibold text-text-primary shrink-0">{r.units.toLocaleString()} units</span>
                 </div>
+              ))}
+            </div>
+          )}
+        </DrawerSection>
+      </Drawer>
+
+      {/* All routes drawer — computed from loaded transfer rows */}
+      <Drawer
+        open={routesOpen}
+        onClose={() => setRoutesOpen(false)}
+        title="Transfer Routes"
+        subtitle={`${routeBreakdown.length} route${routeBreakdown.length === 1 ? "" : "s"} • ${rows.length} transfers`}
+        footer={
+          <button onClick={() => setRoutesOpen(false)} className="px-4 py-2 text-[13px] font-medium text-text-primary bg-white border border-border-soft rounded-lg hover:bg-soft-bg">Close</button>
+        }
+      >
+        <DrawerSection title="Routes by Volume">
+          {routeBreakdown.length === 0 ? (
+            <p className="text-[13px] text-text-muted py-2">No transfer routes available.</p>
+          ) : (
+            <div className="space-y-3">
+              {routeBreakdown.map((r) => (
+                <div key={r.route} className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-soft-bg flex items-center justify-center shrink-0"><ArrowLeftRight className="w-4 h-4 text-action-blue" /></div>
+                  <div className="flex-1 min-w-0"><p className="text-[12px] font-medium text-text-primary truncate">{r.route}</p><p className="text-[11px] text-text-light">{r.count} transfer{r.count === 1 ? "" : "s"}</p></div>
+                  <span className="text-[12px] font-semibold text-text-primary shrink-0">{r.units.toLocaleString()} units</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </DrawerSection>
+      </Drawer>
+
+      {/* Recent activity drawer — computed from loaded transfer rows */}
+      <Drawer
+        open={activityOpen}
+        onClose={() => setActivityOpen(false)}
+        title="Transfer Activity"
+        subtitle={`${recentActivity.length} transfer${recentActivity.length === 1 ? "" : "s"}`}
+        footer={
+          <button onClick={() => setActivityOpen(false)} className="px-4 py-2 text-[13px] font-medium text-text-primary bg-white border border-border-soft rounded-lg hover:bg-soft-bg">Close</button>
+        }
+      >
+        <DrawerSection title="Recent Activity">
+          {recentActivity.length === 0 ? (
+            <p className="text-[13px] text-text-muted py-2">No transfer activity available.</p>
+          ) : (
+            <div className="space-y-3">
+              {recentActivity.map((a) => (
+                <div key={a.tr} className="flex items-start gap-2.5"><span className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ backgroundColor: a.color }} /><div className="flex-1 min-w-0"><p className="text-[12px] text-text-primary">{a.text}</p><p className="text-[11px] text-text-light">{a.info}</p></div></div>
               ))}
             </div>
           )}

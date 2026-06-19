@@ -450,11 +450,7 @@ export default function ProductivityPage() {
         <div className="bg-white rounded-xl border border-[#E2E8F0] p-5 shadow-[0_1px_3px_0_rgba(0,0,0,0.1),0_1px_2px_0_rgba(0,0,0,0.06)]">
           <h3 className="text-[16px] font-semibold text-[#1E293B] mb-4">Productivity Insights</h3>
           <div className="space-y-3">
-            {[
-              { dot: "#10B981", title: "Tasks completed increased", text: "15.8% compared to the previous month." },
-              { dot: "#3B82F6", title: "Labor efficiency improved", text: "8.3% due to optimized workflows." },
-              { dot: "#F59E0B", title: "Putaway tasks are taking longer", text: "5% longer on average. Review slotting strategy." },
-            ].map((ins, i) => (
+            {fullInsights.slice(0, 3).map((ins, i) => (
               <div key={i} className="flex gap-3">
                 <span className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ backgroundColor: ins.dot }} />
                 <p className="text-[13px] text-[#64748B] leading-relaxed">

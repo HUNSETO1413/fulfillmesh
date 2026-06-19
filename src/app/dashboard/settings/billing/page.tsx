@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CreditCard, User2, Crown, Package, Truck, HardDrive, Activity, Download, ChevronDown, Check } from "lucide-react";
 import { Modal } from "@/components/dashboard/Modal";
 import { Field, TextInput, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
@@ -8,12 +8,14 @@ import { useToast } from "@/components/dashboard/Toast";
 import { api, exportToCsv } from "@/lib/client";
 import { isEmail, isCardNumber, isExpiry, isCvc } from "@/lib/validate";
 
-const usage = [
-  { label: "Orders Processed", value: "2,450", of: "of 5,000", pct: 49, icon: Package },
-  { label: "Shipments", value: "2,180", of: "of 5,000", pct: 44, icon: Truck },
-  { label: "Storage Used", value: "1,250", of: "of 2,000 units", pct: 63, icon: HardDrive },
-  { label: "API Requests", value: "125,300", of: "of 250,000", pct: 50, icon: Activity },
-];
+// Plan quotas (the denominators shown on each usage card). The numerators for
+// Orders Processed and Shipments are computed from real /api endpoints below;
+// Storage and API Requests have no backing data so they are shown as plan
+// limits rather than invented usage figures.
+const ORDERS_QUOTA = 5000;
+const SHIPMENTS_QUOTA = 5000;
+const STORAGE_QUOTA = 2000;
+const API_QUOTA = 250000;
 
 const invoices = [
   { id: "INV-2025-0518", date: "May 18, 2025", amount: "$299.00" },
@@ -58,6 +60,11 @@ export default function BillingPage() {
   const [usagePeriod, setUsagePeriod] = useState("This Month");
   // Holds server-only KV fields so a partial PUT does not drop them.
   const extraRef = useRef<Partial<BillingState>>({});
+
+  // Live usage counts pulled from the real orders/shipments endpoints; null
+  // until loaded so the cards can show an honest "—" placeholder.
+  const [ordersUsed, setOrdersUsed] = useState<number | null>(null);
+  const [shipmentsUsed, setShipmentsUsed] = useState<number | null>(null);
 
   // Current plan / plan change modal
   const [currentPlan, setCurrentPlan] = useState("Professional");
@@ -105,6 +112,63 @@ export default function BillingPage() {
     })();
     return () => { alive = false; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch real order and shipment counts so "Orders Processed" and "Shipments"
+  // reflect the account's actual volume against the plan quota.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const [ord, ship] = await Promise.all([
+          api.get<{ total: number }>("/api/orders"),
+          api.get<{ total: number }>("/api/shipments"),
+        ]);
+        if (!alive) return;
+        setOrdersUsed(ord.total);
+        setShipmentsUsed(ship.total);
+      } catch {
+        if (alive) toast("Failed to load usage data", "error");
+      }
+    })();
+    return () => { alive = false; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Build the usage cards. Orders/Shipments use the real counts above; Storage
+  // and API Requests have no backing data, so they are presented as the plan's
+  // limits ("Plan limit") with no fake progress instead of invented usage.
+  const usage = useMemo(() => {
+    const ratio = (used: number, quota: number) => Math.min(100, Math.round((used / quota) * 100));
+    return [
+      {
+        label: "Orders Processed",
+        value: ordersUsed === null ? "—" : ordersUsed.toLocaleString(),
+        of: `of ${ORDERS_QUOTA.toLocaleString()}`,
+        pct: ordersUsed === null ? null : ratio(ordersUsed, ORDERS_QUOTA),
+        icon: Package,
+      },
+      {
+        label: "Shipments",
+        value: shipmentsUsed === null ? "—" : shipmentsUsed.toLocaleString(),
+        of: `of ${SHIPMENTS_QUOTA.toLocaleString()}`,
+        pct: shipmentsUsed === null ? null : ratio(shipmentsUsed, SHIPMENTS_QUOTA),
+        icon: Truck,
+      },
+      {
+        label: "Storage Used",
+        value: STORAGE_QUOTA.toLocaleString(),
+        of: "units — plan limit",
+        pct: null,
+        icon: HardDrive,
+      },
+      {
+        label: "API Requests",
+        value: API_QUOTA.toLocaleString(),
+        of: "requests / mo — plan limit",
+        pct: null,
+        icon: Activity,
+      },
+    ];
+  }, [ordersUsed, shipmentsUsed]);
 
   // Persist the billing section, preserving any server-only KV fields.
   const persistBilling = (patch: Partial<BillingState>) => {
@@ -291,6 +355,7 @@ export default function BillingPage() {
             <select
               value={usagePeriod}
               onChange={(e) => setUsagePeriod(e.target.value)}
+              aria-label="Usage period"
               className="appearance-none pl-3 pr-8 py-1.5 bg-[#F9FAFB] border border-[#D1D5DB] rounded-md text-[14px] text-[#6B7280] font-medium focus:outline-none focus:ring-2 focus:ring-action-blue/20 focus:border-action-blue"
             >
               <option>This Month</option>
@@ -311,12 +376,18 @@ export default function BillingPage() {
                 </div>
                 <p className="text-[28px] font-bold text-[#1F2937] mt-2">{u.value}</p>
                 <p className="text-[14px] text-[#6B7280]">{u.of}</p>
-                <div className="flex items-center gap-2 mt-3">
-                  <div className="flex-1 h-[6px] bg-[#E5E7EB] rounded-full overflow-hidden">
-                    <div className="h-full bg-[#6366F1] rounded-full" style={{ width: `${u.pct}%` }} />
+                {u.pct === null ? (
+                  <div className="flex items-center gap-2 mt-3 h-[20px]">
+                    <span className="text-[12px] font-medium text-[#9CA3AF]">Included in plan</span>
                   </div>
-                  <span className="text-[14px] font-medium text-[#6B7280]">{u.pct}%</span>
-                </div>
+                ) : (
+                  <div className="flex items-center gap-2 mt-3">
+                    <div className="flex-1 h-[6px] bg-[#E5E7EB] rounded-full overflow-hidden">
+                      <div className="h-full bg-[#6366F1] rounded-full" style={{ width: `${u.pct}%` }} />
+                    </div>
+                    <span className="text-[14px] font-medium text-[#6B7280]">{u.pct}%</span>
+                  </div>
+                )}
               </div>
             );
           })}

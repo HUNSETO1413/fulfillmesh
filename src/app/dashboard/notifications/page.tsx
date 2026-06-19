@@ -155,7 +155,7 @@ export default function NotificationsPage() {
           };
         });
         setItems(mapped);
-      } catch (err) {
+      } catch {
         if (!cancelled) toast("Failed to load notifications", "error");
       } finally {
         if (!cancelled) setLoading(false);
@@ -166,6 +166,16 @@ export default function NotificationsPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Close the open notification "more" menu on Escape (mirrors outside-click behavior).
+  useEffect(() => {
+    if (openMenu === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpenMenu(null);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [openMenu]);
 
   const unreadCount = items.filter((n) => n.unread).length;
 
@@ -425,7 +435,7 @@ export default function NotificationsPage() {
             })}
             {visible.length === 0 && (
               <div className="px-5 py-12 text-center">
-                <p className="text-[13px] text-text-muted">No notifications match your filters.</p>
+                <p className="text-[13px] text-text-muted">{loading ? "Loading notifications…" : "No notifications match your filters."}</p>
               </div>
             )}
           </div>

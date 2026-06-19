@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import type { ReturnRecord, ReturnStatus } from "@/types";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
-import { formatDate } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
 import { Modal } from "@/components/dashboard/Modal";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { Field, TextInput, NumberInput, Select, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
@@ -76,13 +76,15 @@ const emptyDraft: Draft = {
   requestedDate: new Date().toISOString().slice(0, 10), items: "1", refundAmount: "",
 };
 
-function ReturnFields({ draft, set }: { draft: Draft; set: (d: Partial<Draft>) => void }) {
+type Errors = Partial<Record<"orderId" | "customer" | "refundAmount", string>>;
+
+function ReturnFields({ draft, set, errors }: { draft: Draft; set: (d: Partial<Draft>) => void; errors: Errors }) {
   return (
     <div className="grid grid-cols-2 gap-4">
-      <Field label="Order ID" required>
+      <Field label="Order ID" required error={errors.orderId}>
         <TextInput value={draft.orderId} onChange={(e) => set({ orderId: e.target.value })} placeholder="ORD-1024" />
       </Field>
-      <Field label="Customer" required>
+      <Field label="Customer" required error={errors.customer}>
         <TextInput value={draft.customer} onChange={(e) => set({ customer: e.target.value })} placeholder="Acme Retail" />
       </Field>
       <Field label="Reason">
@@ -98,7 +100,7 @@ function ReturnFields({ draft, set }: { draft: Draft; set: (d: Partial<Draft>) =
         <NumberInput value={draft.items} onChange={(e) => set({ items: e.target.value })} min="1" step="1" />
       </Field>
       <div className="col-span-2">
-        <Field label="Refund amount (USD)">
+        <Field label="Refund amount (USD)" error={errors.refundAmount}>
           <NumberInput value={draft.refundAmount} onChange={(e) => set({ refundAmount: e.target.value })} placeholder="0.00" step="0.01" min="0" />
         </Field>
       </div>
@@ -120,6 +122,19 @@ export default function ReturnsView({ items }: { items: ReturnRecord[] }) {
 
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [filterOpen, setFilterOpen] = useState(false);
+
+  // Close any open custom dropdown on Escape (outside-click handled per-dropdown).
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setDateRangeOpen(false);
+        setFilterOpen(false);
+        setPageSizeOpen(false);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // sorting
   type SortKey = "id" | "orderId" | "customer" | "status" | "reason" | "requestedDate" | "items";
@@ -143,6 +158,7 @@ export default function ReturnsView({ items }: { items: ReturnRecord[] }) {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<ReturnRecord | null>(null);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const [errors, setErrors] = useState<Errors>({});
   const [busy, setBusy] = useState(false);
 
   // delete
@@ -255,11 +271,13 @@ export default function ReturnsView({ items }: { items: ReturnRecord[] }) {
   function openCreate() {
     setEditing(null);
     setDraft(emptyDraft);
+    setErrors({});
     setFormOpen(true);
   }
 
   function openEdit(r: ReturnRecord) {
     setEditing(r);
+    setErrors({});
     setDraft({
       orderId: r.orderId,
       customer: r.customer,
@@ -273,8 +291,18 @@ export default function ReturnsView({ items }: { items: ReturnRecord[] }) {
   }
 
   async function saveReturn() {
-    if (!draft.orderId.trim()) { toast("Order ID is required", "error"); return; }
-    if (!draft.customer.trim()) { toast("Customer is required", "error"); return; }
+    const nextErrors: Errors = {};
+    if (!draft.orderId.trim()) nextErrors.orderId = "Order ID is required";
+    if (!draft.customer.trim()) nextErrors.customer = "Customer is required";
+    if (draft.refundAmount.trim() !== "" && (Number.isNaN(Number(draft.refundAmount)) || Number(draft.refundAmount) < 0)) {
+      nextErrors.refundAmount = "Refund must be a non-negative number";
+    }
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors(nextErrors);
+      toast("Please fix the highlighted fields", "error");
+      return;
+    }
+    setErrors({});
     setBusy(true);
     const payload = {
       orderId: draft.orderId.trim(),
@@ -540,7 +568,7 @@ export default function ReturnsView({ items }: { items: ReturnRecord[] }) {
                   <td className="px-4 py-3 text-[13px] text-[#4A5A73]">{r.orderId}</td>
                   <td className="px-4 py-3">
                     <p className="text-[13px] font-medium text-[#061A3D]">{r.customer}</p>
-                    <p className="text-[12px] text-[#4A5A73]">{r.customer.toLowerCase().replace(/[^a-z]/g, "")}@example.com</p>
+                    <p className="text-[12px] text-[#4A5A73]">{r.items} item{r.items === 1 ? "" : "s"}{r.refundAmount != null ? ` · ${formatCurrency(r.refundAmount)}` : ""}</p>
                   </td>
                   <td className="px-4 py-3"><StatusBadge status={r.status} /></td>
                   <td className="px-4 py-3 text-[13px] text-[#374151]">{r.reason}</td>
@@ -662,7 +690,7 @@ export default function ReturnsView({ items }: { items: ReturnRecord[] }) {
           </>
         }
       >
-        <ReturnFields draft={draft} set={(d) => setDraft((prev) => ({ ...prev, ...d }))} />
+        <ReturnFields draft={draft} set={(d) => setDraft((prev) => ({ ...prev, ...d }))} errors={errors} />
       </Modal>
 
       {/* Delete confirm */}

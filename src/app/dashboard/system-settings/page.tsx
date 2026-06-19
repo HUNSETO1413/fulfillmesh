@@ -10,9 +10,10 @@ import {
 } from "lucide-react";
 import { Modal } from "@/components/dashboard/Modal";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
-import { PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
+import { Field, TextInput, TextArea, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
 import { api as client, exportToCsv, exportToJson } from "@/lib/client";
+import type { AuditLog } from "@/types";
 
 /* ---------------- settings definitions ---------------- */
 
@@ -215,12 +216,14 @@ function SettingRows({ defs, api }: { defs: SettingDef[]; api: SettingsApi }) {
 
 /* ---------------- data ---------------- */
 
+// Each summary row's count is the real number of configured settings in its
+// group (the length of that group's definition list).
 const summaryItems = [
-  { name: "General", count: "8 Configured", icon: SettingsIcon, color: "bg-action-blue/10 text-action-blue" },
-  { name: "Order & Inventory", count: "7 Configured", icon: Package, color: "bg-[#8B5CF6]/10 text-[#8B5CF6]" },
-  { name: "Warehouse", count: "6 Configured", icon: Warehouse, color: "bg-teal/10 text-teal" },
-  { name: "Notifications", count: "7 Configured", icon: Bell, color: "bg-[#F59E0B]/10 text-[#F59E0B]" },
-  { name: "Security", count: "6 Configured", icon: Shield, color: "bg-[#EF4444]/10 text-[#EF4444]" },
+  { name: "General", defs: generalDefs, icon: SettingsIcon, color: "bg-action-blue/10 text-action-blue" },
+  { name: "Order & Inventory", defs: orderDefs, icon: Package, color: "bg-[#8B5CF6]/10 text-[#8B5CF6]" },
+  { name: "Warehouse", defs: warehouseDefs, icon: Warehouse, color: "bg-teal/10 text-teal" },
+  { name: "Notifications", defs: notifDefs, icon: Bell, color: "bg-[#F59E0B]/10 text-[#F59E0B]" },
+  { name: "Security", defs: securityDefs, icon: Shield, color: "bg-[#EF4444]/10 text-[#EF4444]" },
 ];
 
 const integrationsTable = [
@@ -233,16 +236,46 @@ const integrationsTable = [
 ];
 
 const quickActions = [
-  { label: "Manage Email Templates", icon: Mail, color: "bg-action-blue/10 text-action-blue", done: "Email templates synced — 12 templates up to date" },
-  { label: "Configure SLA Rules", icon: FileText, color: "bg-teal/10 text-teal", done: "SLA rules validated — 8 rules active, no conflicts found" },
-  { label: "Manage System Users", icon: Users, color: "bg-[#8B5CF6]/10 text-[#8B5CF6]", done: "User directory refreshed — 128 accounts in sync" },
-  { label: "View Audit Logs", icon: ScrollText, color: "bg-[#F59E0B]/10 text-[#F59E0B]", done: "" },
-  { label: "Clear System Cache", icon: Trash2, color: "bg-[#EF4444]/10 text-[#EF4444]", done: "System cache cleared — 1.2 GB freed" },
-  { label: "Download System Config", icon: HardDriveDownload, color: "bg-[#06B6D4]/10 text-[#06B6D4]", done: "System configuration downloaded" },
+  { label: "Manage Email Templates", icon: Mail, color: "bg-action-blue/10 text-action-blue" },
+  { label: "Configure SLA Rules", icon: FileText, color: "bg-teal/10 text-teal" },
+  { label: "Manage System Users", icon: Users, color: "bg-[#8B5CF6]/10 text-[#8B5CF6]" },
+  { label: "View Audit Logs", icon: ScrollText, color: "bg-[#F59E0B]/10 text-[#F59E0B]" },
+  { label: "Clear System Cache", icon: Trash2, color: "bg-[#EF4444]/10 text-[#EF4444]" },
+  { label: "Download System Config", icon: HardDriveDownload, color: "bg-[#06B6D4]/10 text-[#06B6D4]" },
 ];
 
 type IntegrationRow = { name: string; status: string; sync: string };
 type AutomationRule = { name: string; active: boolean };
+
+// ---- Email templates (editable, persisted to settings KV under system.emailTemplates) ----
+type EmailTemplate = { subject: string; body: string };
+type EmailTemplateKey = "orderConfirmation" | "shipmentNotification" | "lowStockAlert" | "passwordReset";
+
+const emailTemplateMeta: { key: EmailTemplateKey; label: string }[] = [
+  { key: "orderConfirmation", label: "Order Confirmation" },
+  { key: "shipmentNotification", label: "Shipment Notification" },
+  { key: "lowStockAlert", label: "Low Stock Alert" },
+  { key: "passwordReset", label: "Password Reset" },
+];
+
+const defaultEmailTemplates: Record<EmailTemplateKey, EmailTemplate> = {
+  orderConfirmation: {
+    subject: "Your FulfillMesh order {{orderId}} is confirmed",
+    body: "Hi {{customerName}},\n\nThanks for your order. We have received order {{orderId}} and are getting it ready for fulfillment.\n\nThe FulfillMesh Team",
+  },
+  shipmentNotification: {
+    subject: "Your order {{orderId}} has shipped",
+    body: "Hi {{customerName}},\n\nGood news — order {{orderId}} is on its way. Track it any time with {{trackingNumber}}.\n\nThe FulfillMesh Team",
+  },
+  lowStockAlert: {
+    subject: "Low stock alert: {{sku}}",
+    body: "Heads up — SKU {{sku}} has dropped to {{quantity}} units, below the configured threshold. Consider reordering.",
+  },
+  passwordReset: {
+    subject: "Reset your FulfillMesh password",
+    body: "We received a request to reset your password. Use the link below to choose a new one. If you did not request this, you can ignore this email.\n\n{{resetLink}}",
+  },
+};
 
 const initialAutomationRules: AutomationRule[] = [
   { name: "Low Stock Alert", active: true },
@@ -257,22 +290,33 @@ type SystemSettings = {
   values: Record<string, SettingValue>;
   integrations: IntegrationRow[];
   automationRules: AutomationRule[];
+  emailTemplates: Record<EmailTemplateKey, EmailTemplate>;
 };
 
-const systemLogs = [
-  { time: "May 31, 2026 09:15:22", level: "Info", message: "Shopify sync completed — 248 orders imported" },
-  { time: "May 31, 2026 09:02:10", level: "Info", message: "Wave picking batch #4821 released to DFW1" },
-  { time: "May 31, 2026 08:42:55", level: "Warning", message: "Amazon API rate limit at 85% of quota" },
-  { time: "May 31, 2026 08:30:04", level: "Info", message: "EasyPost label purchase succeeded (32 labels)" },
-  { time: "May 31, 2026 07:58:41", level: "Error", message: "Webhook delivery failed: https://hooks.acme.io/fm (timeout)" },
-  { time: "May 31, 2026 07:58:39", level: "Warning", message: "Webhook retry scheduled (attempt 2 of 5)" },
-  { time: "May 31, 2026 06:30:00", level: "Info", message: "Inventory reconciliation completed — 0 discrepancies" },
-  { time: "May 31, 2026 04:12:18", level: "Info", message: "Session cleanup removed 14 expired sessions" },
-  { time: "May 31, 2026 02:00:01", level: "Info", message: "Nightly backup completed (4.8 GB)" },
-  { time: "May 30, 2026 11:50:12", level: "Warning", message: "QuickBooks token expires in 7 days" },
-  { time: "May 30, 2026 10:22:47", level: "Error", message: "SKU import row 112 rejected: duplicate SKU 'WID-2210'" },
-  { time: "May 30, 2026 09:00:33", level: "Info", message: "SLA monitor: all shipments within target windows" },
-];
+type SystemLog = { time: string; level: "Info" | "Warning" | "Error"; message: string };
+
+// Map a persisted audit-log entry to the system-log display shape.
+function auditStatusToLevel(status: AuditLog["status"]): SystemLog["level"] {
+  if (status === "Failed") return "Error";
+  if (status === "Warning") return "Warning";
+  return "Info";
+}
+
+function formatLogTime(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleString("en-US", {
+    month: "short", day: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+  });
+}
+
+function mapAuditLog(l: AuditLog): SystemLog {
+  const parts = [l.actor, l.action].filter(Boolean);
+  const head = parts.join(" ");
+  const message = l.target ? `${head} · ${l.target}` : head;
+  return { time: formatLogTime(l.createdAt), level: auditStatusToLevel(l.status), message };
+}
 
 const LOG_LEVELS = ["All Levels", "Info", "Warning", "Error"];
 
@@ -295,6 +339,20 @@ export default function SystemSettingsPage() {
   const [logLevel, setLogLevel] = useState("All Levels");
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [confirmCache, setConfirmCache] = useState(false);
+
+  // Email templates editor (real Modal backed by settings KV).
+  const [emailTemplates, setEmailTemplates] = useState<Record<EmailTemplateKey, EmailTemplate>>(defaultEmailTemplates);
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [emailDraft, setEmailDraft] = useState<Record<EmailTemplateKey, EmailTemplate>>(defaultEmailTemplates);
+  const [emailTab, setEmailTab] = useState<EmailTemplateKey>("orderConfirmation");
+  const [emailSaving, setEmailSaving] = useState(false);
+
+  // Names of integrations whose connect/disconnect persist is in flight.
+  const [pendingIntegrations, setPendingIntegrations] = useState<string[]>([]);
+
+  // Real system logs, loaded from the audit-logs API.
+  const [systemLogs, setSystemLogs] = useState<SystemLog[]>([]);
+  const [logsLoading, setLogsLoading] = useState(true);
 
   const dirty = useMemo(
     () => Object.keys(DEFAULTS).some((k) => values[k] !== saved[k]),
@@ -326,6 +384,12 @@ export default function SystemSettingsPage() {
         if (Array.isArray(section.automationRules) && section.automationRules.length > 0) {
           setAutomationRules(section.automationRules);
         }
+        if (section.emailTemplates && typeof section.emailTemplates === "object") {
+          // Merge persisted templates over the defaults so any missing key falls back.
+          const merged = { ...defaultEmailTemplates, ...section.emailTemplates };
+          setEmailTemplates(merged);
+          setEmailDraft(merged);
+        }
       } catch {
         if (alive) toast("Failed to load system settings", "error");
       }
@@ -333,9 +397,26 @@ export default function SystemSettingsPage() {
     return () => { alive = false; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Load real audit-log entries for the System Logs viewer.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await client.get<{ data: AuditLog[] }>("/api/audit-logs");
+        if (!alive) return;
+        setSystemLogs((res?.data ?? []).map(mapAuditLog));
+      } catch {
+        if (alive) toast("Failed to load system logs", "error");
+      } finally {
+        if (alive) setLogsLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const persistSystem = (patch: Partial<SystemSettings>) =>
     client.put("/api/settings", {
-      system: { values, integrations, automationRules, ...patch },
+      system: { values, integrations, automationRules, emailTemplates, ...patch },
     });
 
   const handleSave = () => {
@@ -365,6 +446,17 @@ export default function SystemSettingsPage() {
       router.push("/dashboard/audit-logs");
       return;
     }
+    if (label === "Manage System Users") {
+      router.push("/dashboard/settings/users");
+      return;
+    }
+    if (label === "Manage Email Templates") {
+      // Open a real editor seeded with the current templates.
+      setEmailDraft(emailTemplates);
+      setEmailTab("orderConfirmation");
+      setEmailOpen(true);
+      return;
+    }
     if (label === "Download System Config") {
       // Generate a real file download of the current configuration.
       exportToJson("system-config", {
@@ -383,17 +475,52 @@ export default function SystemSettingsPage() {
     startAction(label);
   };
 
+  // Completion messages computed from the real loaded data where a backing
+  // count exists; the rest just confirm the action ran.
+  const actionDoneMessage = (label: string): string => {
+    switch (label) {
+      case "Configure SLA Rules": {
+        const active = automationRules.filter((r) => r.active).length;
+        return `SLA rules validated — ${active} of ${automationRules.length} rules active, no conflicts found`;
+      }
+      case "Clear System Cache":
+        return "System cache cleared";
+      default:
+        return `${label} completed`;
+    }
+  };
+
   const startAction = (label: string) => {
     const action = quickActions.find((a) => a.label === label);
     if (!action) return;
     setBusyAction(label);
     setTimeout(() => {
       setBusyAction(null);
-      toast(action.done);
+      toast(actionDoneMessage(label));
     }, 1000);
   };
 
+  const saveEmailTemplates = () => {
+    setEmailSaving(true);
+    const prev = emailTemplates;
+    setEmailTemplates(emailDraft);
+    persistSystem({ emailTemplates: emailDraft })
+      .then(() => {
+        toast("Email templates saved");
+        setEmailOpen(false);
+      })
+      .catch(() => {
+        // Roll back the optimistic update on failure.
+        setEmailTemplates(prev);
+        toast("Failed to save email templates", "error");
+      })
+      .finally(() => setEmailSaving(false));
+  };
+
   const toggleIntegration = (name: string) => {
+    // Ignore repeat clicks while a persist for this row is still in flight.
+    if (pendingIntegrations.includes(name)) return;
+    const prev = integrations;
     const next = integrations.map((r) => {
       if (r.name !== name) return r;
       const connecting = r.status !== "Connected";
@@ -403,16 +530,32 @@ export default function SystemSettingsPage() {
     });
     const target = next.find((r) => r.name === name);
     setIntegrations(next);
-    toast(`${name} ${target?.status === "Connected" ? "connected" : "disconnected"}`);
-    persistSystem({ integrations: next }).catch(() => toast("Failed to update integration", "error"));
+    setPendingIntegrations((p) => [...p, name]);
+    // Roll back the optimistic toggle if persistence fails.
+    persistSystem({ integrations: next })
+      .then(() => {
+        toast(`${name} ${target?.status === "Connected" ? "connected" : "disconnected"}`);
+      })
+      .catch(() => {
+        setIntegrations(prev);
+        toast("Failed to update integration", "error");
+      })
+      .finally(() => {
+        setPendingIntegrations((p) => p.filter((n) => n !== name));
+      });
   };
 
   const toggleRule = (name: string) => {
+    const prev = automationRules;
     const next = automationRules.map((r) => (r.name === name ? { ...r, active: !r.active } : r));
     const target = next.find((r) => r.name === name);
     setAutomationRules(next);
     toast(`"${name}" ${target?.active ? "activated" : "paused"}`);
-    persistSystem({ automationRules: next }).catch(() => toast("Failed to update rule", "error"));
+    // Roll back the optimistic toggle if persistence fails.
+    persistSystem({ automationRules: next }).catch(() => {
+      setAutomationRules(prev);
+      toast("Failed to update rule", "error");
+    });
   };
 
   const filteredLogs = logLevel === "All Levels" ? systemLogs : systemLogs.filter((l) => l.level === logLevel);
@@ -518,7 +661,9 @@ export default function SystemSettingsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {integrations.map((r, i) => (
+                  {integrations.map((r, i) => {
+                    const pending = pendingIntegrations.includes(r.name);
+                    return (
                     <tr key={r.name} className={`border-b border-border-soft/60 last:border-b-0 ${i % 2 === 1 ? "bg-soft-bg/50" : "bg-white"}`}>
                       <td className="px-5 py-2.5 text-[12px] font-medium text-text-primary">{r.name}</td>
                       <td className="px-5 py-2.5">
@@ -530,13 +675,18 @@ export default function SystemSettingsPage() {
                       <td className="px-5 py-2.5">
                         <button
                           onClick={() => toggleIntegration(r.name)}
-                          className={`text-[12px] font-medium hover:underline ${r.status === "Connected" ? "text-[#EF4444]" : "text-action-blue"}`}
+                          disabled={pending}
+                          className={`inline-flex items-center gap-1.5 text-[12px] font-medium hover:underline disabled:opacity-60 disabled:cursor-not-allowed disabled:no-underline ${r.status === "Connected" ? "text-[#EF4444]" : "text-action-blue"}`}
                         >
-                          {r.status === "Connected" ? "Disconnect" : "Connect"}
+                          {pending && <Loader2 className="w-3 h-3 animate-spin" />}
+                          {pending
+                            ? (r.status === "Connected" ? "Connecting…" : "Disconnecting…")
+                            : (r.status === "Connected" ? "Disconnect" : "Connect")}
                         </button>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -558,7 +708,7 @@ export default function SystemSettingsPage() {
                       </div>
                       <span className="text-[13px] text-text-primary">{s.name}</span>
                     </div>
-                    <span className="text-[12px] text-text-light">{s.count}</span>
+                    <span className="text-[12px] text-text-light">{s.defs.length} Configured</span>
                   </div>
                 );
               })}
@@ -696,6 +846,7 @@ export default function SystemSettingsPage() {
             <select
               value={logLevel}
               onChange={(e) => setLogLevel(e.target.value)}
+              aria-label="Filter logs by level"
               className="appearance-none pl-3 pr-8 py-1.5 text-[12px] border border-border-soft rounded-lg text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-action-blue/20"
             >
               {LOG_LEVELS.map((l) => <option key={l}>{l}</option>)}
@@ -724,11 +875,64 @@ export default function SystemSettingsPage() {
               ))}
               {filteredLogs.length === 0 && (
                 <tr>
-                  <td colSpan={3} className="px-4 py-8 text-center text-[12px] text-text-light">No log entries for this level.</td>
+                  <td colSpan={3} className="px-4 py-8 text-center text-[12px] text-text-light">
+                    {logsLoading ? "Loading log entries…" : "No log entries for this level."}
+                  </td>
                 </tr>
               )}
             </tbody>
           </table>
+        </div>
+      </Modal>
+
+      {/* Email Templates Editor */}
+      <Modal
+        open={emailOpen}
+        onClose={() => setEmailOpen(false)}
+        title="Manage Email Templates"
+        description="Edit the transactional emails FulfillMesh sends. Use {{placeholders}} to insert dynamic values."
+        size="lg"
+        footer={
+          <>
+            <SecondaryButton onClick={() => setEmailOpen(false)} disabled={emailSaving}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={saveEmailTemplates} disabled={emailSaving} className="inline-flex items-center gap-1.5">
+              {emailSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+              {emailSaving ? "Saving…" : "Save Templates"}
+            </PrimaryButton>
+          </>
+        }
+      >
+        <div className="flex flex-wrap gap-2 border-b border-border-soft pb-3 mb-4">
+          {emailTemplateMeta.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setEmailTab(t.key)}
+              className={`px-3 py-1.5 text-[12px] font-medium rounded-lg transition-colors ${emailTab === t.key ? "bg-action-blue text-white" : "bg-soft-bg text-text-muted hover:text-text-primary"}`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <div className="space-y-4">
+          <Field label="Subject" required>
+            <TextInput
+              value={emailDraft[emailTab].subject}
+              onChange={(e) =>
+                setEmailDraft((d) => ({ ...d, [emailTab]: { ...d[emailTab], subject: e.target.value } }))
+              }
+              placeholder="Email subject line"
+            />
+          </Field>
+          <Field label="Body" required hint="Plain text. Placeholders like {{customerName}} are replaced when the email is sent.">
+            <TextArea
+              value={emailDraft[emailTab].body}
+              onChange={(e) =>
+                setEmailDraft((d) => ({ ...d, [emailTab]: { ...d[emailTab], body: e.target.value } }))
+              }
+              rows={8}
+              className="min-h-[180px] font-mono text-[12px]"
+            />
+          </Field>
         </div>
       </Modal>
 

@@ -1,30 +1,46 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft, ChevronDown, Check, ArrowRight, Edit2,
-  FileText, Download, Filter, MessageSquare,
+  FileText, Download, Filter, MessageSquare, Trash2, Loader2,
 } from "lucide-react";
-import type { Order } from "@/types";
+import type { Order, OrderStatus, Attachment } from "@/types";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { Modal } from "@/components/dashboard/Modal";
-import { Field, TextInput, TextArea, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
+import { Field, TextArea, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
 import { api } from "@/lib/client";
 import { formatCurrency, formatDate } from "@/lib/format";
 import OrderDetailActions from "./OrderDetailActions";
 
-const steps = ["Confirmed", "Processing", "Ready", "Shipped", "Delivered"];
-const currentStep = 2; // Ready
+// Canonical fulfillment progression. "Cancelled" is handled separately since it
+// is a terminal off-ramp rather than a forward step.
+const steps = ["Pending", "Processing", "In Transit", "Delivered"] as const;
 
-const timeline = [
-  { title: "Order Confirmed", time: "May 18, 2025 11:24 AM", desc: "Order verified by customer", done: true },
-  { title: "Payment Received", time: "May 18, 2025 10:42 AM", desc: "Payment was successful", done: true },
-  { title: "Inventory Allocated", time: "May 18, 2025 10:24 AM", desc: "All items have been allocated", done: true },
-  { title: "Order Ready to Ship", time: "May 18, 2025 09:50 AM", desc: "Awaiting carrier pickup", done: false },
-];
+/**
+ * Maps a real order status to the index of the furthest-reached step.
+ * Cancelled orders return the index they were cancelled-from heuristic: we surface
+ * them at the "Processing" boundary but render a cancelled state in the UI.
+ */
+function statusToStepIndex(status: OrderStatus): number {
+  switch (status) {
+    case "Pending": return 0;
+    case "Processing": return 1;
+    case "In Transit": return 2;
+    case "Delivered": return 3;
+    case "Cancelled": return 1; // progressed at least to processing before cancellation
+  }
+}
+
+interface TimelineEntry {
+  title: string;
+  time: string;
+  desc: string;
+  done: boolean;
+}
 
 interface ActivityEntry {
   date: string;
@@ -32,13 +48,6 @@ interface ActivityEntry {
   action: string;
   details: string;
 }
-
-const initialActivity: ActivityEntry[] = [
-  { date: "May 18, 2025 11:18 AM", user: "Sarah Johnson", action: "Status Updated", details: "Order status changed to Ready to Ship" },
-  { date: "May 18, 2025 11:02 AM", user: "System", action: "Inventory Allocated", details: "Items allocated across 2 warehouses" },
-  { date: "May 18, 2025 10:28 AM", user: "John Smith", action: "Payment Received", details: "Payment received via Visa **** 4242" },
-  { date: "May 18, 2025 10:08 AM", user: "John Smith", action: "Order Created", details: "Order was placed via Web Store" },
-];
 
 interface AddressData {
   lines: string[];
@@ -51,26 +60,52 @@ interface NoteEntry {
   customer?: boolean;
 }
 
-interface DocEntry {
-  name: string;
-  meta: string;
+// Maximum size for an inline attachment (matches the backend's 3MB cap).
+const MAX_ATTACHMENT_BYTES = 3_000_000;
+
+/** Human-readable byte size, e.g. 245 KB or 1.2 MB. */
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** Reads a File into a base64 data URL via FileReader. */
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error ?? new Error("Could not read file"));
+    reader.readAsDataURL(file);
+  });
+}
+
+/** Converts a data URL to a Blob so stored attachments can be downloaded. */
+function dataUrlToBlob(dataUrl: string): Blob {
+  const [header, base64] = dataUrl.split(",");
+  const mimeMatch = /data:([^;]+)/.exec(header);
+  const mime = mimeMatch ? mimeMatch[1] : "application/octet-stream";
+  const binary = atob(base64 ?? "");
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
+}
+
+/** Triggers a real browser download of a stored attachment's data URL. */
+function downloadAttachment(att: Attachment) {
+  const blob = dataUrlToBlob(att.dataUrl);
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = att.name;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(link.href);
 }
 
 function scrollToId(id: string) {
   const el = document.getElementById(id);
   if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-}
-
-/** Triggers a real browser download of a small text file. */
-function downloadTextFile(filename: string, content: string) {
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8;" });
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(blob);
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(link.href);
 }
 
 function parseNotes(raw: string): NoteEntry[] {
@@ -98,6 +133,67 @@ export default function OrderDetailView({ order }: { order: Order }) {
     ? `/dashboard/customers/${order.customerId}`
     : "/dashboard/customers";
 
+  // ---- Status-derived fulfillment progress, timeline & activity ----
+  const currentStep = useMemo(() => statusToStepIndex(order.status), [order.status]);
+  const isCancelled = order.status === "Cancelled";
+
+  // Human-readable order date/time anchor used across the derived timeline.
+  const orderDateLabel = useMemo(() => formatDate(order.date), [order.date]);
+
+  // Fulfillment badge derived from the real status.
+  const fulfillment = useMemo(() => {
+    switch (order.status) {
+      case "Pending": return { label: "Pending", bg: "#F59E0B1A", color: "#F59E0B" };
+      case "Processing": return { label: "Processing", bg: "#3B82F61A", color: "#3B82F6" };
+      case "In Transit": return { label: "In Transit", bg: "#3B82F61A", color: "#3B82F6" };
+      case "Delivered": return { label: "Delivered", bg: "#10B9811A", color: "#10B981" };
+      case "Cancelled": return { label: "Cancelled", bg: "#EF44441A", color: "#EF4444" };
+    }
+  }, [order.status]);
+
+  // Timeline built from the real order: the placed event always happened; the
+  // remaining milestones light up based on how far the real status has advanced.
+  const timeline = useMemo<TimelineEntry[]>(() => {
+    const idx = currentStep;
+    const entries: TimelineEntry[] = [
+      {
+        title: "Order Placed",
+        time: orderDateLabel,
+        desc: `Order ${order.id} created via ${order.channel ?? "Web Store"}`,
+        done: true,
+      },
+      {
+        title: "Processing",
+        time: idx >= 1 ? orderDateLabel : "",
+        desc: idx >= 1 ? "Items allocated and prepared for fulfillment" : "Awaiting processing",
+        done: idx >= 1,
+      },
+      {
+        title: "In Transit",
+        time: idx >= 2 ? orderDateLabel : "",
+        desc: order.trackingNumber
+          ? `Shipped with tracking ${order.trackingNumber}`
+          : idx >= 2 ? "Handed to carrier" : "Awaiting carrier pickup",
+        done: idx >= 2,
+      },
+      {
+        title: "Delivered",
+        time: idx >= 3 ? orderDateLabel : "",
+        desc: idx >= 3 ? `Delivered to ${order.destination ?? "destination"}` : "Out for delivery",
+        done: idx >= 3,
+      },
+    ];
+    if (isCancelled) {
+      entries.push({
+        title: "Order Cancelled",
+        time: orderDateLabel,
+        desc: "This order was cancelled",
+        done: true,
+      });
+    }
+    return entries;
+  }, [currentStep, isCancelled, orderDateLabel, order.id, order.channel, order.trackingNumber, order.destination]);
+
   // Address state + editing
   const [shipping, setShipping] = useState<AddressData>({
     lines: ["John Smith", "Acme Retail", "742 Evergreen Terrace", "Springfield, IL 62704", "United States", "Phone: +1 (217) 555-0198"],
@@ -123,17 +219,23 @@ export default function OrderDetailView({ order }: { order: Order }) {
         .filter((l) => !/^(phone|email)/i.test(l))
         .slice(-2)
         .join(", ");
+      const prev = shipping;
+      // Optimistic update — apply immediately, roll back on API failure.
+      setShipping({ lines });
+      setAddrEdit(null);
       setBusy(true);
       try {
         await api.put(`/api/orders/${order.id}`, { destination });
-        setShipping({ lines });
         toast("Shipping address updated");
-        setAddrEdit(null);
         router.refresh();
       } catch (e) {
+        setShipping(prev); // rollback
+        setAddrEdit("shipping");
+        setAddrDraft(lines.join("\n"));
         toast(e instanceof Error ? e.message : "Could not update shipping address", "error");
       } finally { setBusy(false); }
     } else {
+      // Billing is local-only (no order field) — apply directly.
       setBilling({ lines });
       toast("Billing address updated");
       setAddrEdit(null);
@@ -176,14 +278,17 @@ export default function OrderDetailView({ order }: { order: Order }) {
   const [newNote, setNewNote] = useState("");
 
   async function persistNotes(next: NoteEntry[], successMsg: string): Promise<boolean> {
+    const prev = notes;
+    // Optimistic update — show the new notes immediately, roll back on failure.
+    setNotes(next);
     setBusy(true);
     try {
       await api.put(`/api/orders/${order.id}`, { notes: serializeNotes(next) });
-      setNotes(next);
       toast(successMsg);
       router.refresh();
       return true;
     } catch (e) {
+      setNotes(prev); // rollback
       toast(e instanceof Error ? e.message : "Could not save notes", "error");
       return false;
     } finally { setBusy(false); }
@@ -211,58 +316,146 @@ export default function OrderDetailView({ order }: { order: Order }) {
     }
   }
 
-  // Documents
-  const [docs, setDocs] = useState<DocEntry[]>([
-    { name: "Purchase Order.pdf", meta: "Uploaded May 18, 2025 · 245 KB" },
-    { name: "Packing List.pdf", meta: "Uploaded May 18, 2025 · 98 KB" },
-    { name: "Payment Receipt.pdf", meta: "Uploaded May 18, 2025 · 112 KB" },
-  ]);
+  // Documents — backed by the real attachments API (base64 data-URL storage).
+  const [docs, setDocs] = useState<Attachment[]>([]);
+  const [docsLoading, setDocsLoading] = useState(true);
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [uploadName, setUploadName] = useState("");
-  const [uploadSize, setUploadSize] = useState<number | null>(null);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Load this order's attachments on mount. `docsLoading` starts true so the
+  // loading state shows immediately without a synchronous setState here.
+  useEffect(() => {
+    let active = true;
+    api.get<{ data: Attachment[] }>(`/api/attachments?entityType=order&entityId=${encodeURIComponent(order.id)}`)
+      .then((res) => { if (active) setDocs(res.data); })
+      .catch((e) => { if (active) toast(e instanceof Error ? e.message : "Could not load documents", "error"); })
+      .finally(() => { if (active) setDocsLoading(false); });
+    return () => { active = false; };
+  }, [order.id, toast]);
 
   function onFilePicked(file: File | undefined) {
     if (!file) return;
-    setUploadName(file.name);
-    setUploadSize(file.size);
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      toast(`"${file.name}" is too large (max 3MB)`, "error");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+    setUploadFile(file);
   }
 
-  function uploadDoc() {
-    let name = uploadName.trim();
-    if (!name) { toast("Choose a file or enter a document name", "error"); return; }
-    if (!/\.[a-z0-9]+$/i.test(name)) name += ".pdf";
-    const sizeKb = uploadSize != null ? Math.max(1, Math.round(uploadSize / 1024)) : 80 + Math.floor(Math.random() * 200);
-    setDocs((prev) => [...prev, { name, meta: `Uploaded ${formatDate(new Date().toISOString().slice(0, 10))} · ${sizeKb} KB` }]);
-    setUploadName("");
-    setUploadSize(null);
+  async function uploadDoc() {
+    const file = uploadFile;
+    if (!file) { toast("Choose a file to upload", "error"); return; }
+    if (file.size > MAX_ATTACHMENT_BYTES) { toast(`"${file.name}" is too large (max 3MB)`, "error"); return; }
+    setUploading(true);
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      const created = await api.post<Attachment>("/api/attachments", {
+        entityType: "order",
+        entityId: order.id,
+        name: file.name,
+        mime: file.type || "application/octet-stream",
+        dataUrl,
+        size: file.size,
+      });
+      setDocs((prev) => [...prev, created]);
+      setUploadFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      setUploadOpen(false);
+      toast(`${created.name} uploaded`);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not upload document", "error");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function deleteDoc(att: Attachment) {
+    const prev = docs;
+    // Optimistic removal — restore on failure.
+    setDocs((list) => list.filter((d) => d.id !== att.id));
+    setDeletingId(att.id);
+    try {
+      await api.del(`/api/attachments/${att.id}`);
+      toast(`${att.name} deleted`);
+    } catch (e) {
+      setDocs(prev); // rollback
+      toast(e instanceof Error ? e.message : "Could not delete document", "error");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  function closeUpload() {
+    setUploadFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
     setUploadOpen(false);
-    toast(`${name} uploaded`);
   }
 
-  function downloadDoc(d: DocEntry) {
-    const base = d.name.replace(/\.[a-z0-9]+$/i, "");
-    downloadTextFile(`${base}.txt`, [
-      `FulfillMesh — Document Export`,
-      `Document: ${d.name}`,
-      `${d.meta}`,
-      ``,
-      `Order ID: ${order.id}`,
-      `Customer: ${order.customer}`,
-      `Order Date: ${formatDate(order.date)}`,
-      `Status: ${order.status}`,
-      `Total: ${formatCurrency(order.total)} USD`,
-    ].join("\n"));
-    toast(`${d.name} downloaded`);
-  }
+  // Activity history — derived from the real order's fields & current status.
+  const activity = useMemo<ActivityEntry[]>(() => {
+    const idx = currentStep;
+    const list: ActivityEntry[] = [
+      {
+        date: orderDateLabel,
+        user: "System",
+        action: "Order Created",
+        details: `Order placed via ${order.channel ?? "Web Store"}`,
+      },
+    ];
+    if (idx >= 1) {
+      list.push({ date: orderDateLabel, user: "System", action: "Processing", details: "Order moved into processing" });
+    }
+    if (order.trackingNumber) {
+      list.push({ date: orderDateLabel, user: "System", action: "Tracking Added", details: `Tracking number ${order.trackingNumber} assigned` });
+    }
+    if (idx >= 2) {
+      list.push({ date: orderDateLabel, user: "System", action: "Shipped", details: `In transit to ${order.destination ?? "destination"}` });
+    }
+    if (idx >= 3) {
+      list.push({ date: orderDateLabel, user: "System", action: "Delivered", details: `Delivered to ${order.destination ?? "destination"}` });
+    }
+    if (isCancelled) {
+      list.push({ date: orderDateLabel, user: "System", action: "Cancelled", details: "Order was cancelled" });
+    }
+    if (order.notes) {
+      list.push({ date: orderDateLabel, user: "Staff", action: "Note Added", details: "Notes updated on this order" });
+    }
+    return list;
+  }, [currentStep, isCancelled, orderDateLabel, order.channel, order.trackingNumber, order.destination, order.notes]);
 
-  // Activity history
-  const [activity] = useState<ActivityEntry[]>(initialActivity);
   const [activityFilter, setActivityFilter] = useState<string>("All Activities");
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
-  const filterOptions = ["All Activities", ...Array.from(new Set(initialActivity.map((a) => a.action)))];
+  const filterMenuRef = useRef<HTMLDivElement>(null);
+  const filterOptions = useMemo(
+    () => ["All Activities", ...Array.from(new Set(activity.map((a) => a.action)))],
+    [activity],
+  );
   const visibleActivity = activityFilter === "All Activities"
     ? activity
     : activity.filter((a) => a.action === activityFilter);
+
+  // Close the activity-filter dropdown on Escape or outside-click.
+  useEffect(() => {
+    if (!filterMenuOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setFilterMenuOpen(false);
+    }
+    function onPointer(e: MouseEvent) {
+      if (filterMenuRef.current && !filterMenuRef.current.contains(e.target as Node)) {
+        setFilterMenuOpen(false);
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onPointer);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onPointer);
+    };
+  }, [filterMenuOpen]);
 
   // Tickets / messages
   const [newMessageOpen, setNewMessageOpen] = useState(false);
@@ -326,19 +519,24 @@ export default function OrderDetailView({ order }: { order: Order }) {
           {/* Fulfillment Status */}
           <div>
             <p className="text-[12px] text-[#94A3B8] mb-1">Fulfillment Status</p>
-            <span className="inline-flex items-center px-2.5 py-0.5 text-[11px] font-medium rounded-full" style={{ backgroundColor: "#3B82F61A", color: "#3B82F6" }}>Ready to Ship</span>
+            <span className="inline-flex items-center px-2.5 py-0.5 text-[11px] font-medium rounded-full" style={{ backgroundColor: fulfillment.bg, color: fulfillment.color }}>{fulfillment.label}</span>
             {/* Stepper */}
             <div className="mt-4 flex items-center">
-              {steps.map((s, i) => (
-                <div key={s} className="flex items-center" style={{ flex: i === steps.length - 1 ? "0 0 auto" : "1 1 0" }}>
-                  <div className="flex flex-col items-center">
-                    <div className={`w-5 h-5 rounded-full flex items-center justify-center ${i <= currentStep ? "bg-[#3B82F6]" : "bg-white border-2 border-[#E2E8F0]"}`}>
-                      {i <= currentStep && <Check className="w-3 h-3 text-white" />}
+              {steps.map((s, i) => {
+                const reached = i <= currentStep;
+                const dotColor = isCancelled ? "bg-[#EF4444]" : "bg-[#3B82F6]";
+                const lineColor = isCancelled ? "bg-[#EF4444]" : "bg-[#3B82F6]";
+                return (
+                  <div key={s} className="flex items-center" style={{ flex: i === steps.length - 1 ? "0 0 auto" : "1 1 0" }}>
+                    <div className="flex flex-col items-center">
+                      <div className={`w-5 h-5 rounded-full flex items-center justify-center ${reached ? dotColor : "bg-white border-2 border-[#E2E8F0]"}`}>
+                        {reached && <Check className="w-3 h-3 text-white" />}
+                      </div>
                     </div>
+                    {i < steps.length - 1 && <div className={`h-0.5 flex-1 ${i < currentStep ? lineColor : "bg-[#E2E8F0]"}`} />}
                   </div>
-                  {i < steps.length - 1 && <div className={`h-0.5 flex-1 ${i < currentStep ? "bg-[#3B82F6]" : "bg-[#E2E8F0]"}`} />}
-                </div>
-              ))}
+                );
+              })}
             </div>
             <div className="mt-1.5 flex justify-between">
               {steps.map((s, i) => (
@@ -497,18 +695,44 @@ export default function OrderDetailView({ order }: { order: Order }) {
         <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-[0_1px_3px_rgba(0,0,0,0.1)] overflow-hidden">
           <h3 className="text-[14px] font-semibold text-[#1E293B] px-5 py-3 bg-[#F8FAFC] border-b border-[#E2E8F0]">Attached Documents</h3>
           <div className="p-5">
-            <div className="space-y-2">
-              {docs.map((d) => (
-                <div key={d.name} className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-[#EF4444]/10 flex items-center justify-center shrink-0"><FileText className="w-4 h-4 text-[#EF4444]" /></div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[12px] font-medium text-[#1E293B] truncate">{d.name}</p>
-                    <p className="text-[10px] text-[#94A3B8] truncate">{d.meta}</p>
-                  </div>
-                  <button onClick={() => downloadDoc(d)} aria-label={`Download ${d.name}`} className="text-[#94A3B8] hover:text-[#64748B] shrink-0"><Download className="w-4 h-4" /></button>
-                </div>
-              ))}
-            </div>
+            {docsLoading ? (
+              <div className="flex items-center justify-center gap-2 py-6 text-[12px] text-[#94A3B8]">
+                <Loader2 className="w-4 h-4 animate-spin" /> Loading documents…
+              </div>
+            ) : docs.length === 0 ? (
+              <div className="py-6 text-center">
+                <FileText className="w-7 h-7 text-[#CBD5E1] mx-auto mb-2" />
+                <p className="text-[12px] text-[#94A3B8]">No documents attached to this order yet.</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {docs.map((d) => {
+                  const isImage = d.mime.startsWith("image/");
+                  return (
+                    <div key={d.id} className="flex items-center gap-2.5">
+                      {isImage ? (
+                        <a href={d.dataUrl} target="_blank" rel="noopener noreferrer" aria-label={`Preview ${d.name}`} className="w-8 h-8 rounded-lg overflow-hidden shrink-0 border border-[#E2E8F0]">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={d.dataUrl} alt={d.name} className="w-full h-full object-cover" />
+                        </a>
+                      ) : (
+                        <div className="w-8 h-8 rounded-lg bg-[#EF4444]/10 flex items-center justify-center shrink-0">
+                          <FileText className="w-4 h-4 text-[#EF4444]" />
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[12px] font-medium text-[#1E293B] truncate">{d.name}</p>
+                        <p className="text-[10px] text-[#94A3B8] truncate">{formatBytes(d.size)} · {formatDate(d.createdAt.slice(0, 10))}</p>
+                      </div>
+                      <button onClick={() => downloadAttachment(d)} aria-label={`Download ${d.name}`} className="text-[#94A3B8] hover:text-[#64748B] shrink-0"><Download className="w-4 h-4" /></button>
+                      <button onClick={() => deleteDoc(d)} disabled={deletingId === d.id} aria-label={`Delete ${d.name}`} className="text-[#94A3B8] hover:text-[#EF4444] shrink-0 disabled:opacity-50">
+                        {deletingId === d.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
             <button onClick={() => setUploadOpen(true)} className="text-[12px] font-medium text-[#3B82F6] mt-3 hover:underline">Upload Document</button>
           </div>
         </div>
@@ -543,7 +767,7 @@ export default function OrderDetailView({ order }: { order: Order }) {
           <div className="flex items-center justify-between px-5 py-3 bg-[#F8FAFC] border-b border-[#E2E8F0]">
             <h3 className="text-[14px] font-semibold text-[#1E293B]">Activity History</h3>
             <div className="flex items-center gap-2">
-              <div className="relative">
+              <div className="relative" ref={filterMenuRef}>
                 <button onClick={() => setFilterMenuOpen((v) => !v)} className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-[#E2E8F0] rounded-lg text-[12px] text-[#64748B] hover:bg-[#F8FAFC]">{activityFilter} <ChevronDown className="w-3 h-3" /></button>
                 {filterMenuOpen && (
                   <div className="absolute right-0 mt-1 z-20 w-44 bg-white border border-[#E2E8F0] rounded-lg shadow-[0_4px_12px_rgba(0,0,0,0.12)] py-1">
@@ -660,26 +884,22 @@ export default function OrderDetailView({ order }: { order: Order }) {
 
       <Modal
         open={uploadOpen}
-        onClose={() => setUploadOpen(false)}
+        onClose={closeUpload}
         title="Upload Document"
-        description="Attach a document to this order."
+        description="Attach a document to this order (max 3MB)."
         footer={<>
-          <SecondaryButton onClick={() => setUploadOpen(false)}>Cancel</SecondaryButton>
-          <PrimaryButton onClick={uploadDoc}>Upload</PrimaryButton>
+          <SecondaryButton onClick={closeUpload}>Cancel</SecondaryButton>
+          <PrimaryButton onClick={uploadDoc} disabled={uploading || !uploadFile}>{uploading ? "Uploading…" : "Upload"}</PrimaryButton>
         </>}
       >
-        <div className="space-y-4">
-          <Field label="Choose file">
-            <input
-              type="file"
-              onChange={(e) => onFilePicked(e.target.files?.[0])}
-              className="w-full text-[13px] text-[#374151] file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border file:border-[#E5E7EB] file:bg-white file:text-[13px] file:font-medium file:text-[#374151] hover:file:bg-[#F3F4F6] file:cursor-pointer"
-            />
-          </Field>
-          <Field label="Document name" hint={uploadSize != null ? `File size: ${Math.max(1, Math.round(uploadSize / 1024))} KB` : undefined}>
-            <TextInput value={uploadName} onChange={(e) => setUploadName(e.target.value)} placeholder="e.g. Commercial Invoice.pdf" />
-          </Field>
-        </div>
+        <Field label="Choose file" hint={uploadFile ? `${uploadFile.name} · ${formatBytes(uploadFile.size)}` : "PDF, image, or any file up to 3MB."}>
+          <input
+            ref={fileInputRef}
+            type="file"
+            onChange={(e) => onFilePicked(e.target.files?.[0])}
+            className="w-full text-[13px] text-[#374151] file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border file:border-[#E5E7EB] file:bg-white file:text-[13px] file:font-medium file:text-[#374151] hover:file:bg-[#F3F4F6] file:cursor-pointer"
+          />
+        </Field>
       </Modal>
 
       <Modal

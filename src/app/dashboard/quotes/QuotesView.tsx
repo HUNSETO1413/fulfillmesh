@@ -1,10 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  FileText, Users, Clock, CheckCircle2, ArrowUpRight, ArrowDownRight,
+  FileText, Users, Clock, CheckCircle2,
   Search, ChevronDown, Pencil, Trash2, Plus, Calendar, Bell, SlidersHorizontal,
   ChevronLeft, ChevronRight, AlertCircle, Wallet, Download, ChevronUp, ArrowUpDown,
 } from "lucide-react";
@@ -81,6 +81,14 @@ function NotificationBell() {
       return next;
     });
   }
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const unread = notes.filter((n) => !n.read).length;
 
@@ -169,11 +177,13 @@ const emptyDraft: Draft = {
   createdDate: new Date().toISOString().slice(0, 10), validUntil: "", total: "",
 };
 
-function QuoteFields({ draft, set }: { draft: Draft; set: (d: Partial<Draft>) => void }) {
+type Errors = Partial<Record<"customer" | "total", string>>;
+
+function QuoteFields({ draft, set, errors }: { draft: Draft; set: (d: Partial<Draft>) => void; errors: Errors }) {
   return (
     <div className="grid grid-cols-2 gap-4">
       <div className="col-span-2">
-        <Field label="Customer" required>
+        <Field label="Customer" required error={errors.customer}>
           <TextInput value={draft.customer} onChange={(e) => set({ customer: e.target.value })} placeholder="Acme Retail" />
         </Field>
       </div>
@@ -190,7 +200,7 @@ function QuoteFields({ draft, set }: { draft: Draft; set: (d: Partial<Draft>) =>
         <TextInput type="date" value={draft.validUntil} onChange={(e) => set({ validUntil: e.target.value })} />
       </Field>
       <div className="col-span-2">
-        <Field label="Total (USD)">
+        <Field label="Total (USD)" error={errors.total}>
           <NumberInput value={draft.total} onChange={(e) => set({ total: e.target.value })} placeholder="0.00" step="0.01" min="0" />
         </Field>
       </div>
@@ -199,13 +209,6 @@ function QuoteFields({ draft, set }: { draft: Draft; set: (d: Partial<Draft>) =>
 }
 
 /* stats are now computed inside the component from items */
-
-const responseLegend = [
-  { name: "Excellent (≥ 75%)", count: "8", pct: "25.8%", color: "#00B894" },
-  { name: "Good (50% – 74%)", count: "7", pct: "29.2%", color: "#0057D8" },
-  { name: "Fair (25% – 49%)", count: "6", pct: "25.0%", color: "#F59E0B" },
-  { name: "Low (< 25%)", count: "4", pct: "20.0%", color: "#EF4444" },
-];
 
 const tabs = ["All", "Draft", "Sent", "Accepted", "Declined", "Expired"];
 
@@ -227,6 +230,19 @@ export default function QuotesView({ items }: { items: Quote[] }) {
   const [valueMax, setValueMax] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+
+  // Close any open custom dropdown on Escape (outside-click handled per-dropdown).
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setDateRangeOpen(false);
+        setMoreOpen(false);
+        setPageSizeOpen(false);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // sorting
   type SortKey = "id" | "customer" | "status" | "createdDate" | "total";
@@ -250,6 +266,7 @@ export default function QuotesView({ items }: { items: Quote[] }) {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Quote | null>(null);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const [errors, setErrors] = useState<Errors>({});
   const [busy, setBusy] = useState(false);
 
   // delete
@@ -259,22 +276,59 @@ export default function QuotesView({ items }: { items: Quote[] }) {
   const [approvalsOpen, setApprovalsOpen] = useState(false);
   const pendingApprovals = useMemo(() => items.filter((q) => q.status === "Sent"), [items]);
 
-  // computed stats from items
+  // Real approval metrics: awaiting = Sent RFQs; overdue = Sent RFQs whose
+  // validUntil date has already passed; total value = sum of their totals.
+  const approvalStats = useMemo(() => {
+    const awaiting = pendingApprovals.length;
+    const refIso = REF_DATE.toISOString().slice(0, 10);
+    const overdue = pendingApprovals.filter((q) => q.validUntil != null && q.validUntil < refIso).length;
+    const totalValue = pendingApprovals.reduce((sum, q) => sum + q.total, 0);
+    return { awaiting, overdue, totalValue };
+  }, [pendingApprovals]);
+
+  // computed stats from items. No historical snapshots exist, so each card shows
+  // a real derived context line (share / value) rather than an invented delta.
   const stats = useMemo(() => {
+    const total = items.length;
+    const denom = total || 1;
     const open = items.filter((q) => q.status === "Draft" || q.status === "Sent").length;
+    const responded = items.filter((q) => q.status !== "Draft").length;
     const accepted = items.filter((q) => q.status === "Accepted").length;
-    const total = items.length || 1;
+    const decided = items.filter((q) => q.status === "Accepted" || q.status === "Declined").length;
+    const winRate = decided > 0 ? Math.round((accepted / decided) * 100) : 0;
     return [
-      { title: "Open RFQs", value: String(open), change: open > 0 ? `${Math.round(open / total * 100)}%` : "0%", positive: true, icon: FileText, iconBg: "bg-[#0057D8]/10", iconColor: "text-[#0057D8]" },
-      { title: "Supplier Responses", value: String(items.filter((q) => q.status !== "Draft").length), change: `${Math.round((items.filter((q) => q.status !== "Draft").length / total) * 100)}%`, positive: true, icon: Users, iconBg: "bg-[#7C6FF6]/10", iconColor: "text-[#7C6FF6]" },
-      { title: "Avg. Turnaround", value: "2.6 days", change: "8.2%", positive: true, icon: Clock, iconBg: "bg-[#F59E0B]/10", iconColor: "text-[#F59E0B]" },
-      { title: "Approved Quotes", value: String(accepted), change: accepted > 0 ? `${Math.round(accepted / total * 100)}%` : "0%", positive: true, icon: CheckCircle2, iconBg: "bg-[#00B894]/10", iconColor: "text-[#00B894]" },
+      { title: "Open RFQs", value: String(open), sub: `${Math.round((open / denom) * 100)}% of all RFQs`, icon: FileText, iconBg: "bg-[#0057D8]/10", iconColor: "text-[#0057D8]" },
+      { title: "Supplier Responses", value: String(responded), sub: `${Math.round((responded / denom) * 100)}% responded`, icon: Users, iconBg: "bg-[#7C6FF6]/10", iconColor: "text-[#7C6FF6]" },
+      { title: "Pipeline Value", value: formatCurrency(items.reduce((sum, q) => sum + q.total, 0)), sub: `${total} RFQ${total === 1 ? "" : "s"}`, icon: Clock, iconBg: "bg-[#F59E0B]/10", iconColor: "text-[#F59E0B]" },
+      { title: "Approved Quotes", value: String(accepted), sub: decided > 0 ? `${winRate}% win rate` : "No decisions yet", icon: CheckCircle2, iconBg: "bg-[#00B894]/10", iconColor: "text-[#00B894]" },
     ];
   }, [items]);
 
   const circumference = 2 * Math.PI * 40;
-  const segs = [25.8, 29.2, 25.0, 20.0];
-  const colors = ["#00B894", "#0057D8", "#F59E0B", "#EF4444"];
+
+  // Real RFQ status distribution drives the donut + legend (replaces the old
+  // hardcoded response-rate buckets).
+  const statusBreakdown = useMemo(() => {
+    const total = items.length;
+    const defs: { name: string; status: QuoteStatus; color: string }[] = [
+      { name: "Accepted", status: "Accepted", color: "#00B894" },
+      { name: "Sent", status: "Sent", color: "#0057D8" },
+      { name: "Draft", status: "Draft", color: "#F59E0B" },
+      { name: "Declined", status: "Declined", color: "#EF4444" },
+      { name: "Expired", status: "Expired", color: "#94A3B8" },
+    ];
+    const rows = defs.map((d) => {
+      const count = items.filter((q) => q.status === d.status).length;
+      const pct = total > 0 ? (count / total) * 100 : 0;
+      return { ...d, count, pct };
+    });
+    // Acceptance rate = accepted / decided (accepted + declined).
+    const accepted = items.filter((q) => q.status === "Accepted").length;
+    const declined = items.filter((q) => q.status === "Declined").length;
+    const decided = accepted + declined;
+    const acceptanceRate = decided > 0 ? Math.round((accepted / decided) * 100) : 0;
+    return { rows, total, acceptanceRate };
+  }, [items]);
 
   const moreFiltersActive =
     valueMin.trim() !== "" || valueMax.trim() !== "" || dateFrom !== "" || dateTo !== "";
@@ -386,11 +440,13 @@ export default function QuotesView({ items }: { items: Quote[] }) {
   function openCreate() {
     setEditing(null);
     setDraft(emptyDraft);
+    setErrors({});
     setFormOpen(true);
   }
 
   function openEdit(q: Quote) {
     setEditing(q);
+    setErrors({});
     setDraft({
       customer: q.customer,
       customerId: q.customerId ?? "",
@@ -403,10 +459,17 @@ export default function QuotesView({ items }: { items: Quote[] }) {
   }
 
   async function saveQuote() {
-    if (!draft.customer.trim()) {
-      toast("Customer is required", "error");
+    const nextErrors: Errors = {};
+    if (!draft.customer.trim()) nextErrors.customer = "Customer is required";
+    if (draft.total.trim() !== "" && (Number.isNaN(Number(draft.total)) || Number(draft.total) < 0)) {
+      nextErrors.total = "Total must be a non-negative number";
+    }
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors(nextErrors);
+      toast("Please fix the highlighted fields", "error");
       return;
     }
+    setErrors({});
     setBusy(true);
     const payload = {
       customer: draft.customer.trim(),
@@ -523,9 +586,7 @@ export default function QuotesView({ items }: { items: Quote[] }) {
               </div>
               <p className="text-[28px] font-bold text-text-primary leading-none tracking-tight">{s.value}</p>
               <div className="flex items-center gap-1.5 mt-3">
-                {s.positive ? <ArrowUpRight className="w-3.5 h-3.5 text-[#10B981]" /> : <ArrowDownRight className="w-3.5 h-3.5 text-[#EF4444]" />}
-                <span className={`text-[12px] font-semibold ${s.positive ? "text-[#10B981]" : "text-[#EF4444]"}`}>{s.change}</span>
-                <span className="text-[11px] text-text-light">vs last period</span>
+                <span className="text-[11px] text-text-light">{s.sub}</span>
               </div>
             </div>
           );
@@ -794,33 +855,33 @@ export default function QuotesView({ items }: { items: Quote[] }) {
 
         {/* Sidebar */}
         <div className="space-y-4">
-          {/* RFQ Response Overview */}
+          {/* RFQ Status Overview — real distribution of the current RFQ book */}
           <div className="bg-white rounded-xl border border-border-soft p-5 shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
-            <h3 className="text-[14px] font-semibold text-text-primary mb-4">RFQ Response Overview</h3>
+            <h3 className="text-[14px] font-semibold text-text-primary mb-4">RFQ Status Overview</h3>
             <div className="relative w-[140px] h-[140px] mx-auto">
               <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
                 <circle cx="50" cy="50" r="40" fill="none" stroke="#E2E8F0" strokeWidth="11" />
-                {segs.map((p, i) => {
-                  const len = (p / 100) * circumference;
-                  const prior = segs.slice(0, i).reduce((sum, x) => sum + x, 0);
-                  return <circle key={i} cx="50" cy="50" r="40" fill="none" stroke={colors[i]} strokeWidth="11" strokeDasharray={`${len} ${circumference - len}`} strokeDashoffset={-(prior / 100) * circumference} />;
+                {statusBreakdown.rows.map((r, i) => {
+                  const len = (r.pct / 100) * circumference;
+                  const prior = statusBreakdown.rows.slice(0, i).reduce((sum, x) => sum + x.pct, 0);
+                  return <circle key={r.status} cx="50" cy="50" r="40" fill="none" stroke={r.color} strokeWidth="11" strokeDasharray={`${len} ${circumference - len}`} strokeDashoffset={-(prior / 100) * circumference} />;
                 })}
               </svg>
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="text-center">
-                  <p className="text-[10px] text-text-light leading-tight">Avg.<br />Response Rate</p>
-                  <p className="text-[20px] font-bold text-text-primary">62%</p>
+                  <p className="text-[10px] text-text-light leading-tight">Acceptance<br />Rate</p>
+                  <p className="text-[20px] font-bold text-text-primary">{statusBreakdown.acceptanceRate}%</p>
                 </div>
               </div>
             </div>
             <div className="space-y-2.5 mt-5">
-              {responseLegend.map((l) => (
-                <div key={l.name} className="flex items-center justify-between text-[12px]">
+              {statusBreakdown.rows.map((r) => (
+                <div key={r.status} className="flex items-center justify-between text-[12px]">
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: l.color }} />
-                    <span className="text-text-body truncate">{l.name}</span>
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: r.color }} />
+                    <span className="text-text-body truncate">{r.name}</span>
                   </div>
-                  <span className="text-text-primary shrink-0 ml-2 font-medium">{l.count} <span className="text-text-light font-normal">({l.pct})</span></span>
+                  <span className="text-text-primary shrink-0 ml-2 font-medium">{r.count} <span className="text-text-light font-normal">({statusBreakdown.total > 0 ? r.pct.toFixed(1) : "0.0"}%)</span></span>
                 </div>
               ))}
             </div>
@@ -833,17 +894,17 @@ export default function QuotesView({ items }: { items: Quote[] }) {
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-lg bg-[#F59E0B]/10 flex items-center justify-center shrink-0"><Clock className="w-[18px] h-[18px] text-[#F59E0B]" /></div>
                 <div className="flex-1"><p className="text-[13px] text-text-primary font-medium">Awaiting Your Approval</p></div>
-                <span className="text-[13px] font-semibold text-text-primary">6 RFQs</span>
+                <span className="text-[13px] font-semibold text-text-primary">{approvalStats.awaiting} RFQ{approvalStats.awaiting === 1 ? "" : "s"}</span>
               </div>
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-lg bg-[#EF4444]/10 flex items-center justify-center shrink-0"><AlertCircle className="w-[18px] h-[18px] text-[#EF4444]" /></div>
                 <div className="flex-1"><p className="text-[13px] text-text-primary font-medium">Overdue Approvals</p></div>
-                <span className="text-[13px] font-semibold text-text-primary">2 RFQs</span>
+                <span className="text-[13px] font-semibold text-text-primary">{approvalStats.overdue} RFQ{approvalStats.overdue === 1 ? "" : "s"}</span>
               </div>
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-lg bg-[#00B894]/10 flex items-center justify-center shrink-0"><Wallet className="w-[18px] h-[18px] text-[#00B894]" /></div>
                 <div className="flex-1"><p className="text-[13px] text-text-primary font-medium">Total Value in Bid</p></div>
-                <span className="text-[13px] font-semibold text-text-primary">$48,620.00</span>
+                <span className="text-[13px] font-semibold text-text-primary">{formatCurrency(approvalStats.totalValue)}</span>
               </div>
             </div>
             <button onClick={() => setApprovalsOpen(true)} className="w-full mt-4 py-2.5 bg-[#3B82F6] text-white rounded-lg text-[13px] font-semibold hover:bg-[#2563EB] transition-colors shadow-[0_1px_3px_rgba(0,0,0,0.1)]">View All Approvals</button>
@@ -898,7 +959,7 @@ export default function QuotesView({ items }: { items: Quote[] }) {
           </>
         }
       >
-        <QuoteFields draft={draft} set={(d) => setDraft((prev) => ({ ...prev, ...d }))} />
+        <QuoteFields draft={draft} set={(d) => setDraft((prev) => ({ ...prev, ...d }))} errors={errors} />
       </Modal>
 
       {/* Delete confirm */}

@@ -15,8 +15,6 @@ import {
   MoreVertical,
   ChevronLeft,
   ChevronRight,
-  ArrowUpRight,
-  ArrowDownRight,
   Check,
   Trash2,
   Pencil,
@@ -29,12 +27,12 @@ import { useToast } from "@/components/dashboard/Toast";
 import { api } from "@/lib/client";
 import type { Task as ApiTask } from "@/types";
 
-const stats = [
-  { title: "Total Tasks", value: "2,348", change: "15.6%", up: true, icon: CheckSquare, color: "#3B82F6" },
-  { title: "Completed", value: "1,823", change: "18.3%", up: true, icon: CheckCircle2, color: "#10B981" },
-  { title: "In Progress", value: "362", change: "5.2%", up: false, icon: Loader, color: "#3B82F6" },
-  { title: "Pending", value: "128", change: "8.7%", up: false, icon: Clock, color: "#F59E0B" },
-  { title: "Delayed", value: "35", change: "12.5%", up: false, icon: AlertTriangle, color: "#EF4444" },
+const STAT_DEFS = [
+  { title: "Total Tasks", status: null as string | null, icon: CheckSquare, color: "#3B82F6" },
+  { title: "Completed", status: "Completed", icon: CheckCircle2, color: "#10B981" },
+  { title: "In Progress", status: "In Progress", icon: Loader, color: "#3B82F6" },
+  { title: "Pending", status: "Pending", icon: Clock, color: "#F59E0B" },
+  { title: "Delayed", status: "Delayed", icon: AlertTriangle, color: "#EF4444" },
 ];
 
 const filterTabs = ["All Tasks", "In Progress", "Pending", "Completed", "Delayed", "Cancelled"];
@@ -49,43 +47,30 @@ interface Task {
   priority: string; status: string; created: string; due: string;
 }
 
-const initialTasks: Task[] = [
-  { id: "TSK-000234", type: "Pick", ref: "SO-100176", warehouse: "ATL-1", assignee: "James Carter", priority: "High", status: "In Progress", created: "May 30, 2025", due: "May 31, 2025" },
-  { id: "TSK-000231", type: "Pack", ref: "SO-100165", warehouse: "ATL-1", assignee: "Sophia Lee", priority: "Medium", status: "Pending", created: "May 30, 2025", due: "May 31, 2025" },
-  { id: "TSK-000232", type: "Ship", ref: "SO-100154", warehouse: "DFW-1", assignee: "Michael Brown", priority: "High", status: "Pending", created: "May 30, 2025", due: "May 31, 2025" },
-  { id: "TSK-000228", type: "Putaway", ref: "PO-50872", warehouse: "MIA-1", assignee: "Emily Davis", priority: "Low", status: "Completed", created: "May 30, 2025", due: "May 30, 2025" },
-  { id: "TSK-000230", type: "Receive", ref: "PO-50671", warehouse: "LAX-1", assignee: "Daniel Wilson", priority: "Medium", status: "In Progress", created: "May 30, 2025", due: "May 31, 2025" },
-  { id: "TSK-000229", type: "Replenish", ref: "REQ-8891", warehouse: "DFW-1", assignee: "Olivia Martinez", priority: "Low", status: "Completed", created: "May 30, 2025", due: "May 30, 2025" },
-  { id: "TSK-000226", type: "Cycle Count", ref: "CC-000104", warehouse: "LAX-1", assignee: "Ethan Taylor", priority: "Medium", status: "In Progress", created: "May 30, 2025", due: "May 31, 2025" },
-  { id: "TSK-000227", type: "Move", ref: "MOV-3346", warehouse: "ATL-1", assignee: "Ava Johnson", priority: "Low", status: "Completed", created: "May 30, 2025", due: "May 30, 2025" },
-  { id: "TSK-000225", type: "Return Process", ref: "RMA-7788", warehouse: "MIA-1", assignee: "Liam Anderson", priority: "High", status: "Delayed", created: "May 30, 2025", due: "May 29, 2025" },
-  { id: "TSK-000224", type: "QC Check", ref: "QC-4456", warehouse: "DFW-1", assignee: "Isabella White", priority: "Medium", status: "Pending", created: "May 30, 2025", due: "May 31, 2025" },
-];
-
 let taskSeq = 235;
 
-const statusOverview = [
-  { label: "Completed", value: "1,823", pct: 77.6, color: "#10B981" },
-  { label: "In Progress", value: "362", pct: 15.4, color: "#3B82F6" },
-  { label: "Pending", value: "128", pct: 5.4, color: "#F59E0B" },
-  { label: "Delayed", value: "35", pct: 1.5, color: "#EF4444" },
-];
+// Donut/overview colors keyed by status — used to render computed distributions.
+const STATUS_COLORS: Record<string, string> = {
+  Completed: "#10B981",
+  "In Progress": "#3B82F6",
+  Pending: "#F59E0B",
+  Delayed: "#EF4444",
+  Cancelled: "#64748B",
+};
 
-const tasksByType = [
-  { label: "Pick", value: 92, color: "#3B82F6" },
-  { label: "Pack", value: 78, color: "#10B981" },
-  { label: "Ship", value: 64, color: "#F59E0B" },
-  { label: "Putaway", value: 51, color: "#8B5CF6" },
-  { label: "Receive", value: 38, color: "#06B6D4" },
-  { label: "Count", value: 25, color: "#EF4444" },
-];
+// Stable palette for the "Tasks by Type" bars.
+const TYPE_PALETTE = ["#3B82F6", "#10B981", "#F59E0B", "#8B5CF6", "#06B6D4", "#EF4444", "#EC4899", "#14B8A6", "#F97316", "#6366F1"];
 
-const recentActivity = [
-  { dot: "#3B82F6", title: "Task TSK-000234 started", sub: "Pick · SO-100176" },
-  { dot: "#10B981", title: "Task TSK-000228 completed", sub: "Putaway · PO-50872" },
-  { dot: "#F59E0B", title: "Task TSK-000231 pending", sub: "Replenish · REQ-8891" },
-  { dot: "#EF4444", title: "Task TSK-000225 delayed", sub: "Return Process · RMA-7788" },
-];
+// Map a status to the activity-feed verb shown in "Recent Activity".
+function activityVerb(status: string): string {
+  switch (status) {
+    case "Completed": return "completed";
+    case "In Progress": return "started";
+    case "Delayed": return "delayed";
+    case "Cancelled": return "cancelled";
+    default: return "pending";
+  }
+}
 
 function TasksHeaderArt() {
   return (
@@ -227,7 +212,7 @@ export default function TasksPage() {
           due: t.dueDate ?? "",
         }));
         setItems(mapped);
-      } catch (err) {
+      } catch {
         if (!cancelled) toast("Failed to load tasks", "error");
       } finally {
         if (!cancelled) setLoading(false);
@@ -238,6 +223,16 @@ export default function TasksPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Close the open row "more" menu on Escape (mirrors outside-click behavior).
+  useEffect(() => {
+    if (openMenu === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpenMenu(null);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [openMenu]);
 
   function goToPage(p: number) {
     if (p < 1 || p > 235) return;
@@ -270,21 +265,102 @@ export default function TasksPage() {
 
   const overdueCount = useMemo(() => items.filter(isOverdue).length, [items]);
 
+  // ---- All right-rail / header widgets are computed from the loaded `items`. ----
+
+  // Counts per status, used by the stat cards and the donut overview.
+  const statusCounts = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const t of items) m[t.status] = (m[t.status] ?? 0) + 1;
+    return m;
+  }, [items]);
+
+  // Stat cards: real counts by status (Total = all loaded tasks).
+  const statCards = useMemo(
+    () =>
+      STAT_DEFS.map((def) => ({
+        ...def,
+        value: (def.status === null ? items.length : statusCounts[def.status] ?? 0).toLocaleString("en-US"),
+      })),
+    [items.length, statusCounts],
+  );
+
+  // Donut overview: share of each status across all loaded tasks.
+  const statusOverview = useMemo(() => {
+    const total = items.length || 1;
+    const order = ["Completed", "In Progress", "Pending", "Delayed", "Cancelled"];
+    return order
+      .filter((label) => (statusCounts[label] ?? 0) > 0)
+      .map((label) => {
+        const count = statusCounts[label] ?? 0;
+        return {
+          label,
+          value: count.toLocaleString("en-US"),
+          pct: Math.round((count / total) * 1000) / 10,
+          color: STATUS_COLORS[label] ?? "#64748B",
+        };
+      });
+  }, [items.length, statusCounts]);
+
+  // Productivity: completion rate + on-time rate derived from the real rows.
+  const productivity = useMemo(() => {
+    const total = items.length;
+    const completed = statusCounts["Completed"] ?? 0;
+    const overdue = items.filter(isOverdue).length;
+    // On-time = tasks that are not currently overdue, as a share of all tasks.
+    const onTimePct = total > 0 ? Math.round(((total - overdue) / total) * 1000) / 10 : 0;
+    const completionPct = total > 0 ? Math.round((completed / total) * 1000) / 10 : 0;
+    return { completed, completionPct, onTimePct };
+  }, [items, statusCounts]);
+
+  // Tasks by Type: counts per task type, normalized to the busiest type for bar widths.
+  const tasksByType = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const t of items) counts.set(t.type, (counts.get(t.type) ?? 0) + 1);
+    const entries = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+    const max = entries[0]?.[1] ?? 1;
+    return entries.map(([label, count], i) => ({
+      label,
+      count,
+      pct: Math.round((count / max) * 100),
+      color: TYPE_PALETTE[i % TYPE_PALETTE.length],
+    }));
+  }, [items]);
+
+  // Recent Activity: most recently created tasks, newest first.
+  const recentActivity = useMemo(() => {
+    return [...items]
+      .sort((a, b) => (a.created < b.created ? 1 : a.created > b.created ? -1 : 0))
+      .slice(0, 6)
+      .map((t) => ({
+        dot: STATUS_COLORS[t.status] ?? "#64748B",
+        title: `Task ${t.id} ${activityVerb(t.status)}`,
+        sub: `${t.type} · ${t.ref || "—"}`,
+      }));
+  }, [items]);
+
   function cycleStatus(id: string) {
     const task = items.find((t) => t.id === id);
     if (!task) return;
+    const prev = items;
     const idx = STATUS_CYCLE.indexOf(task.status);
     const next = idx === -1 ? "In Progress" : STATUS_CYCLE[(idx + 1) % STATUS_CYCLE.length];
     setItems((cur) => cur.map((t) => (t.id === id ? { ...t, status: next } : t)));
     toast(`${id} marked ${next}`);
-    api.put(`/api/tasks/${id}`, { status: next }).catch(() => toast(`Failed to update ${id}`, "error"));
+    api.put(`/api/tasks/${id}`, { status: next }).catch(() => {
+      setItems(prev);
+      toast(`Failed to update ${id}`, "error");
+    });
   }
 
   function setStatus(id: string, status: string) {
+    const prev = items;
     setItems((cur) => cur.map((t) => (t.id === id ? { ...t, status } : t)));
     setOpenMenu(null);
     toast(`${id} set to ${status}`);
-    api.put(`/api/tasks/${id}`, { status }).catch(() => toast(`Failed to update ${id}`, "error"));
+    api.put(`/api/tasks/${id}`, { status }).catch(() => {
+      setItems(prev);
+      toast(`Failed to update ${id}`, "error");
+    });
   }
 
   function openCreate() {
@@ -318,6 +394,7 @@ export default function TasksPage() {
       dueDate: draft.due,
     };
     if (editing) {
+      const prev = items;
       setItems((cur) => cur.map((t) => (t.id === editing.id ? {
         ...t, type: draft.type, ref: draft.ref.trim(), warehouse: draft.warehouse,
         assignee: draft.assignee.trim(), priority: draft.priority, status: draft.status,
@@ -325,7 +402,10 @@ export default function TasksPage() {
       } : t)));
       api.put(`/api/tasks/${editing.id}`, payload)
         .then(() => toast(`Task ${editing.id} updated`))
-        .catch(() => toast(`Failed to update ${editing.id}`, "error"))
+        .catch(() => {
+          setItems(prev);
+          toast(`Failed to update ${editing.id}`, "error");
+        })
         .finally(() => { setBusy(false); setFormOpen(false); });
       return;
     }
@@ -399,10 +479,16 @@ export default function TasksPage() {
         </div>
       </div>
 
-      {/* Stats */}
+      {/* Stats — real counts by status, computed from the loaded tasks. */}
       <div className="grid grid-cols-5 gap-4">
-        {stats.map((s) => {
+        {statCards.map((s) => {
           const Icon = s.icon;
+          const count = s.status === null ? items.length : statusCounts[s.status] ?? 0;
+          const share = s.status === null
+            ? null
+            : items.length > 0
+              ? Math.round((count / items.length) * 1000) / 10
+              : 0;
           return (
             <div key={s.title} className="bg-white rounded-xl border border-[#E2E8F0] p-5 shadow-[0_1px_3px_rgba(0,0,0,0.1)]">
               <div className="flex items-center justify-between mb-3">
@@ -413,9 +499,14 @@ export default function TasksPage() {
               </div>
               <p className="text-[28px] font-bold text-[#1E293B]">{s.value}</p>
               <div className="flex items-center gap-1 mt-1">
-                {s.up ? <ArrowUpRight className="w-3.5 h-3.5 text-[#10B981]" /> : <ArrowDownRight className="w-3.5 h-3.5 text-[#EF4444]" />}
-                <span className={`text-[12px] font-medium ${s.up ? "text-[#10B981]" : "text-[#EF4444]"}`}>{s.change}</span>
-                <span className="text-[11px] text-[#94A3B8]">vs last 7 days</span>
+                {share === null ? (
+                  <span className="text-[11px] text-[#94A3B8]">across all warehouses</span>
+                ) : (
+                  <>
+                    <span className="text-[12px] font-medium" style={{ color: s.color }}>{share}%</span>
+                    <span className="text-[11px] text-[#94A3B8]">of all tasks</span>
+                  </>
+                )}
               </div>
             </div>
           );
@@ -458,19 +549,19 @@ export default function TasksPage() {
                 className="w-full pl-9 pr-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#1E293B] placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/30"
               />
             </div>
-            <select value={whFilter} onChange={(e) => setWhFilter(e.target.value)} className="px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/30">
+            <select aria-label="Filter by warehouse" value={whFilter} onChange={(e) => setWhFilter(e.target.value)} className="px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/30">
               <option value="">All Warehouses</option>
               {WAREHOUSES.map((w) => <option key={w} value={w}>{w}</option>)}
             </select>
-            <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/30">
+            <select aria-label="Filter by task type" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/30">
               <option value="">All Task Types</option>
               {TASK_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
-            <select value={prioFilter} onChange={(e) => setPrioFilter(e.target.value)} className="px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/30">
+            <select aria-label="Filter by priority" value={prioFilter} onChange={(e) => setPrioFilter(e.target.value)} className="px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/30">
               <option value="">All Priorities</option>
               {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
-            <select value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)} className="px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/30">
+            <select aria-label="Filter by assignee" value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)} className="px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/30">
               <option value="">All Assignees</option>
               {assignees.map((a) => <option key={a} value={a}>{a}</option>)}
             </select>
@@ -599,7 +690,7 @@ export default function TasksPage() {
                   })}
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <p className="text-[20px] font-bold text-[#1E293B]">2,348</p>
+                  <p className="text-[20px] font-bold text-[#1E293B]">{items.length.toLocaleString("en-US")}</p>
                   <p className="text-[11px] text-[#94A3B8]">Total</p>
                 </div>
               </div>
@@ -617,42 +708,45 @@ export default function TasksPage() {
             </div>
           </div>
 
-          {/* Productivity */}
+          {/* Productivity — computed from the loaded task rows. */}
           <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-[0_1px_3px_rgba(0,0,0,0.1)] p-5">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-[14px] font-semibold text-[#1E293B]">Productivity (Today)</h3>
+              <h3 className="text-[14px] font-semibold text-[#1E293B]">Productivity</h3>
               <button onClick={() => router.push("/dashboard/productivity")} className="text-[12px] font-medium text-[#3B82F6] hover:underline">View report</button>
             </div>
             <div className="space-y-3.5">
               <div className="flex items-center justify-between">
                 <span className="text-[13px] text-[#64748B]">Tasks Completed</span>
-                <span className="text-[15px] font-bold text-[#1E293B]">286</span>
+                <span className="text-[15px] font-bold text-[#1E293B]">{productivity.completed.toLocaleString("en-US")}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-[13px] text-[#64748B]">Avg. Task Time</span>
-                <span className="text-[15px] font-bold text-[#1E293B]">14:32</span>
+                <span className="text-[13px] text-[#64748B]">Completion Rate</span>
+                <span className="text-[15px] font-bold text-[#1E293B]">{productivity.completionPct}%</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-[13px] text-[#64748B]">On-Time Completion</span>
-                <span className="text-[15px] font-bold text-[#10B981]">92.4%</span>
+                <span className="text-[13px] text-[#64748B]">On-Time (not overdue)</span>
+                <span className={`text-[15px] font-bold ${productivity.onTimePct >= 90 ? "text-[#10B981]" : "text-[#F59E0B]"}`}>{productivity.onTimePct}%</span>
               </div>
             </div>
           </div>
 
-          {/* Tasks by Type */}
+          {/* Tasks by Type — real counts per task type from the loaded rows. */}
           <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-[0_1px_3px_rgba(0,0,0,0.1)] p-5">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-[14px] font-semibold text-[#1E293B]">Tasks by Type (Today)</h3>
+              <h3 className="text-[14px] font-semibold text-[#1E293B]">Tasks by Type</h3>
               <button onClick={() => setByTypeOpen(true)} className="text-[12px] font-medium text-[#3B82F6] hover:underline">View all</button>
             </div>
             <div className="space-y-3">
+              {tasksByType.length === 0 && (
+                <p className="text-[12px] text-[#94A3B8]">No tasks loaded.</p>
+              )}
               {tasksByType.map((t) => (
                 <div key={t.label} className="flex items-center gap-3">
-                  <span className="text-[12px] text-[#64748B] w-16 shrink-0">{t.label}</span>
+                  <span className="text-[12px] text-[#64748B] w-16 shrink-0 truncate">{t.label}</span>
                   <div className="flex-1 h-2 bg-[#F1F5F9] rounded-full overflow-hidden">
-                    <div className="h-full rounded-full" style={{ width: `${t.value}%`, backgroundColor: t.color }} />
+                    <div className="h-full rounded-full" style={{ width: `${t.pct}%`, backgroundColor: t.color }} />
                   </div>
-                  <span className="text-[12px] font-medium text-[#1E293B] w-7 text-right shrink-0">{t.value}</span>
+                  <span className="text-[12px] font-medium text-[#1E293B] w-7 text-right shrink-0">{t.count}</span>
                 </div>
               ))}
             </div>
@@ -665,6 +759,9 @@ export default function TasksPage() {
               <button onClick={() => setActivityOpen(true)} className="text-[12px] font-medium text-[#3B82F6] hover:underline">View all</button>
             </div>
             <div className="space-y-4">
+              {recentActivity.length === 0 && (
+                <p className="text-[12px] text-[#94A3B8]">No recent activity.</p>
+              )}
               {recentActivity.map((a, i) => (
                 <div key={i} className="flex items-start gap-3">
                   <span className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ backgroundColor: a.dot }} />

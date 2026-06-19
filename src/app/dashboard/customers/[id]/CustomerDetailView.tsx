@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -8,9 +8,6 @@ import {
   ChevronDown,
   MoreHorizontal,
   Plus,
-  ArrowUpRight,
-  ArrowDownRight,
-  Phone,
   CheckCircle2,
   FileText,
   RotateCcw,
@@ -20,9 +17,10 @@ import {
   Pencil,
   Printer,
   Mail,
-  TrendingUp,
+  Package,
+  Truck,
 } from "lucide-react";
-import type { Customer } from "@/types";
+import type { Customer, Order, Shipment, ReturnRecord } from "@/types";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { Modal } from "@/components/dashboard/Modal";
 import { Field, TextInput, Select, TextArea, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
@@ -30,124 +28,6 @@ import { useToast } from "@/components/dashboard/Toast";
 import { api, exportToCsv } from "@/lib/client";
 import { formatCurrency, formatDate, formatNumber } from "@/lib/format";
 import CustomerDetailActions from "./CustomerDetailActions";
-
-/* ---------- seeded pseudo-random helpers ---------- */
-
-function hashStr(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) {
-    h = ((h << 5) - h + s.charCodeAt(i)) | 0;
-  }
-  return Math.abs(h);
-}
-
-function seeded(seed: number, idx: number): number {
-  // simple LCG-derived value in [0, 1)
-  let v = (seed ^ (idx * 2654435761)) >>> 0;
-  v = ((v * 1103515245 + 12345) & 0x7fffffff) >>> 0;
-  return v / 0x7fffffff;
-}
-
-function pick<T>(arr: readonly T[], seed: number, idx: number): T {
-  return arr[Math.floor(seeded(seed, idx) * arr.length)];
-}
-
-/* ---------- deterministic data generators ---------- */
-
-function generateOrders(customerId: string) {
-  const h = hashStr(customerId);
-  const statuses = ["Delivered", "Delivered", "Delivered", "In Transit", "Processing"] as const;
-  const orders: { id: string; date: string; status: string; total: string }[] = [];
-  for (let i = 0; i < 5; i++) {
-    const num = 10000 + ((h + i * 137) % 900);
-    const dayOffset = i * 3 + Math.floor(seeded(h, i * 10) * 4);
-    const d = new Date();
-    d.setDate(d.getDate() - dayOffset);
-    const cents = Math.floor(seeded(h, i * 20 + 7) * 400000) + 5000;
-    orders.push({
-      id: `ORD-${num}`,
-      date: d.toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }),
-      status: pick(statuses, h, i * 3),
-      total: formatCurrency(cents / 100),
-    });
-  }
-  return orders;
-}
-
-function generateShipments(customerId: string) {
-  const h = hashStr(customerId);
-  const carriers = ["FedEx", "UPS", "DHL", "USPS"] as const;
-  const statuses = ["Delivered", "Delivered", "In Transit", "Delivered"] as const;
-  const shipments: { id: string; carrier: string; status: string; eta: string }[] = [];
-  for (let i = 0; i < 4; i++) {
-    const num = 2000 + ((h + i * 89) % 800);
-    const seq = (Math.floor(seeded(h, i * 30 + 1) * 90) + 10).toString().padStart(2, "0");
-    const dayOffset = i * 4 + Math.floor(seeded(h, i * 30 + 3) * 5);
-    const d = new Date();
-    d.setDate(d.getDate() + (i === 0 ? 2 : -dayOffset));
-    shipments.push({
-      id: `SHP-${num}-${seq}`,
-      carrier: pick(carriers, h, i * 5),
-      status: pick(statuses, h, i * 5 + 1),
-      eta: d.toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }),
-    });
-  }
-  return shipments;
-}
-
-function generateReturns(customerId: string) {
-  const h = hashStr(customerId);
-  const reasons = ["Damaged", "Wrong Item", "Defective", "Not Needed", "Wrong Size"] as const;
-  const statuses = ["Refunded", "Completed", "Completed"] as const;
-  const returns: { id: string; date: string; reason: string; status: string }[] = [];
-  for (let i = 0; i < 3; i++) {
-    const num = 1000 + ((h + i * 53) % 200);
-    const dayOffset = 8 + i * 6 + Math.floor(seeded(h, i * 40) * 4);
-    const d = new Date();
-    d.setDate(d.getDate() - dayOffset);
-    returns.push({
-      id: `RET-${num}`,
-      date: d.toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }),
-      reason: pick(reasons, h, i * 7),
-      status: pick(statuses, h, i * 7 + 1),
-    });
-  }
-  return returns;
-}
-
-function generateSupport(customerId: string) {
-  const h = hashStr(customerId);
-  const subjects = [
-    "Shipping delay inquiry",
-    "Invoice correction",
-    "Return request",
-    "Order status update",
-    "Address change request",
-  ] as const;
-  const tickets: { id: string; subject: string; status: string; date: string }[] = [];
-  for (let i = 0; i < 3; i++) {
-    const num = 2900 + ((h + i * 71) % 200);
-    const dayOffset = 4 + i * 8 + Math.floor(seeded(h, i * 50) * 5);
-    const d = new Date();
-    d.setDate(d.getDate() - dayOffset);
-    tickets.push({
-      id: `TKT-${num}`,
-      subject: pick(subjects, h, i * 9),
-      status: i === 0 && seeded(h, i * 90) > 0.7 ? "Open" : "Resolved",
-      date: d.toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }),
-    });
-  }
-  return tickets;
-}
-
-function generateSparkline(customerId: string): number[] {
-  const h = hashStr(customerId);
-  const points: number[] = [];
-  for (let i = 0; i < 9; i++) {
-    points.push(Math.floor(seeded(h, i * 13 + 100) * 50) + 10);
-  }
-  return points;
-}
 
 /* ---------- contact info defaults ---------- */
 
@@ -183,23 +63,6 @@ interface Note {
   text: string;
 }
 
-const initialNotes: Note[] = [
-  { date: "May 16, 2025", text: "Requested faster shipping for upcoming order." },
-  { date: "Apr 28, 2025", text: "Prefers email updates over SMS." },
-];
-
-const recommendedActions = [
-  { label: "Follow up on pending invoice", cta: "View", note: "Due in 2 days", icon: AlertCircle, href: "/dashboard/invoices" },
-  { label: "Offer bulk discount for next order", cta: "Create", note: "Based on purchase history", icon: Tag, href: "/dashboard/quotes/new" },
-  { label: "Check in on recent support ticket", cta: "View", note: "Last updated 3 days ago", icon: FileText, href: "#support" },
-];
-
-const extraRecommendedActions = [
-  { label: "Send re-order reminder email", cta: "View", note: "Last order 4 weeks ago", icon: Mail, href: "/dashboard/messages" },
-  { label: "Review shipment exceptions", cta: "View", note: "1 shipment flagged this month", icon: AlertCircle, href: "#shipments" },
-  { label: "Upgrade to priority fulfillment tier", cta: "View", note: "Spend qualifies for tier upgrade", icon: TrendingUp, href: "#orders" },
-];
-
 interface TimelineEntry {
   icon: typeof Plus;
   color: string;
@@ -208,24 +71,23 @@ interface TimelineEntry {
   desc: string;
 }
 
-const initialTimeline: TimelineEntry[] = [
-  { icon: Plus, color: "#0057D8", title: "Order Created", date: "May 16, 2025", desc: "Order ORD-10468 placed via portal" },
-  { icon: CheckCircle2, color: "#00B894", title: "Shipment Delivered", date: "May 16, 2025", desc: "SHP-2024-0079 delivered to dock" },
-  { icon: FileText, color: "#7C6FF6", title: "Support Ticket Closed", date: "May 16, 2025", desc: "Ticket TKT-3041 marked resolved" },
-  { icon: ArrowDownRight, color: "#F59E0B", title: "Payment Received", date: "May 13, 2025", desc: "Invoice INV-2038 paid in full" },
-  { icon: RotateCcw, color: "#EF4444", title: "Return Completed", date: "May 10, 2025", desc: "Return RET-1102 refunded $148.00" },
-  { icon: Phone, color: "#00B894", title: "Customer Note Added", date: "May 14, 2025", desc: "Account manager logged a call" },
-];
-
 function MiniStatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     Delivered: "bg-[#00B894]/10 text-[#00B894]",
+    "Out for Delivery": "bg-[#0057D8]/10 text-[#0057D8]",
     "In Transit": "bg-[#0057D8]/10 text-[#0057D8]",
     Processing: "bg-[#F59E0B]/10 text-[#F59E0B]",
+    Pending: "bg-[#F59E0B]/10 text-[#F59E0B]",
+    "Awaiting Pickup": "bg-[#F59E0B]/10 text-[#F59E0B]",
+    Customs: "bg-[#F59E0B]/10 text-[#F59E0B]",
+    Exception: "bg-[#EF4444]/10 text-[#EF4444]",
+    Cancelled: "bg-[#EF4444]/10 text-[#EF4444]",
+    Rejected: "bg-[#EF4444]/10 text-[#EF4444]",
     Refunded: "bg-[#7C6FF6]/10 text-[#7C6FF6]",
+    Received: "bg-[#00B894]/10 text-[#00B894]",
+    Approved: "bg-[#00B894]/10 text-[#00B894]",
+    Requested: "bg-[#F59E0B]/10 text-[#F59E0B]",
     Completed: "bg-[#00B894]/10 text-[#00B894]",
-    Resolved: "bg-[#00B894]/10 text-[#00B894]",
-    Open: "bg-[#F59E0B]/10 text-[#F59E0B]",
   };
   return (
     <span className={`inline-flex px-2 py-0.5 text-[11px] font-medium rounded ${styles[status] || "bg-[#F1F5F9] text-[#66758C]"}`}>
@@ -234,13 +96,24 @@ function MiniStatusBadge({ status }: { status: string }) {
   );
 }
 
-const tabs = ["Overview", "Orders", "Shipments", "Returns", "Support", "Notes & Activity"];
+const tabs = ["Overview", "Orders", "Shipments", "Returns", "Notes & Activity"];
 
 function scrollToSection(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 const CARD_TYPES = ["Visa", "Mastercard", "American Express", "Discover"];
+
+/* Does an order belong to this customer? Prefer customerId, fall back to name match. */
+function orderBelongsToCustomer(order: Order, customer: Customer): boolean {
+  if (order.customerId) return order.customerId === customer.id;
+  return order.customer.trim().toLowerCase() === customer.name.trim().toLowerCase();
+}
+
+function returnBelongsToCustomer(ret: ReturnRecord, customer: Customer, orderIds: Set<string>): boolean {
+  if (ret.customer && ret.customer.trim().toLowerCase() === customer.name.trim().toLowerCase()) return true;
+  return orderIds.has(ret.orderId);
+}
 
 export default function CustomerDetailView({ customer }: { customer: Customer }) {
   const { toast } = useToast();
@@ -250,13 +123,20 @@ export default function CustomerDetailView({ customer }: { customer: Customer })
   const [tagsOpen, setTagsOpen] = useState(false);
   const [tagsDraft, setTagsDraft] = useState(initialTags.join(", "));
 
-  const [notes, setNotes] = useState<Note[]>(initialNotes);
+  const [notes, setNotes] = useState<Note[]>([]);
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
 
-  const [timeline, setTimeline] = useState<TimelineEntry[]>(initialTimeline);
+  const [extraTimeline, setExtraTimeline] = useState<TimelineEntry[]>([]);
   const [showAllRecs, setShowAllRecs] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+
+  /* ---- real related data ---- */
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [shipments, setShipments] = useState<Shipment[]>([]);
+  const [returns, setReturns] = useState<ReturnRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   /* ---- contact info state ---- */
   const [billing, setBilling] = useState<Address>(defaultBilling(customer.name, customer.country));
@@ -272,38 +152,171 @@ export default function CustomerDetailView({ customer }: { customer: Customer })
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [paymentDraft, setPaymentDraft] = useState<PaymentMethod>(payment);
 
-  /* ---- deterministic derived data ---- */
-  const recentOrders = useMemo(() => generateOrders(customer.id), [customer.id]);
-  const recentShipments = useMemo(() => generateShipments(customer.id), [customer.id]);
-  const returnsHistory = useMemo(() => generateReturns(customer.id), [customer.id]);
-  const supportActivity = useMemo(() => generateSupport(customer.id), [customer.id]);
-  const sparklinePts = useMemo(() => generateSparkline(customer.id), [customer.id]);
+  // Reference "now" captured once per load so the 90-day / weekly computations
+  // stay stable across re-renders (and keep render-time memos pure).
+  const [now, setNow] = useState<number>(() => Date.now());
+
+  /* ---- fetch real orders / shipments / returns on mount ---- */
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      setLoading(true);
+      setLoadError(null);
+      setNow(Date.now());
+      try {
+        const [ordersRes, shipmentsRes, returnsRes] = await Promise.all([
+          api.get<{ data: Order[] }>("/api/orders"),
+          api.get<{ data: Shipment[] }>("/api/shipments"),
+          api.get<{ data: ReturnRecord[] }>("/api/returns"),
+        ]);
+        if (cancelled) return;
+        const myOrders = ordersRes.data.filter((o) => orderBelongsToCustomer(o, customer));
+        const orderIds = new Set(myOrders.map((o) => o.id));
+        const myShipments = shipmentsRes.data.filter((s) => s.orderId != null && orderIds.has(s.orderId));
+        const myReturns = returnsRes.data.filter((r) => returnBelongsToCustomer(r, customer, orderIds));
+        // newest first
+        myOrders.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        myReturns.sort((a, b) => new Date(b.requestedDate).getTime() - new Date(a.requestedDate).getTime());
+        setOrders(myOrders);
+        setShipments(myShipments);
+        setReturns(myReturns);
+      } catch (e) {
+        if (!cancelled) setLoadError(e instanceof Error ? e.message : "Could not load customer activity");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [customer]);
 
   const initials = customer.name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
-  const avgOrder = customer.orders > 0 ? customer.totalSpent / customer.orders : 0;
-  const visibleRecs = showAllRecs ? [...recommendedActions, ...extraRecommendedActions] : recommendedActions;
 
-  /* ---- computed lifetime trend ---- */
-  const lifetimeTrendPct = useMemo(() => {
-    // Derive a percentage from totalSpent so different customers show different trends
-    if (customer.totalSpent <= 0) return 0;
-    // Use the hash to vary direction slightly, scale 5–35%
-    const h = hashStr(customer.id);
-    const raw = 5 + (h % 30);
-    return raw;
-  }, [customer.id, customer.totalSpent]);
+  /* ---- real lifetime / order metrics computed from fetched data ---- */
+  const realOrderCount = orders.length;
+  const realTotalSpent = useMemo(() => orders.reduce((sum, o) => sum + (o.total ?? 0), 0), [orders]);
+  // Prefer computed values once loaded; fall back to the customer record while loading.
+  const orderCount = !loading && realOrderCount > 0 ? realOrderCount : customer.orders;
+  const totalSpent = !loading && realOrderCount > 0 ? realTotalSpent : customer.totalSpent;
+  const avgOrder = orderCount > 0 ? totalSpent / orderCount : 0;
 
-  /* ---- computed chart stats ---- */
+  /* ---- last-90-day window computed from real orders ---- */
   const chartStats = useMemo(() => {
-    const h = hashStr(customer.id);
-    const last90Orders = Math.max(1, Math.floor(customer.orders * (0.2 + seeded(h, 500) * 0.15)));
-    const last90Spent = Math.floor(customer.totalSpent * (0.18 + seeded(h, 501) * 0.12));
+    const cutoff = now - 90 * 24 * 60 * 60 * 1000;
+    const recent = orders.filter((o) => new Date(o.date).getTime() >= cutoff);
+    const last90Orders = recent.length;
+    const last90Spent = recent.reduce((sum, o) => sum + (o.total ?? 0), 0);
     const last90Aov = last90Orders > 0 ? Math.round(last90Spent / last90Orders) : 0;
-    const ordersPct = Math.floor(seeded(h, 510) * 25) + 5;
-    const spentPct = Math.floor(seeded(h, 511) * 20) + 5;
-    const aovPct = seeded(h, 512) > 0.5 ? -Math.floor(seeded(h, 513) * 8) - 1 : Math.floor(seeded(h, 513) * 10) + 2;
-    return { last90Orders, last90Spent, last90Aov, ordersPct, spentPct, aovPct };
-  }, [customer.id, customer.orders, customer.totalSpent]);
+    const sharePct = orderCount > 0 ? Math.round((last90Orders / orderCount) * 100) : 0;
+    return { last90Orders, last90Spent, last90Aov, sharePct };
+  }, [orders, orderCount, now]);
+
+  /* ---- recommended actions derived honestly from real data ---- */
+  const recommendedActions = useMemo(() => {
+    const acts: { label: string; cta: string; note: string; icon: typeof Plus; href: string; section?: string }[] = [];
+    const openReturn = returns.find((r) => r.status === "Requested" || r.status === "Approved");
+    if (openReturn) {
+      acts.push({
+        label: `Resolve open return ${openReturn.id}`,
+        cta: "View",
+        note: `${openReturn.status} • ${openReturn.reason}`,
+        icon: RotateCcw,
+        href: `/dashboard/returns/${openReturn.id}`,
+      });
+    }
+    const inTransit = shipments.find((s) => s.status === "In Transit" || s.status === "Out for Delivery" || s.status === "Exception");
+    if (inTransit) {
+      acts.push({
+        label: inTransit.status === "Exception" ? `Review shipment exception ${inTransit.id}` : `Track in-flight shipment ${inTransit.id}`,
+        cta: "View",
+        note: `${inTransit.carrier} • ${inTransit.status}`,
+        icon: inTransit.status === "Exception" ? AlertCircle : Truck,
+        href: `/dashboard/shipments/${inTransit.id}`,
+      });
+    }
+    if (orderCount > 0) {
+      acts.push({
+        label: "Send re-order reminder email",
+        cta: "View",
+        note: `${formatNumber(orderCount)} lifetime orders`,
+        icon: Mail,
+        href: "/dashboard/messages",
+      });
+    }
+    if (acts.length === 0) {
+      acts.push({
+        label: "Create a quote for this customer",
+        cta: "Create",
+        note: "No open orders or returns",
+        icon: Tag,
+        href: "/dashboard/quotes/new",
+      });
+    }
+    return acts;
+  }, [returns, shipments, orderCount]);
+
+  const visibleRecs = showAllRecs ? recommendedActions : recommendedActions.slice(0, 3);
+
+  /* ---- timeline built from real orders / shipments / returns + user-added entries ---- */
+  const timeline = useMemo<TimelineEntry[]>(() => {
+    const entries: (TimelineEntry & { ts: number })[] = [];
+    for (const o of orders) {
+      entries.push({
+        icon: Plus,
+        color: "#0057D8",
+        title: "Order Placed",
+        date: formatDate(o.date),
+        desc: `Order ${o.id} • ${formatCurrency(o.total ?? 0)}`,
+        ts: new Date(o.date).getTime(),
+      });
+    }
+    for (const s of shipments) {
+      const when = s.estimatedDelivery ?? s.shippedDate;
+      entries.push({
+        icon: s.status === "Delivered" ? CheckCircle2 : Truck,
+        color: s.status === "Delivered" ? "#00B894" : s.status === "Exception" ? "#EF4444" : "#0057D8",
+        title: s.status === "Delivered" ? "Shipment Delivered" : "Shipment Update",
+        date: when ? formatDate(when) : "—",
+        desc: `${s.id} • ${s.carrier} • ${s.status}`,
+        ts: when ? new Date(when).getTime() : 0,
+      });
+    }
+    for (const r of returns) {
+      entries.push({
+        icon: RotateCcw,
+        color: "#EF4444",
+        title: r.status === "Refunded" ? "Return Refunded" : "Return Logged",
+        date: formatDate(r.requestedDate),
+        desc: `Return ${r.id} • ${r.reason}${r.refundAmount ? ` • ${formatCurrency(r.refundAmount)}` : ""}`,
+        ts: new Date(r.requestedDate).getTime(),
+      });
+    }
+    entries.sort((a, b) => b.ts - a.ts);
+    const real: TimelineEntry[] = entries.slice(0, 6).map((e) => ({
+      icon: e.icon,
+      color: e.color,
+      title: e.title,
+      date: e.date,
+      desc: e.desc,
+    }));
+    return [...extraTimeline, ...real];
+  }, [orders, shipments, returns, extraTimeline]);
+
+  /* ---- sparkline built from real per-period order totals (last 9 weekly buckets) ---- */
+  const sparklinePts = useMemo<number[]>(() => {
+    const buckets = new Array(9).fill(0);
+    const weekMs = 7 * 24 * 60 * 60 * 1000;
+    for (const o of orders) {
+      const ageWeeks = Math.floor((now - new Date(o.date).getTime()) / weekMs);
+      if (ageWeeks >= 0 && ageWeeks < 9) {
+        buckets[8 - ageWeeks] += o.total ?? 0;
+      }
+    }
+    return buckets;
+  }, [orders, now]);
+
+  const hasSparklineData = sparklinePts.some((v) => v > 0);
 
   /* ---- sparkline SVG path ---- */
   const { areaPath, linePoints, dotCoords } = useMemo(() => {
@@ -332,7 +345,7 @@ export default function CustomerDetailView({ customer }: { customer: Customer })
 
   function appendTimeline(entry: Omit<TimelineEntry, "date">) {
     const today = new Date().toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" });
-    setTimeline((prev) => [{ ...entry, date: today }, ...prev]);
+    setExtraTimeline((prev) => [{ ...entry, date: today }, ...prev]);
   }
 
   function exportProfile() {
@@ -372,7 +385,6 @@ export default function CustomerDetailView({ customer }: { customer: Customer })
 
   /* ---- contact info save handlers ---- */
   async function saveBilling() {
-    setBillingDraft((d) => d); // just to validate
     if (!billingDraft.street1.trim()) { toast("Street address is required", "error"); return; }
     try {
       await api.put(`/api/customers/${customer.id}`, { billingAddress: billingDraft });
@@ -411,17 +423,12 @@ export default function CustomerDetailView({ customer }: { customer: Customer })
     }
   }
 
-  function showTicketDetails(t: { id: string; subject: string; status: string; date: string }) {
-    toast(`Ticket ${t.id}: ${t.subject} — ${t.status} (${t.date})`);
-  }
-
   const tabSection: Record<number, string | null> = {
     0: null,
     1: "orders",
     2: "shipments",
     3: "returns",
-    4: "support",
-    5: "notes",
+    4: "notes",
   };
 
   function selectTab(i: number) {
@@ -441,7 +448,7 @@ export default function CustomerDetailView({ customer }: { customer: Customer })
         <div className="flex items-start justify-between">
           <div>
             <h1 className="text-[24px] font-bold text-[#061A3D]">Customer Detail</h1>
-            <p className="text-[14px] text-[#4A5A73] mt-0.5">View and manage customer information, orders, shipments, and support activity.</p>
+            <p className="text-[14px] text-[#4A5A73] mt-0.5">View and manage customer information, orders, shipments, and activity.</p>
           </div>
           <CustomerDetailActions
             customer={customer}
@@ -449,6 +456,13 @@ export default function CustomerDetailView({ customer }: { customer: Customer })
           />
         </div>
       </div>
+
+      {loadError && (
+        <div className="flex items-center gap-2 rounded-lg border border-[#EF4444]/30 bg-[#EF4444]/5 px-4 py-3 text-[13px] text-[#B91C1C]">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          {loadError}
+        </div>
+      )}
 
       {/* Header cards row */}
       <div className="grid gap-4" style={{ gridTemplateColumns: "1.2fr 0.9fr 1.4fr" }}>
@@ -496,29 +510,22 @@ export default function CustomerDetailView({ customer }: { customer: Customer })
         {/* Lifetime value card */}
         <div className="bg-white rounded-xl border border-[#E6EDF5] shadow-[0_1px_3px_rgba(0,0,0,0.1)] p-5">
           <p className="text-[13px] text-[#66758C]">Lifetime Value</p>
-          <p className="text-[26px] font-bold text-[#061A3D] mt-1">{formatCurrency(customer.totalSpent)}</p>
+          <p className="text-[26px] font-bold text-[#061A3D] mt-1">{formatCurrency(totalSpent)}</p>
           <div className="flex items-center gap-1 mt-1">
-            {lifetimeTrendPct >= 0 ? (
-              <>
-                <ArrowUpRight className="w-3.5 h-3.5 text-[#00B894]" />
-                <span className="text-[12px] font-medium text-[#00B894]">{lifetimeTrendPct.toFixed(1)}%</span>
-              </>
-            ) : (
-              <>
-                <ArrowDownRight className="w-3.5 h-3.5 text-[#EF4444]" />
-                <span className="text-[12px] font-medium text-[#EF4444]">{Math.abs(lifetimeTrendPct).toFixed(1)}%</span>
-              </>
-            )}
-            <span className="text-[11px] text-[#9AA8B8]">vs last 90 days</span>
+            <span className="text-[11px] text-[#9AA8B8]">
+              {chartStats.last90Orders > 0
+                ? `${formatCurrency(chartStats.last90Spent)} in the last 90 days`
+                : "No orders in the last 90 days"}
+            </span>
           </div>
           <div className="grid grid-cols-3 gap-2 mt-4 pt-4 border-t border-[#E6EDF5]">
             <div>
               <p className="text-[11px] text-[#9AA8B8]">Total Orders</p>
-              <p className="text-[15px] font-bold text-[#061A3D] mt-0.5">{formatNumber(customer.orders)}</p>
+              <p className="text-[15px] font-bold text-[#061A3D] mt-0.5">{formatNumber(orderCount)}</p>
             </div>
             <div>
               <p className="text-[11px] text-[#9AA8B8]">Total Spent</p>
-              <p className="text-[15px] font-bold text-[#061A3D] mt-0.5">{formatCurrency(customer.totalSpent)}</p>
+              <p className="text-[15px] font-bold text-[#061A3D] mt-0.5">{formatCurrency(totalSpent)}</p>
             </div>
             <div>
               <p className="text-[11px] text-[#9AA8B8]">Avg Order</p>
@@ -537,42 +544,40 @@ export default function CustomerDetailView({ customer }: { customer: Customer })
             <div>
               <p className="text-[11px] text-[#9AA8B8]">Orders</p>
               <p className="text-[16px] font-bold text-[#061A3D]">{chartStats.last90Orders}</p>
-              <span className="flex items-center gap-0.5 text-[11px] text-[#00B894]"><ArrowUpRight className="w-3 h-3" />{chartStats.ordersPct}%</span>
+              <span className="flex items-center gap-0.5 text-[11px] text-[#66758C]">{chartStats.sharePct}% of lifetime</span>
             </div>
             <div>
               <p className="text-[11px] text-[#9AA8B8]">Spent</p>
               <p className="text-[16px] font-bold text-[#061A3D]">{formatCurrency(chartStats.last90Spent)}</p>
-              <span className="flex items-center gap-0.5 text-[11px] text-[#00B894]"><ArrowUpRight className="w-3 h-3" />{chartStats.spentPct}%</span>
+              <span className="flex items-center gap-0.5 text-[11px] text-[#66758C]">last 90 days</span>
             </div>
             <div>
               <p className="text-[11px] text-[#9AA8B8]">AOV</p>
               <p className="text-[16px] font-bold text-[#061A3D]">{formatCurrency(chartStats.last90Aov)}</p>
-              <span className={`flex items-center gap-0.5 text-[11px] ${chartStats.aovPct >= 0 ? "text-[#00B894]" : "text-[#EF4444]"}`}>
-                {chartStats.aovPct >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                {Math.abs(chartStats.aovPct)}%
-              </span>
+              <span className="flex items-center gap-0.5 text-[11px] text-[#66758C]">per order</span>
             </div>
           </div>
           <div className="flex gap-2">
-            <div className="flex flex-col justify-between text-[9px] text-[#9AA8B8] py-1 shrink-0">
-              <span>$3K</span>
-              <span>$2K</span>
-              <span>$1K</span>
-            </div>
             <div className="h-[80px] flex-1">
-              <svg viewBox="0 0 320 80" className="w-full h-full">
-                <defs>
-                  <linearGradient id="cdGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#0057D8" stopOpacity="0.22" />
-                    <stop offset="100%" stopColor="#0057D8" stopOpacity="0" />
-                  </linearGradient>
-                </defs>
-                <path d={areaPath} fill="url(#cdGrad)" />
-                <polyline fill="none" stroke="#0057D8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" points={linePoints} />
-                {dotCoords.map(([x, y]) => (
-                  <circle key={`${x.toFixed(1)}-${y.toFixed(1)}`} cx={x} cy={y} r="2.5" fill="#fff" stroke="#0057D8" strokeWidth="1.5" />
-                ))}
-              </svg>
+              {hasSparklineData ? (
+                <svg viewBox="0 0 320 80" className="w-full h-full">
+                  <defs>
+                    <linearGradient id="cdGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#0057D8" stopOpacity="0.22" />
+                      <stop offset="100%" stopColor="#0057D8" stopOpacity="0" />
+                    </linearGradient>
+                  </defs>
+                  <path d={areaPath} fill="url(#cdGrad)" />
+                  <polyline fill="none" stroke="#0057D8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" points={linePoints} />
+                  {dotCoords.map(([x, y]) => (
+                    <circle key={`${x.toFixed(1)}-${y.toFixed(1)}`} cx={x} cy={y} r="2.5" fill="#fff" stroke="#0057D8" strokeWidth="1.5" />
+                  ))}
+                </svg>
+              ) : (
+                <div className="h-full flex items-center justify-center text-[11px] text-[#9AA8B8]">
+                  {loading ? "Loading order history…" : "No recent order activity to chart"}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -641,28 +646,37 @@ export default function CustomerDetailView({ customer }: { customer: Customer })
             <h3 className="text-[14px] font-semibold text-[#061A3D]">Recent Orders</h3>
             <Link href="/dashboard/orders" className="text-[12px] font-medium text-[#0057D8] hover:underline">View all</Link>
           </div>
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-[#E6EDF5]">
-                <th className="text-left text-[10px] font-medium text-[#66758C] uppercase tracking-wider pb-2">Order ID</th>
-                <th className="text-left text-[10px] font-medium text-[#66758C] uppercase tracking-wider pb-2">Order Date</th>
-                <th className="text-left text-[10px] font-medium text-[#66758C] uppercase tracking-wider pb-2">Status</th>
-                <th className="text-right text-[10px] font-medium text-[#66758C] uppercase tracking-wider pb-2">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentOrders.map((o) => (
-                <tr key={o.id} className="border-b border-[#F1F5F9] last:border-b-0">
-                  <td className="py-2.5 text-[12px] font-medium text-[#0057D8]">
-                    <Link href={`/dashboard/orders/${o.id}`} className="hover:underline">{o.id}</Link>
-                  </td>
-                  <td className="py-2.5 text-[12px] text-[#4A5A73]">{o.date}</td>
-                  <td className="py-2.5"><MiniStatusBadge status={o.status} /></td>
-                  <td className="py-2.5 text-[12px] font-medium text-[#061A3D] text-right">{o.total}</td>
+          {loading ? (
+            <p className="py-6 text-center text-[12px] text-[#9AA8B8]">Loading orders…</p>
+          ) : orders.length === 0 ? (
+            <div className="py-8 flex flex-col items-center text-center">
+              <Package className="w-6 h-6 text-[#C7D2DE] mb-2" />
+              <p className="text-[12px] text-[#9AA8B8]">No orders for this customer yet.</p>
+            </div>
+          ) : (
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-[#E6EDF5]">
+                  <th className="text-left text-[10px] font-medium text-[#66758C] uppercase tracking-wider pb-2">Order ID</th>
+                  <th className="text-left text-[10px] font-medium text-[#66758C] uppercase tracking-wider pb-2">Order Date</th>
+                  <th className="text-left text-[10px] font-medium text-[#66758C] uppercase tracking-wider pb-2">Status</th>
+                  <th className="text-right text-[10px] font-medium text-[#66758C] uppercase tracking-wider pb-2">Total</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {orders.slice(0, 5).map((o) => (
+                  <tr key={o.id} className="border-b border-[#F1F5F9] last:border-b-0">
+                    <td className="py-2.5 text-[12px] font-medium text-[#0057D8]">
+                      <Link href={`/dashboard/orders/${o.id}`} className="hover:underline">{o.id}</Link>
+                    </td>
+                    <td className="py-2.5 text-[12px] text-[#4A5A73]">{formatDate(o.date)}</td>
+                    <td className="py-2.5"><MiniStatusBadge status={o.status} /></td>
+                    <td className="py-2.5 text-[12px] font-medium text-[#061A3D] text-right">{formatCurrency(o.total ?? 0)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
 
         {/* Recent Shipments */}
@@ -671,28 +685,37 @@ export default function CustomerDetailView({ customer }: { customer: Customer })
             <h3 className="text-[14px] font-semibold text-[#061A3D]">Recent Shipments</h3>
             <Link href="/dashboard/shipments" className="text-[12px] font-medium text-[#0057D8] hover:underline">View all</Link>
           </div>
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-[#E6EDF5]">
-                <th className="text-left text-[10px] font-medium text-[#66758C] uppercase tracking-wider pb-2">Shipment ID</th>
-                <th className="text-left text-[10px] font-medium text-[#66758C] uppercase tracking-wider pb-2">Carrier</th>
-                <th className="text-left text-[10px] font-medium text-[#66758C] uppercase tracking-wider pb-2">Status</th>
-                <th className="text-right text-[10px] font-medium text-[#66758C] uppercase tracking-wider pb-2">ETA</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentShipments.map((s) => (
-                <tr key={s.id} className="border-b border-[#F1F5F9] last:border-b-0">
-                  <td className="py-2.5 text-[12px] font-medium text-[#0057D8]">
-                    <Link href={`/dashboard/shipments/${s.id}`} className="hover:underline">{s.id}</Link>
-                  </td>
-                  <td className="py-2.5 text-[12px] text-[#4A5A73]">{s.carrier}</td>
-                  <td className="py-2.5"><MiniStatusBadge status={s.status} /></td>
-                  <td className="py-2.5 text-[12px] text-[#4A5A73] text-right">{s.eta}</td>
+          {loading ? (
+            <p className="py-6 text-center text-[12px] text-[#9AA8B8]">Loading shipments…</p>
+          ) : shipments.length === 0 ? (
+            <div className="py-8 flex flex-col items-center text-center">
+              <Truck className="w-6 h-6 text-[#C7D2DE] mb-2" />
+              <p className="text-[12px] text-[#9AA8B8]">No shipments linked to this customer&apos;s orders.</p>
+            </div>
+          ) : (
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-[#E6EDF5]">
+                  <th className="text-left text-[10px] font-medium text-[#66758C] uppercase tracking-wider pb-2">Shipment ID</th>
+                  <th className="text-left text-[10px] font-medium text-[#66758C] uppercase tracking-wider pb-2">Carrier</th>
+                  <th className="text-left text-[10px] font-medium text-[#66758C] uppercase tracking-wider pb-2">Status</th>
+                  <th className="text-right text-[10px] font-medium text-[#66758C] uppercase tracking-wider pb-2">ETA</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {shipments.slice(0, 5).map((s) => (
+                  <tr key={s.id} className="border-b border-[#F1F5F9] last:border-b-0">
+                    <td className="py-2.5 text-[12px] font-medium text-[#0057D8]">
+                      <Link href={`/dashboard/shipments/${s.id}`} className="hover:underline">{s.id}</Link>
+                    </td>
+                    <td className="py-2.5 text-[12px] text-[#4A5A73]">{s.carrier}</td>
+                    <td className="py-2.5"><MiniStatusBadge status={s.status} /></td>
+                    <td className="py-2.5 text-[12px] text-[#4A5A73] text-right">{s.estimatedDelivery ? formatDate(s.estimatedDelivery) : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
 
         {/* Customer Tags */}
@@ -712,94 +735,63 @@ export default function CustomerDetailView({ customer }: { customer: Customer })
               <button onClick={() => setNoteOpen(true)} className="text-[12px] font-medium text-[#0057D8] hover:underline">Add Note</button>
             </div>
             <div className="space-y-3">
-              {notes.map((n, i) => (
-                <div key={`${n.date}-${i}`} className="flex items-start gap-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#0057D8] mt-1.5 shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-[11px] text-[#9AA8B8]"><span className="font-medium text-[#061A3D]">{n.date}</span> by Admin</p>
-                    <p className="text-[12px] text-[#4A5A73] mt-0.5">{n.text}</p>
+              {notes.length === 0 ? (
+                <p className="text-[12px] text-[#9AA8B8]">No notes yet. Add one to log account context.</p>
+              ) : (
+                notes.map((n, i) => (
+                  <div key={`${n.date}-${i}`} className="flex items-start gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#0057D8] mt-1.5 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-[11px] text-[#9AA8B8]"><span className="font-medium text-[#061A3D]">{n.date}</span> by Admin</p>
+                      <p className="text-[12px] text-[#4A5A73] mt-0.5">{n.text}</p>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         </div>
       </div>
 
       {/* Body: row 2 */}
-      <div className="grid gap-4" style={{ gridTemplateColumns: "1.3fr 1.3fr 1fr" }}>
+      <div className="grid gap-4" style={{ gridTemplateColumns: "1.6fr 1fr" }}>
         {/* Returns History */}
         <div id="returns" className="bg-white rounded-xl border border-[#E6EDF5] shadow-[0_1px_3px_rgba(0,0,0,0.1)] p-5 scroll-mt-24">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-[14px] font-semibold text-[#061A3D]">Returns History</h3>
             <Link href="/dashboard/returns" className="text-[12px] font-medium text-[#0057D8] hover:underline">View all</Link>
           </div>
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-[#E6EDF5]">
-                <th className="text-left text-[10px] font-medium text-[#66758C] uppercase tracking-wider pb-2">Return ID</th>
-                <th className="text-left text-[10px] font-medium text-[#66758C] uppercase tracking-wider pb-2">Date</th>
-                <th className="text-left text-[10px] font-medium text-[#66758C] uppercase tracking-wider pb-2">Reason</th>
-                <th className="text-right text-[10px] font-medium text-[#66758C] uppercase tracking-wider pb-2">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {returnsHistory.map((r) => (
-                <tr key={r.id} className="border-b border-[#F1F5F9] last:border-b-0">
-                  <td className="py-2.5 text-[12px] font-medium text-[#0057D8]">
-                    <Link href={`/dashboard/returns/${r.id}`} className="hover:underline">{r.id}</Link>
-                  </td>
-                  <td className="py-2.5 text-[12px] text-[#4A5A73]">{r.date}</td>
-                  <td className="py-2.5 text-[12px] text-[#061A3D]">{r.reason}</td>
-                  <td className="py-2.5 text-right"><MiniStatusBadge status={r.status} /></td>
+          {loading ? (
+            <p className="py-6 text-center text-[12px] text-[#9AA8B8]">Loading returns…</p>
+          ) : returns.length === 0 ? (
+            <div className="py-8 flex flex-col items-center text-center">
+              <RotateCcw className="w-6 h-6 text-[#C7D2DE] mb-2" />
+              <p className="text-[12px] text-[#9AA8B8]">No returns on record for this customer.</p>
+            </div>
+          ) : (
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-[#E6EDF5]">
+                  <th className="text-left text-[10px] font-medium text-[#66758C] uppercase tracking-wider pb-2">Return ID</th>
+                  <th className="text-left text-[10px] font-medium text-[#66758C] uppercase tracking-wider pb-2">Date</th>
+                  <th className="text-left text-[10px] font-medium text-[#66758C] uppercase tracking-wider pb-2">Reason</th>
+                  <th className="text-right text-[10px] font-medium text-[#66758C] uppercase tracking-wider pb-2">Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Support Activity */}
-        <div id="support" className="bg-white rounded-xl border border-[#E6EDF5] shadow-[0_1px_3px_rgba(0,0,0,0.1)] p-5 scroll-mt-24">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-[14px] font-semibold text-[#061A3D]">Support Activity</h3>
-            <Link href="/dashboard/notifications" className="text-[12px] font-medium text-[#0057D8] hover:underline">View all</Link>
-          </div>
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-[#E6EDF5]">
-                <th className="text-left text-[10px] font-medium text-[#66758C] uppercase tracking-wider pb-2">Ticket ID</th>
-                <th className="text-left text-[10px] font-medium text-[#66758C] uppercase tracking-wider pb-2">Subject</th>
-                <th className="text-left text-[10px] font-medium text-[#66758C] uppercase tracking-wider pb-2">Status</th>
-                <th className="text-right text-[10px] font-medium text-[#66758C] uppercase tracking-wider pb-2">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {supportActivity.map((t) => (
-                <tr key={t.id} className="border-b border-[#F1F5F9] last:border-b-0">
-                  <td className="py-2.5 text-[12px] font-medium text-[#0057D8]">
-                    <button
-                      type="button"
-                      onClick={() => showTicketDetails(t)}
-                      className="hover:underline text-left"
-                    >
-                      {t.id}
-                    </button>
-                  </td>
-                  <td className="py-2.5 text-[12px] text-[#061A3D]">{t.subject}</td>
-                  <td className="py-2.5"><MiniStatusBadge status={t.status} /></td>
-                  <td className="py-2.5 text-right">
-                    <button
-                      type="button"
-                      onClick={() => showTicketDetails(t)}
-                      className="px-2 py-0.5 text-[11px] font-medium text-[#0057D8] border border-[#E6EDF5] rounded hover:bg-[#F7FAFC]"
-                    >
-                      View ticket
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {returns.map((r) => (
+                  <tr key={r.id} className="border-b border-[#F1F5F9] last:border-b-0">
+                    <td className="py-2.5 text-[12px] font-medium text-[#0057D8]">
+                      <Link href={`/dashboard/returns/${r.id}`} className="hover:underline">{r.id}</Link>
+                    </td>
+                    <td className="py-2.5 text-[12px] text-[#4A5A73]">{formatDate(r.requestedDate)}</td>
+                    <td className="py-2.5 text-[12px] text-[#061A3D]">{r.reason}</td>
+                    <td className="py-2.5 text-right"><MiniStatusBadge status={r.status} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
 
         {/* Recommended Next Actions */}
@@ -808,7 +800,6 @@ export default function CustomerDetailView({ customer }: { customer: Customer })
           <div className="space-y-3">
             {visibleRecs.map((a) => {
               const Icon = a.icon;
-              const isAnchor = a.href.startsWith("#");
               return (
                 <div key={a.label} className="flex items-center justify-between gap-2 pb-3 border-b border-[#F1F5F9] last:border-b-0 last:pb-0">
                   <div className="flex items-start gap-2.5 min-w-0">
@@ -820,31 +811,24 @@ export default function CustomerDetailView({ customer }: { customer: Customer })
                       <p className="text-[11px] text-[#9AA8B8] mt-0.5">{a.note}</p>
                     </div>
                   </div>
-                  {isAnchor ? (
-                    <button
-                      onClick={() => scrollToSection(a.href.slice(1))}
-                      className="px-3 py-1 text-[12px] font-medium text-[#0057D8] border border-[#E6EDF5] rounded-md hover:bg-[#F7FAFC] shrink-0"
-                    >
-                      {a.cta}
-                    </button>
-                  ) : (
-                    <Link
-                      href={a.href}
-                      className="px-3 py-1 text-[12px] font-medium text-[#0057D8] border border-[#E6EDF5] rounded-md hover:bg-[#F7FAFC] shrink-0"
-                    >
-                      {a.cta}
-                    </Link>
-                  )}
+                  <Link
+                    href={a.href}
+                    className="px-3 py-1 text-[12px] font-medium text-[#0057D8] border border-[#E6EDF5] rounded-md hover:bg-[#F7FAFC] shrink-0"
+                  >
+                    {a.cta}
+                  </Link>
                 </div>
               );
             })}
           </div>
-          <button
-            onClick={() => setShowAllRecs((v) => !v)}
-            className="flex items-center gap-1 text-[12px] font-medium text-[#0057D8] hover:underline mt-3"
-          >
-            {showAllRecs ? "Show fewer recommendations" : `View all recommendations (${recommendedActions.length + extraRecommendedActions.length})`} <ArrowRight className={`w-3.5 h-3.5 transition-transform ${showAllRecs ? "rotate-90" : ""}`} />
-          </button>
+          {recommendedActions.length > 3 && (
+            <button
+              onClick={() => setShowAllRecs((v) => !v)}
+              className="flex items-center gap-1 text-[12px] font-medium text-[#0057D8] hover:underline mt-3"
+            >
+              {showAllRecs ? "Show fewer recommendations" : `View all recommendations (${recommendedActions.length})`} <ArrowRight className={`w-3.5 h-3.5 transition-transform ${showAllRecs ? "rotate-90" : ""}`} />
+            </button>
+          )}
         </div>
       </div>
 
@@ -863,23 +847,29 @@ export default function CustomerDetailView({ customer }: { customer: Customer })
             )}
           </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-5">
-          {timeline.map((t, i) => {
-            const Icon = t.icon;
-            return (
-              <div key={`${t.title}-${i}`} className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: `${t.color}1a` }}>
-                  <Icon className="w-4 h-4" style={{ color: t.color }} />
+        {loading ? (
+          <p className="py-6 text-center text-[12px] text-[#9AA8B8]">Building activity timeline…</p>
+        ) : timeline.length === 0 ? (
+          <p className="py-6 text-center text-[12px] text-[#9AA8B8]">No recorded activity for this customer yet.</p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-5">
+            {timeline.map((t, i) => {
+              const Icon = t.icon;
+              return (
+                <div key={`${t.title}-${i}`} className="flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: `${t.color}1a` }}>
+                    <Icon className="w-4 h-4" style={{ color: t.color }} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-medium text-[#061A3D]">{t.title}</p>
+                    <p className="text-[11px] text-[#9AA8B8]">{t.date}</p>
+                    <p className="text-[12px] text-[#4A5A73] mt-0.5">{t.desc}</p>
+                  </div>
                 </div>
-                <div className="min-w-0">
-                  <p className="text-[13px] font-medium text-[#061A3D]">{t.title}</p>
-                  <p className="text-[11px] text-[#9AA8B8]">{t.date}</p>
-                  <p className="text-[12px] text-[#4A5A73] mt-0.5">{t.desc}</p>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Edit billing address modal */}

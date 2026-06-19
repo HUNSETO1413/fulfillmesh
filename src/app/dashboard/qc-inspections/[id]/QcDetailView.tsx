@@ -1,51 +1,53 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  ChevronRight, Download, Package, Plus,
+  ChevronRight, Download, Package, Plus, Upload, Trash2, Loader2, ImageOff, File as FileIcon,
   CheckCircle2, XCircle, MinusCircle, FileText, FileSpreadsheet, FileArchive,
   Clock, AlertTriangle, Send, RotateCcw, Ban, ArrowLeft, ArrowRight,
 } from "lucide-react";
-import type { QcInspection, QcStatus } from "@/types";
+import type { QcInspection, QcStatus, QcChecklistItem, Attachment } from "@/types";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { Modal } from "@/components/dashboard/Modal";
+import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { Field as FormField, TextArea, PrimaryButton, SecondaryButton } from "@/components/dashboard/FormControls";
 import { useToast } from "@/components/dashboard/Toast";
 import { api, exportToCsv } from "@/lib/client";
 import { formatDate } from "@/lib/format";
 import QcDetailActions from "./QcDetailActions";
 
-interface CheckItem { item: string; result: "Passed" | "Failed" | "N/A" }
+const MAX_UPLOAD_BYTES = 3_000_000; // mirror the server's 3MB cap
 
-const initialChecklist: CheckItem[] = [
-  { item: "Product Appearance", result: "Passed" },
-  { item: "Dimensions & Size", result: "Passed" },
-  { item: "Material & Finish", result: "Passed" },
-  { item: "Printing & Logo", result: "Failed" },
-  { item: "Cap Functionality", result: "Passed" },
-  { item: "Leak Test", result: "Passed" },
-  { item: "Packaging & Labeling", result: "Failed" },
-  { item: "Workmanship", result: "Passed" },
-  { item: "Barcode & SKU", result: "N/A" },
-  { item: "Quantity Verification", result: "Passed" },
-];
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
+/** Read a File into a base64 data URL. */
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"));
+    reader.readAsDataURL(file);
+  });
+}
 
-const topDefects = [
-  { rank: 1, name: "Printing misalignment", count: "7", pct: "31.8%" },
-  { rank: 2, name: "Logo fading / incomplete", count: "5", pct: "22.7%" },
-  { rank: 3, name: "Label incorrect placement", count: "4", pct: "18.2%" },
-];
-
-const photos_static: { label: string; gradient?: string }[] = [
-  { label: "Overall appearance" },
-  { label: "Logo misalignment" },
-  { label: "Logo fading" },
-  { label: "Label placement" },
-  { label: "Surface scratch" },
-  { label: "Outer carton" },
+// Default checkpoints used only when an inspection has no persisted checklist yet.
+const defaultChecklist: QcChecklistItem[] = [
+  { label: "Product Appearance", result: "Pass" },
+  { label: "Dimensions & Size", result: "Pass" },
+  { label: "Material & Finish", result: "Pass" },
+  { label: "Printing & Logo", result: "Pass" },
+  { label: "Cap Functionality", result: "Pass" },
+  { label: "Leak Test", result: "Pass" },
+  { label: "Packaging & Labeling", result: "Pass" },
+  { label: "Workmanship", result: "Pass" },
+  { label: "Barcode & SKU", result: "N/A" },
+  { label: "Quantity Verification", result: "Pass" },
 ];
 
 const reports_static = [
@@ -77,9 +79,9 @@ const followups: {
   { title: "Reject & Hold Shipment", desc: "Reject this lot and place shipment on hold.", btn: "Reject & Hold", btnColor: "bg-[#EF4444] hover:bg-[#DC2626]", icon: Ban, iconColor: "text-[#EF4444]", status: "On Hold", verb: "rejected and held" },
 ];
 
-function resultBadge(r: string) {
-  if (r === "Passed") return { cls: "bg-[#10B981]/10 text-[#10B981]", Icon: CheckCircle2 };
-  if (r === "Failed") return { cls: "bg-[#EF4444]/10 text-[#EF4444]", Icon: XCircle };
+function resultBadge(r: QcChecklistItem["result"]) {
+  if (r === "Pass") return { cls: "bg-[#10B981]/10 text-[#10B981]", Icon: CheckCircle2 };
+  if (r === "Fail") return { cls: "bg-[#EF4444]/10 text-[#EF4444]", Icon: XCircle };
   return { cls: "bg-[#9AA8B8]/10 text-[#66758C]", Icon: MinusCircle };
 }
 
@@ -98,11 +100,80 @@ export default function QcDetailView({ inspection }: { inspection: QcInspection 
   const [supplierModalOpen, setSupplierModalOpen] = useState(false);
   const [supplierModalDraft, setSupplierModalDraft] = useState("");
 
-  // Checklist state
-  const [checklist, setChecklist] = useState<CheckItem[]>(initialChecklist);
+  // Checklist state — seeded from the inspection's persisted checklist when present.
+  const [checklist, setChecklist] = useState<QcChecklistItem[]>(
+    () => (inspection.checklist && inspection.checklist.length > 0 ? inspection.checklist : defaultChecklist),
+  );
+  const [savingChecklist, setSavingChecklist] = useState(false);
 
-  // Photos state (simulated uploads)
-  const [photos, setPhotos] = useState(photos_static.map((p) => ({ ...p })));
+  // Photos / files state — backed by the real attachments API.
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [attachmentsLoading, setAttachmentsLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<Attachment | null>(null);
+  const [deletingAttachment, setDeletingAttachment] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get<{ data: Attachment[] }>(`/api/attachments?entityType=qc&entityId=${encodeURIComponent(inspection.id)}`);
+        if (!cancelled) setAttachments(res.data);
+      } catch {
+        if (!cancelled) toast("Failed to load attachments", "error");
+      } finally {
+        if (!cancelled) setAttachmentsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [inspection.id, toast]);
+
+  async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file
+    if (!file) return;
+    if (file.size > MAX_UPLOAD_BYTES) {
+      toast("File is too large (max 3MB)", "error");
+      return;
+    }
+    setUploading(true);
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      const created = await api.post<Attachment>("/api/attachments", {
+        entityType: "qc",
+        entityId: inspection.id,
+        name: file.name,
+        mime: file.type || "application/octet-stream",
+        dataUrl,
+        size: file.size,
+      });
+      setAttachments((prev) => [...prev, created]);
+      toast("File uploaded");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Failed to upload file", "error");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function confirmDeleteAttachment() {
+    if (!pendingDelete) return;
+    const target = pendingDelete;
+    const prev = attachments;
+    setDeletingAttachment(true);
+    setAttachments((list) => list.filter((a) => a.id !== target.id)); // optimistic
+    try {
+      await api.del(`/api/attachments/${target.id}`);
+      toast("Attachment deleted");
+      setPendingDelete(null);
+    } catch (err) {
+      setAttachments(prev); // roll back
+      toast(err instanceof Error ? err.message : "Failed to delete attachment", "error");
+    } finally {
+      setDeletingAttachment(false);
+    }
+  }
 
   // Reports state (simulated uploads)
   const [reports, setReports] = useState(reports_static.map((r) => ({ ...r })));
@@ -128,8 +199,8 @@ export default function QcDetailView({ inspection }: { inspection: QcInspection 
 
   // Derive defect summary from checklist items
   const defects = useMemo(() => {
-    const passed = checklist.filter((c) => c.result === "Passed").length;
-    const failed = checklist.filter((c) => c.result === "Failed").length;
+    const passed = checklist.filter((c) => c.result === "Pass").length;
+    const failed = checklist.filter((c) => c.result === "Fail").length;
     const na = checklist.filter((c) => c.result === "N/A").length;
     const total = passed + failed + na;
     return [
@@ -139,31 +210,49 @@ export default function QcDetailView({ inspection }: { inspection: QcInspection 
     ];
   }, [checklist]);
 
+  // Top defects derive from the real checklist: every failed checkpoint + its notes.
+  const topDefects = useMemo(() => {
+    const failed = checklist.filter((c) => c.result === "Fail");
+    const total = failed.length;
+    return failed.map((c, i) => ({
+      rank: i + 1,
+      name: c.notes?.trim() ? `${c.label} — ${c.notes.trim()}` : c.label,
+      count: "1",
+      pct: total > 0 ? ((1 / total) * 100).toFixed(1) + "%" : "0%",
+    }));
+  }, [checklist]);
+
   const circumference = 2 * Math.PI * 32;
   const defectOffsets = defects.reduce<number[]>((acc, d, i) => {
     acc.push(i === 0 ? 0 : acc[i - 1] + parseFloat(defects[i - 1].pct));
     return acc;
   }, []);
 
-  // Toggle a checklist item result
+  // Toggle a checklist item result (cycles Pass -> Fail -> N/A -> Pass)
   function toggleCheckItem(idx: number) {
     setChecklist((prev) => {
       const next = [...prev];
       const cur = next[idx].result;
-      next[idx] = { ...next[idx], result: cur === "Passed" ? "Failed" : cur === "Failed" ? "N/A" : "Passed" };
+      next[idx] = { ...next[idx], result: cur === "Pass" ? "Fail" : cur === "Fail" ? "N/A" : "Pass" };
       return next;
     });
   }
 
-  function saveChecklist() {
-    toast("Checklist saved");
-  }
-
-  function addPhoto() {
-    const colors = ["from-[#DBEAFE] to-[#E0E7FF]", "from-[#D1FAE5] to-[#CFFAFE]", "from-[#FEF3C7] to-[#FFEDD5]", "from-[#EDE9FE] to-[#FCE7F3]", "from-[#FEE2E2] to-[#FEF3C7]"];
-    const color = colors[photos.length % colors.length];
-    setPhotos((prev) => [...prev, { label: `Uploaded photo ${prev.length + 1}`, gradient: color }]);
-    toast("Photo uploaded");
+  // Persist the checklist to the inspection; roll back local state on failure.
+  async function saveChecklist() {
+    if (savingChecklist) return;
+    const snapshot = checklist;
+    setSavingChecklist(true);
+    try {
+      const updated = await api.put<QcInspection>(`/api/qc-inspections/${inspection.id}`, { checklist });
+      if (updated.checklist && updated.checklist.length > 0) setChecklist(updated.checklist);
+      toast("Checklist saved");
+    } catch (e) {
+      setChecklist(snapshot);
+      toast(e instanceof Error ? e.message : "Could not save checklist", "error");
+    } finally {
+      setSavingChecklist(false);
+    }
   }
 
   function uploadReport() {
@@ -188,7 +277,7 @@ export default function QcDetailView({ inspection }: { inspection: QcInspection 
       `Defect Rate: ${inspection.defectRate ?? "—"}%`,
       "",
       "Checklist Results:",
-      ...checklist.map((c) => `  ${c.item}: ${c.result}`),
+      ...checklist.map((c) => `  ${c.label}: ${c.result}${c.notes?.trim() ? ` (${c.notes.trim()})` : ""}`),
       "",
       `Generated: ${new Date().toISOString()}`,
     ].join("\n");
@@ -237,8 +326,9 @@ export default function QcDetailView({ inspection }: { inspection: QcInspection 
 
   function downloadReport() {
     exportToCsv(`qc-report-${inspection.id}`, checklist, [
-      { key: "item", header: "Checkpoint" },
+      { key: "label", header: "Checkpoint" },
       { key: "result", header: "Result" },
+      { key: "notes", header: "Notes" },
     ]);
     toast(`QC report for ${inspection.id} downloaded`);
   }
@@ -314,8 +404,8 @@ export default function QcDetailView({ inspection }: { inspection: QcInspection 
           <div className="flex items-center justify-between px-5 py-3 bg-soft-bg border-b border-border-soft flex-wrap gap-2">
             <h3 className="text-[15px] font-semibold text-text-primary">Inspection Checklist</h3>
             <div className="flex gap-1.5 text-[11px] font-medium">
-              <span className="px-1.5 py-0.5 rounded bg-[#10B981]/10 text-[#10B981]">{checklist.filter((c) => c.result === "Passed").length} Passed</span>
-              <span className="px-1.5 py-0.5 rounded bg-[#EF4444]/10 text-[#EF4444]">{checklist.filter((c) => c.result === "Failed").length} Failed</span>
+              <span className="px-1.5 py-0.5 rounded bg-[#10B981]/10 text-[#10B981]">{checklist.filter((c) => c.result === "Pass").length} Passed</span>
+              <span className="px-1.5 py-0.5 rounded bg-[#EF4444]/10 text-[#EF4444]">{checklist.filter((c) => c.result === "Fail").length} Failed</span>
               <span className="px-1.5 py-0.5 rounded bg-[#9AA8B8]/10 text-[#66758C]">{checklist.filter((c) => c.result === "N/A").length} N/A</span>
             </div>
           </div>
@@ -327,13 +417,13 @@ export default function QcDetailView({ inspection }: { inspection: QcInspection 
             {checklist.map((c, idx) => {
               const { cls, Icon } = resultBadge(c.result);
               return (
-                <div key={c.item} className="flex items-center justify-between gap-2 py-2 border-b border-[#F1F5F9] last:border-b-0 cursor-pointer hover:bg-[#F7FAFC]/50 -mx-1 px-1 rounded" onClick={() => toggleCheckItem(idx)}>
-                  <span className="text-[12px] text-text-primary flex items-center gap-2 min-w-0"><Icon className={`w-3.5 h-3.5 shrink-0 ${c.result === "Passed" ? "text-[#10B981]" : c.result === "Failed" ? "text-[#EF4444]" : "text-[#9AA8B8]"}`} /><span className="truncate">{c.item}</span></span>
+                <div key={`${c.label}-${idx}`} className="flex items-center justify-between gap-2 py-2 border-b border-[#F1F5F9] last:border-b-0 cursor-pointer hover:bg-[#F7FAFC]/50 -mx-1 px-1 rounded" onClick={() => toggleCheckItem(idx)}>
+                  <span className="text-[12px] text-text-primary flex items-center gap-2 min-w-0"><Icon className={`w-3.5 h-3.5 shrink-0 ${c.result === "Pass" ? "text-[#10B981]" : c.result === "Fail" ? "text-[#EF4444]" : "text-[#9AA8B8]"}`} /><span className="truncate">{c.label}</span></span>
                   <span className={`inline-flex px-2 py-0.5 rounded text-[11px] font-medium shrink-0 ${cls}`}>{c.result}</span>
                 </div>
               );
             })}
-            <button onClick={saveChecklist} className="inline-flex items-center gap-1.5 text-[12px] font-medium text-action-blue mt-3">Save checklist <CheckCircle2 className="w-3 h-3" /></button>
+            <button onClick={saveChecklist} disabled={savingChecklist} className="inline-flex items-center gap-1.5 text-[12px] font-medium text-action-blue mt-3 disabled:opacity-50 disabled:cursor-not-allowed">{savingChecklist ? "Saving…" : "Save checklist"} <CheckCircle2 className="w-3 h-3" /></button>
           </div>
         </div>
 
@@ -369,34 +459,85 @@ export default function QcDetailView({ inspection }: { inspection: QcInspection 
             </div>
             <div className="mt-4 bg-[#EF4444]/5 rounded-lg p-3">
               <h4 className="text-[12px] font-semibold text-text-primary mb-2">Top Defect Types</h4>
-              <div className="space-y-2">
-                {topDefects.map((t) => (
-                  <div key={t.rank} className="flex items-center gap-2 text-[11px]">
-                    <span className="w-4 h-4 rounded-full bg-[#EF4444] text-white flex items-center justify-center text-[9px] font-bold shrink-0">{t.rank}</span>
-                    <span className="text-text-primary flex-1">{t.name}</span>
-                    <span className="text-text-muted">{t.count} ({t.pct})</span>
-                  </div>
-                ))}
-              </div>
+              {topDefects.length === 0 ? (
+                <p className="text-[11px] text-text-light">No failed checkpoints recorded.</p>
+              ) : (
+                <div className="space-y-2">
+                  {topDefects.map((t) => (
+                    <div key={t.rank} className="flex items-center gap-2 text-[11px]">
+                      <span className="w-4 h-4 rounded-full bg-[#EF4444] text-white flex items-center justify-center text-[9px] font-bold shrink-0">{t.rank}</span>
+                      <span className="text-text-primary flex-1">{t.name}</span>
+                      <span className="text-text-muted">{t.count} ({t.pct})</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
 
-        {/* Photos */}
+        {/* Photos & Files */}
         <div className="bg-white rounded-xl border border-border-soft shadow-[0_1px_3px_rgba(0,0,0,0.08)] overflow-hidden">
           <div className="flex items-center justify-between px-5 py-3 bg-soft-bg border-b border-border-soft">
-            <h3 className="text-[15px] font-semibold text-text-primary">Inspection Photos</h3>
-            <button onClick={addPhoto} className="text-[12px] font-medium text-action-blue inline-flex items-center gap-1 hover:underline"><Plus className="w-3 h-3" />Add photo</button>
+            <h3 className="text-[15px] font-semibold text-text-primary">Inspection Photos <span className="text-[11px] font-normal text-text-light">({attachments.length})</span></h3>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,application/pdf"
+              className="hidden"
+              onChange={handleFileSelected}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="text-[12px] font-medium text-action-blue inline-flex items-center gap-1 hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {uploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+              {uploading ? "Uploading…" : "Add photo"}
+            </button>
           </div>
           <div className="p-5">
-            <div className="grid grid-cols-3 gap-2">
-              {photos.map((p) => (
-                <div key={p.label}>
-                  <div className={`aspect-square rounded-lg ${p.gradient ? `bg-gradient-to-br ${p.gradient}` : "bg-gradient-to-br from-[#E2E8F0] to-[#F1F5F9]"} border border-border-soft overflow-hidden`} />
-                  <p className="text-[9px] text-text-light mt-1 truncate text-center">{p.label}</p>
-                </div>
-              ))}
-            </div>
+            {attachmentsLoading ? (
+              <div className="flex flex-col items-center justify-center text-center py-6 text-text-light">
+                <Loader2 className="w-5 h-5 animate-spin mb-2" />
+                <p className="text-[11px]">Loading photos…</p>
+              </div>
+            ) : attachments.length === 0 ? (
+              <div className="flex flex-col items-center justify-center text-center py-6 rounded-lg border border-dashed border-border-soft bg-soft-bg">
+                <ImageOff className="w-6 h-6 text-text-light mb-2" />
+                <p className="text-[12px] font-medium text-text-body">No photos uploaded</p>
+                <p className="text-[11px] text-text-light mt-0.5">Use Add photo to attach images or PDFs.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                {attachments.map((a) => {
+                  const isImage = a.mime.startsWith("image/");
+                  return (
+                    <div key={a.id} className="group relative">
+                      {isImage ? (
+                        <a href={a.dataUrl} target="_blank" rel="noopener noreferrer" className="block">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={a.dataUrl} alt={a.name} className="aspect-square w-full rounded-lg object-cover border border-border-soft bg-soft-bg" />
+                        </a>
+                      ) : (
+                        <a href={a.dataUrl} target="_blank" rel="noopener noreferrer" className="flex aspect-square w-full flex-col items-center justify-center rounded-lg border border-border-soft bg-soft-bg p-1 text-center">
+                          <FileIcon className="w-6 h-6 text-text-light mb-1" />
+                          <span className="text-[9px] text-text-muted truncate w-full px-0.5">{a.name}</span>
+                        </a>
+                      )}
+                      <button
+                        onClick={() => setPendingDelete(a)}
+                        className="absolute top-1 right-1 rounded-md bg-white/90 p-1 text-[#EF4444] opacity-0 shadow-sm transition-opacity group-hover:opacity-100 hover:bg-white"
+                        aria-label={`Delete ${a.name}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                      <p className="text-[9px] text-text-light mt-1 truncate text-center" title={a.name}>{formatBytes(a.size)}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -555,6 +696,18 @@ export default function QcDetailView({ inspection }: { inspection: QcInspection 
           <TextArea value={supplierModalDraft} onChange={(e) => setSupplierModalDraft(e.target.value)} rows={4} placeholder="Enter notes or instructions for the supplier…" />
         </FormField>
       </Modal>
+
+      {/* Delete attachment confirm */}
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onClose={() => { if (!deletingAttachment) setPendingDelete(null); }}
+        onConfirm={confirmDeleteAttachment}
+        title="Delete photo"
+        message={`Remove "${pendingDelete?.name ?? ""}" from this inspection? This cannot be undone.`}
+        confirmLabel="Delete"
+        destructive
+        loading={deletingAttachment}
+      />
     </div>
   );
 }

@@ -23,22 +23,8 @@ type Row = {
   expiring?: boolean; updated: string;
 };
 
-const initialRows: Row[] = [
-  { product: "Wireless Headphones", category: "Electronics", sku: "ELEC-1001", wh: "ATL-1", onHand: 2450, reserved: 320, unitCost: 38.5, status: "In Stock", updated: "2025-05-12" },
-  { product: "Stainless Steel Bottle", category: "Home & Kitchen", sku: "HK-2002", wh: "LAX-1", onHand: 5120, reserved: 200, unitCost: 9.2, status: "In Stock", updated: "2025-05-11" },
-  { product: "Cotton T-Shirt", category: "Apparel", sku: "APP-3003-M", wh: "ORD-1", onHand: 1250, reserved: 640, unitCost: 6.4, status: "In Stock", updated: "2025-05-12" },
-  { product: "Running Shoes", category: "Sports", sku: "FTW-4004-9", wh: "DFW-1", onHand: 320, reserved: 85, unitCost: 41.0, status: "Low Stock", updated: "2025-05-10" },
-  { product: "Whey Protein 1kg", category: "Health & Beauty", sku: "HB-5005", wh: "MIA-1", onHand: 0, reserved: 0, unitCost: 18.7, status: "Out of Stock", expiring: true, updated: "2025-05-09" },
-  { product: "Travel Backpack", category: "Bags & Luggage", sku: "BAG-6006", wh: "ATL-1", onHand: 880, reserved: 120, unitCost: 22.3, status: "In Stock", updated: "2025-05-11" },
-  { product: "Bluetooth Speaker", category: "Electronics", sku: "ELEC-1007", wh: "LAX-1", onHand: 1640, reserved: 210, unitCost: 27.9, status: "In Stock", updated: "2025-05-12" },
-  { product: "Yoga Mat Premium", category: "Sports", sku: "SPT-4008", wh: "ORD-1", onHand: 410, reserved: 60, unitCost: 14.5, status: "Low Stock", updated: "2025-05-10" },
-  { product: "Ceramic Dinner Set", category: "Home & Kitchen", sku: "HK-2009", wh: "DFW-1", onHand: 2200, reserved: 180, unitCost: 31.6, status: "In Stock", updated: "2025-05-08" },
-  { product: "Vitamin C Tablets", category: "Health & Beauty", sku: "HB-5010", wh: "MIA-1", onHand: 95, reserved: 40, unitCost: 7.8, status: "Low Stock", expiring: true, updated: "2025-05-12" },
-];
-
 const CATEGORIES = ["Electronics", "Home & Kitchen", "Apparel", "Sports", "Health & Beauty", "Bags & Luggage"];
 const WAREHOUSES = ["ATL-1", "LAX-1", "ORD-1", "DFW-1", "MIA-1"];
-const STATUSES: Status[] = ["In Stock", "Low Stock", "Out of Stock"];
 const CATEGORY_COLORS: Record<string, string> = {
   Electronics: "#3B82F6", Apparel: "#10B981", "Home & Kitchen": "#F59E0B",
   Sports: "#06B6D4", "Health & Beauty": "#8B5CF6", "Bags & Luggage": "#EC4899", Other: "#EF4444",
@@ -122,7 +108,7 @@ export default function WarehouseInventoryPage() {
           updated: "",
         }));
         if (!cancelled) setRows(mapped);
-      } catch (e) {
+      } catch {
         if (!cancelled) toast("Failed to load inventory", "error");
       } finally {
         if (!cancelled) setLoading(false);

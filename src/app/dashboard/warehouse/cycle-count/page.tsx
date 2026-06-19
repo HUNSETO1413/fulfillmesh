@@ -28,19 +28,8 @@ const WH_CITY: Record<string, string> = { "ATL-1": "Atlanta, GA", "DFW-1": "Dall
 const COUNT_TYPES = ["Routine Cycle Count", "Priority Count", "Category Count", "Full Warehouse Count", "Ad-Hoc Count"];
 const STATUSES: Status[] = ["In Progress", "Scheduled", "Completed", "Cancelled"];
 
-const byWh = [
-  { wh: "ATL-1 (Atlanta, GA)", acc: "98.6%", change: "+1.8%", up: true },
-  { wh: "DFW-1 (Dallas, TX)", acc: "97.9%", change: "+1.2%", up: true },
-  { wh: "LAX-1 (Los Angeles, CA)", acc: "98.1%", change: "+0.9%", up: true },
-  { wh: "MIA-1 (Miami, FL)", acc: "98.4%", change: "+2.1%", up: true },
-  { wh: "ORD-1 (Chicago, IL)", acc: "97.6%", change: "-0.3%", up: false },
-];
-
-const upcoming = [
-  { d: "02", m: "JUN", name: "Bulk Storage Area", wh: "ORD-1", time: "9:00 AM" },
-  { d: "02", m: "JUN", name: "Pharma Zone", wh: "MIA-1", time: "10:00 AM" },
-  { d: "03", m: "JUN", name: "FRZ-01 Freezer Zone", wh: "MIA-1", time: "9:00 AM" },
-];
+// "By Warehouse" accuracy and "Upcoming Cycle Counts" are computed from the
+// loaded cycle-count rows (see byWh / upcoming memos) — no hardcoded data.
 
 function Badge({ text }: { text: string }) {
   const styles: Record<string, string> = {
@@ -126,6 +115,7 @@ export default function CycleCountPage() {
   const [editBusy, setEditBusy] = useState(false);
   const [detailRow, setDetailRow] = useState<Row | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
+  const [upcomingOpen, setUpcomingOpen] = useState(false);
   const seq = useRef(124);
 
   /* ── Load rows from API on mount ── */
@@ -215,6 +205,43 @@ export default function CycleCountPage() {
     const overallProgress = counted.length ? counted.reduce((s, r) => s + r.progress, 0) / counted.length : 0;
     const overallCompletion = rows.length ? (rows.filter((r) => r.status === "Completed").length / rows.length) * 100 : 0;
     return { perWh, overallProgress, overallCompletion, countedTotal: counted.length };
+  }, [rows]);
+
+  /* ── "By Warehouse" accuracy computed from rows ──
+     Accuracy per warehouse is modelled from the average count progress of its
+     non-cancelled cycle counts, so it reflects the loaded data instead of a
+     hardcoded table. */
+  const byWh = useMemo(() => {
+    return accuracyReport.perWh.map((w) => ({
+      wh: `${w.wh}${w.whSub ? ` (${w.whSub})` : ""}`,
+      acc: `${w.avgProgress.toFixed(1)}%`,
+      // Treat warehouses at or above the overall average as trending up.
+      up: w.avgProgress >= accuracyReport.overallProgress,
+    }));
+  }, [accuracyReport]);
+
+  /* ── Overall accuracy headline computed from rows ── */
+  const overallAccuracy = accuracyReport.overallProgress;
+
+  /* ── Upcoming cycle counts computed from rows ──
+     Scheduled counts ordered by their due date represent the upcoming schedule. */
+  const upcoming = useMemo(() => {
+    const parse = (s: string) => { const t = new Date(s).getTime(); return Number.isNaN(t) ? Infinity : t; };
+    return rows
+      .filter((r) => r.status === "Scheduled")
+      .sort((a, b) => parse(a.due) - parse(b.due))
+      .map((r) => {
+        const due = new Date(r.due);
+        const valid = !Number.isNaN(due.getTime());
+        return {
+          cc: r.cc,
+          d: valid ? String(due.getDate()).padStart(2, "0") : "--",
+          m: valid ? due.toLocaleDateString("en-US", { month: "short" }).toUpperCase() : "",
+          name: r.name,
+          wh: r.wh,
+          due: r.due,
+        };
+      });
   }, [rows]);
 
   const filtered = useMemo(() => {
@@ -503,17 +530,17 @@ export default function CycleCountPage() {
           {/* Accuracy Overview */}
           <div className={card + " p-5"}>
             <div className="flex items-center justify-between mb-2"><h3 className="text-[14px] font-semibold text-text-primary">Accuracy Overview</h3><button onClick={() => setReportOpen(true)} className="text-[12px] text-action-blue hover:underline">View report</button></div>
-            <p className="text-[28px] font-bold text-text-primary">98.2%</p>
-            <p className="text-[11px] text-text-light mb-1">Overall Accuracy</p>
-            <p className="text-[11px] text-teal flex items-center gap-1 mb-3"><ArrowUpRight className="w-3 h-3" /> +1.6% vs last 30 days</p>
+            <p className="text-[28px] font-bold text-text-primary">{overallAccuracy.toFixed(1)}%</p>
+            <p className="text-[11px] text-text-light mb-3">Avg Count Progress</p>
             <p className="text-[11px] font-semibold text-text-light uppercase tracking-[0.05em] mb-2">By Warehouse</p>
             <div className="space-y-2">
+              {byWh.length === 0 && <p className="text-[12px] text-text-muted">No warehouse data yet.</p>}
               {byWh.map((w) => (
                 <div key={w.wh} className="flex items-center justify-between text-[12px]">
                   <span className="text-text-muted">{w.wh}</span>
                   <span className="font-medium flex items-center gap-1.5">
                     <span className="text-text-primary">{w.acc}</span>
-                    <span className={`flex items-center gap-0.5 ${w.up ? "text-teal" : "text-[#EF4444]"}`}>{w.up ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}{w.change}</span>
+                    <span className={`flex items-center ${w.up ? "text-teal" : "text-[#EF4444]"}`}>{w.up ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}</span>
                   </span>
                 </div>
               ))}
@@ -522,13 +549,14 @@ export default function CycleCountPage() {
 
           {/* Upcoming Cycle Counts */}
           <div className={card + " p-5"}>
-            <div className="flex items-center justify-between mb-3"><h3 className="text-[14px] font-semibold text-text-primary">Upcoming Cycle Counts</h3><button onClick={() => toast("Showing all upcoming counts", "info")} className="text-[12px] text-action-blue hover:underline">View all</button></div>
+            <div className="flex items-center justify-between mb-3"><h3 className="text-[14px] font-semibold text-text-primary">Upcoming Cycle Counts</h3>{upcoming.length > 3 && <button onClick={() => setUpcomingOpen(true)} className="text-[12px] text-action-blue hover:underline">View all</button>}</div>
             <div className="space-y-3">
-              {upcoming.map((u, i) => (
-                <div key={i} className="flex items-center gap-3">
+              {upcoming.length === 0 && <p className="text-[12px] text-text-muted">No scheduled cycle counts.</p>}
+              {upcoming.slice(0, 3).map((u) => (
+                <div key={u.cc} className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-lg bg-action-blue/10 flex flex-col items-center justify-center shrink-0"><span className="text-[13px] font-bold text-action-blue leading-none">{u.d}</span><span className="text-[8px] font-medium text-action-blue">{u.m}</span></div>
                   <div className="flex-1 min-w-0"><p className="text-[12px] font-medium text-text-primary truncate">{u.name}</p><p className="text-[11px] text-text-light">{u.wh}</p></div>
-                  <span className="text-[11px] text-text-muted shrink-0">{u.time}</span>
+                  <span className="text-[11px] text-text-muted shrink-0">{u.due}</span>
                 </div>
               ))}
             </div>
@@ -786,6 +814,33 @@ export default function CycleCountPage() {
               </tbody>
             </table>
           </div>
+        </DrawerSection>
+      </Drawer>
+
+      {/* Upcoming cycle counts drawer — computed from loaded rows */}
+      <Drawer
+        open={upcomingOpen}
+        onClose={() => setUpcomingOpen(false)}
+        title="Upcoming Cycle Counts"
+        subtitle={`${upcoming.length} scheduled count${upcoming.length === 1 ? "" : "s"}`}
+        footer={
+          <button onClick={() => setUpcomingOpen(false)} className="px-4 py-2 text-[13px] font-medium text-text-primary bg-white border border-border-soft rounded-lg hover:bg-soft-bg">Close</button>
+        }
+      >
+        <DrawerSection title="Schedule">
+          {upcoming.length === 0 ? (
+            <p className="text-[13px] text-text-muted py-2">No scheduled cycle counts.</p>
+          ) : (
+            <div className="space-y-3">
+              {upcoming.map((u) => (
+                <div key={u.cc} className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-action-blue/10 flex flex-col items-center justify-center shrink-0"><span className="text-[13px] font-bold text-action-blue leading-none">{u.d}</span><span className="text-[8px] font-medium text-action-blue">{u.m}</span></div>
+                  <div className="flex-1 min-w-0"><p className="text-[12px] font-medium text-text-primary truncate">{u.name}</p><p className="text-[11px] text-text-light font-mono">{u.cc} • {u.wh}</p></div>
+                  <span className="text-[11px] text-text-muted shrink-0">{u.due}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </DrawerSection>
       </Drawer>
     </div>

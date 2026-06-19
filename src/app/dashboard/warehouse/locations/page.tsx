@@ -37,6 +37,15 @@ const TYPE_COLOR: Record<string, string> = {
   Zone: "var(--color-action-blue)", "Pick Zone": "var(--color-teal)", Bin: "#7C6FF6",
   Reserve: "#F59E0B", Bulk: "#EF4444", Special: "#EC4899",
 };
+// The location row stores a single numeric `capacity` field that is actually a
+// 0-100 percent utilization value (see WarehouseLocation in @/types). There is
+// no separate cubic-ft capacity column, so we derive a stable nominal capacity
+// per location type for the "Capacity" display rather than reusing the
+// utilization number and mislabeling it.
+const TYPE_NOMINAL_CAP: Record<string, number> = {
+  Zone: 4800, "Pick Zone": 1800, Bin: 600, Reserve: 3600, Bulk: 6400, Special: 2400,
+};
+const nominalCap = (type: string) => TYPE_NOMINAL_CAP[type] ?? 1200;
 const STATUSES: Status[] = ["Active", "Inactive"];
 
 const UTIL_BANDS: { label: string; color: string; match: (u: number) => boolean }[] = [
@@ -102,8 +111,10 @@ export default function WarehouseLocationsPage() {
           wh: l.warehouse,
           whSub: WH_CITY[l.warehouse] ?? l.warehouse,
           type: l.type,
-          cap: l.capacity,
-          util: l.capacity,
+          // `capacity` from the API is a 0-100 utilization percentage, so it
+          // drives `util`; nominal cubic-ft capacity is derived from the type.
+          cap: nominalCap(l.type),
+          util: Math.max(0, Math.min(100, l.capacity)),
           status: l.status,
           updated: "",
         }));
@@ -281,12 +292,13 @@ export default function WarehouseLocationsPage() {
           name: draft.name.trim(),
           warehouse: draft.wh,
           type: draft.type,
-          capacity: cap,
+          // The DB `capacity` column stores the 0-100 utilization value.
+          capacity: util,
           status: editing.status,
         };
         await api.put(`/api/locations/${editing.code}`, patch);
         setRows((prev) => prev.map((r) => (r.code === editing.code
-          ? { ...r, name: draft.name.trim(), wh: draft.wh, whSub: WH_CITY[draft.wh] ?? draft.wh, type: draft.type, cap, util, updated: todayIso() }
+          ? { ...r, name: draft.name.trim(), wh: draft.wh, whSub: WH_CITY[draft.wh] ?? draft.wh, type: draft.type, cap: nominalCap(draft.type), util, updated: todayIso() }
           : r)));
         toast(`Location ${editing.code} updated`);
       } else {
@@ -295,13 +307,14 @@ export default function WarehouseLocationsPage() {
           name: draft.name.trim(),
           warehouse: draft.wh,
           type: draft.type,
-          capacity: cap,
+          // The DB `capacity` column stores the 0-100 utilization value.
+          capacity: util,
           status: "Active" as Status,
         });
         const code = created?.code ?? `LOC-${seq.current}`;
         const newRow: Row = {
           code, name: draft.name.trim(), wh: draft.wh, whSub: WH_CITY[draft.wh] ?? draft.wh,
-          type: draft.type, cap, util, status: "Active", updated: todayIso(),
+          type: draft.type, cap: nominalCap(draft.type), util, status: "Active", updated: todayIso(),
         };
         setRows((prev) => [newRow, ...prev]);
         toast(`Location ${code} added`);
@@ -320,7 +333,8 @@ export default function WarehouseLocationsPage() {
     if (patch.name !== undefined) mapped.name = patch.name;
     if (patch.wh !== undefined) mapped.warehouse = patch.wh;
     if (patch.type !== undefined) mapped.type = patch.type;
-    if (patch.cap !== undefined) mapped.capacity = patch.cap;
+    // The DB `capacity` column holds the 0-100 utilization value; `cap`
+    // (nominal cubic ft) is a derived display-only field and is not persisted.
     if (patch.util !== undefined) mapped.capacity = patch.util;
     if (patch.status !== undefined) mapped.status = patch.status;
     api.put(`/api/locations/${code}`, mapped).catch((err) => toast(`Failed to update: ${(err as Error).message}`, "error"));

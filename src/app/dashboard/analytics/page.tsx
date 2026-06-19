@@ -140,9 +140,29 @@ export default function AnalyticsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Real series derived from revenue-by-month. The granularity toggle changes how
-  // many of the most recent buckets we show; "Monthly" shows them all.
-  const months = summary?.revenueByMonth ?? [];
+  // Real series derived from revenue-by-month. The selected date range narrows the
+  // month buckets we consider; changing it re-derives every series + headline below.
+  // The /api/analytics endpoint returns all-time aggregates, so we re-derive the
+  // windowed view here from the real per-month rows rather than refetching.
+  const months = useMemo(() => {
+    const all = summary?.revenueByMonth ?? [];
+    if (all.length === 0) return all;
+    switch (range) {
+      case "Last 7 days":
+      case "Last 30 days":
+        // Finest granularity available is monthly → show the latest month.
+        return all.slice(-1);
+      case "This quarter":
+        return all.slice(-3);
+      case "Year to date": {
+        const latest = all[all.length - 1].month; // "YYYY-MM"
+        const year = latest.slice(0, 4);
+        return all.filter((m) => m.month.startsWith(year));
+      }
+      default: // "All time"
+        return all;
+    }
+  }, [summary?.revenueByMonth, range]);
 
   function sliceFor(gran: Gran): typeof months {
     if (gran === "Daily") return months.slice(-7);
@@ -162,11 +182,28 @@ export default function AnalyticsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [months, revGran]);
 
+  // Headline numbers honor the selected range. Orders + revenue are summed from the
+  // windowed month buckets (real data). Shipments has no per-month breakdown, so we
+  // scale the all-time total by the windowed order share — a genuine DB-derived
+  // proxy that collapses to the true total for "All time". On-time delivery has no
+  // historical series, so it stays the real all-time figure regardless of range.
+  const windowed = useMemo(() => {
+    const orders = months.reduce((s, m) => s + m.orders, 0);
+    const revenue = months.reduce((s, m) => s + m.revenue, 0);
+    const totalOrders = summary?.totalOrders ?? 0;
+    const orderShare = totalOrders > 0 ? orders / totalOrders : 0;
+    const shipments =
+      range === "All time"
+        ? summary?.totalShipments ?? 0
+        : Math.round((summary?.totalShipments ?? 0) * orderShare);
+    return { orders, revenue, shipments };
+  }, [months, summary?.totalOrders, summary?.totalShipments, range]);
+
   const stats: Record<"orders" | "revenue" | "onTime" | "shipments", RangeStat> = {
-    orders: { value: summary ? formatInt(summary.totalOrders) : "—", change: range, positive: true },
-    revenue: { value: summary ? formatMoney(summary.totalRevenue) : "—", change: range, positive: true },
+    orders: { value: summary ? formatInt(windowed.orders) : "—", change: range, positive: true },
+    revenue: { value: summary ? formatMoney(windowed.revenue) : "—", change: range, positive: true },
     onTime: { value: summary ? `${summary.onTimeDeliveryPct}%` : "—", change: range, positive: (summary?.onTimeDeliveryPct ?? 0) >= 90 },
-    shipments: { value: summary ? formatInt(summary.totalShipments) : "—", change: range, positive: true },
+    shipments: { value: summary ? formatInt(windowed.shipments) : "—", change: range, positive: true },
   };
 
   // Top products + regions come straight from the summary.
@@ -282,7 +319,7 @@ export default function AnalyticsPage() {
                   {stat.positive
                     ? <ArrowUpRight className="w-3 h-3" />
                     : <ArrowDownRight className="w-3 h-3" />}
-                  {def.key === "revenue" && summary ? `AOV ${formatMoney(summary.avgOrderValue)}` : def.key === "onTime" ? "delivered" : "live"}
+                  {def.key === "revenue" && summary ? `AOV ${formatMoney(windowed.orders > 0 ? windowed.revenue / windowed.orders : summary.avgOrderValue)}` : def.key === "onTime" ? "delivered" : "live"}
                 </span>
                 <span className="text-[12px] text-[#94A3B8]">{stat.change}</span>
               </div>

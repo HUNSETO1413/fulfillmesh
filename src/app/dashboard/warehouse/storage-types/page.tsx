@@ -28,10 +28,7 @@ const byCategory = [
   { name: "Security / Restricted", color: "#F59E0B" },
 ];
 
-const activity = [
-  { text: 'Storage type "Pick Zone" updated', info: "Configuration changed", time: "2h ago", color: "var(--color-teal)" },
-  { text: 'New storage type "Mezzanine" added', info: "Created by Admin", time: "5h ago", color: "var(--color-action-blue)" },
-];
+/* activity feed is derived from the loaded storage-type rows (see recentActivity) */
 
 /* utilBands computed dynamically */
 
@@ -111,6 +108,7 @@ export default function StorageTypesPage() {
   const [drawerRow, setDrawerRow] = useState<Row | null>(null);
   const [editRow, setEditRow] = useState<Row | null>(null);
   const [editDraft, setEditDraft] = useState<Draft>(emptyDraft);
+  const [activityOpen, setActivityOpen] = useState(false);
 
   /* ---- Computed stats from rows ---- */
   const stats = useMemo(() => {
@@ -167,6 +165,29 @@ export default function StorageTypesPage() {
   /* ---- Sidebar: Low utilization from rows ---- */
   const lowUtilDynamic = useMemo(() => {
     return rows.filter((r) => r.util < 40).map((r) => ({ code: r.code, name: r.name, util: `${r.util}%` }));
+  }, [rows]);
+
+  /* ---- Sidebar: Recent activity derived from the loaded rows ----
+     There is no separate activity-log entity, so we synthesize an honest feed
+     from each storage type's own status and utilization: inactive types and the
+     most/least utilized active types surface as noteworthy entries. */
+  const recentActivity = useMemo(() => {
+    type Entry = { code: string; text: string; info: string; color: string };
+    const entries: Entry[] = [];
+    for (const r of rows) {
+      if (r.status === "Inactive") {
+        entries.push({ code: r.code, text: `${r.name} is inactive`, info: `${r.code} • not accepting stock`, color: "#EF4444" });
+      } else if (r.util >= 80) {
+        entries.push({ code: r.code, text: `${r.name} at high utilization`, info: `${r.code} • ${r.util}% utilized`, color: "var(--color-teal)" });
+      } else if (r.util < 40) {
+        entries.push({ code: r.code, text: `${r.name} under-utilized`, info: `${r.code} • ${r.util}% utilized`, color: "#F59E0B" });
+      } else {
+        entries.push({ code: r.code, text: `${r.name} active`, info: `${r.code} • ${r.util}% utilized`, color: "var(--color-action-blue)" });
+      }
+    }
+    // Surface the most notable changes first: inactive, then highest utilization.
+    const rank = (e: Entry) => (e.color === "#EF4444" ? 0 : e.color === "var(--color-teal)" ? 1 : e.color === "#F59E0B" ? 2 : 3);
+    return entries.sort((a, b) => rank(a) - rank(b));
   }, [rows]);
 
   const filtered = useMemo(() => {
@@ -446,13 +467,13 @@ export default function StorageTypesPage() {
 
           {/* Recent Activity */}
           <div className={card + " p-5"}>
-            <div className="flex items-center justify-between mb-3"><h3 className="text-[14px] font-semibold text-text-primary">Recent Activity</h3><button onClick={() => toast("Showing full activity log", "info")} className="text-[12px] text-action-blue hover:underline">View all</button></div>
+            <div className="flex items-center justify-between mb-3"><h3 className="text-[14px] font-semibold text-text-primary">Recent Activity</h3>{recentActivity.length > 4 && <button onClick={() => setActivityOpen(true)} className="text-[12px] text-action-blue hover:underline">View all</button>}</div>
             <div className="space-y-3">
-              {activity.map((a, i) => (
-                <div key={i} className="flex items-start gap-2.5">
+              {recentActivity.length === 0 && <p className="text-[12px] text-text-muted">No storage-type activity yet.</p>}
+              {recentActivity.slice(0, 4).map((a) => (
+                <div key={a.code} className="flex items-start gap-2.5">
                   <span className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ backgroundColor: a.color }} />
                   <div className="flex-1"><p className="text-[12px] text-text-primary">{a.text}</p><p className="text-[11px] text-text-light">{a.info}</p></div>
-                  <span className="text-[11px] text-text-light shrink-0">{a.time}</span>
                 </div>
               ))}
             </div>
@@ -568,6 +589,32 @@ export default function StorageTypesPage() {
             </DrawerSection>
           </>
         )}
+      </Drawer>
+
+      {/* Recent activity drawer — derived from loaded storage-type rows */}
+      <Drawer
+        open={activityOpen}
+        onClose={() => setActivityOpen(false)}
+        title="Storage Type Activity"
+        subtitle={`${recentActivity.length} storage type${recentActivity.length === 1 ? "" : "s"}`}
+        footer={
+          <button onClick={() => setActivityOpen(false)} className="px-4 py-2 text-[13px] font-medium text-text-primary bg-white border border-border-soft rounded-lg hover:bg-soft-bg">Close</button>
+        }
+      >
+        <DrawerSection title="Recent Activity">
+          {recentActivity.length === 0 ? (
+            <p className="text-[13px] text-text-muted py-2">No storage-type activity to show.</p>
+          ) : (
+            <div className="space-y-3">
+              {recentActivity.map((a) => (
+                <div key={a.code} className="flex items-start gap-2.5">
+                  <span className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ backgroundColor: a.color }} />
+                  <div className="flex-1 min-w-0"><p className="text-[12px] text-text-primary">{a.text}</p><p className="text-[11px] text-text-light">{a.info}</p></div>
+                </div>
+              ))}
+            </div>
+          )}
+        </DrawerSection>
       </Drawer>
 
       {/* Deactivate confirm */}

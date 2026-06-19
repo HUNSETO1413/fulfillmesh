@@ -1,12 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Package, Layers, AlertTriangle, XCircle,
   Search, Filter, Download, Plus,
-  ChevronDown, ChevronLeft, ChevronRight, ArrowUpRight, ArrowDownRight,
+  ChevronDown, ChevronLeft, ChevronRight,
   Pencil, Trash2, ChevronUp, ArrowUpDown,
 } from "lucide-react";
 import type { InventoryItem, StockStatus } from "@/types";
@@ -37,31 +37,33 @@ const emptyDraft: Draft = {
   onHand: "0", reserved: "0", available: "0", reorderPoint: "0", status: "In Stock",
 };
 
-function InventoryFields({ draft, set }: { draft: Draft; set: (d: Partial<Draft>) => void }) {
+type DraftErrors = Partial<Record<keyof Draft, string>>;
+
+function InventoryFields({ draft, set, errors }: { draft: Draft; set: (d: Partial<Draft>) => void; errors: DraftErrors }) {
   return (
     <div className="grid grid-cols-2 gap-4">
-      <Field label="SKU" required>
+      <Field label="SKU" required error={errors.sku}>
         <TextInput value={draft.sku} onChange={(e) => set({ sku: e.target.value })} placeholder="WB-750-SLV" />
       </Field>
-      <Field label="Product name" required>
+      <Field label="Product name" required error={errors.name}>
         <TextInput value={draft.name} onChange={(e) => set({ name: e.target.value })} placeholder="Insulated Water Bottle" />
       </Field>
-      <Field label="Warehouse" required>
+      <Field label="Warehouse" required error={errors.warehouse}>
         <TextInput value={draft.warehouse} onChange={(e) => set({ warehouse: e.target.value })} placeholder="Los Angeles, CA" />
       </Field>
       <Field label="Location">
         <TextInput value={draft.location} onChange={(e) => set({ location: e.target.value })} placeholder="LA-A12-R04-B02" />
       </Field>
-      <Field label="On hand">
+      <Field label="On hand" error={errors.onHand}>
         <NumberInput value={draft.onHand} onChange={(e) => set({ onHand: e.target.value })} step="1" min="0" />
       </Field>
-      <Field label="Reserved">
+      <Field label="Reserved" error={errors.reserved}>
         <NumberInput value={draft.reserved} onChange={(e) => set({ reserved: e.target.value })} step="1" min="0" />
       </Field>
-      <Field label="Available">
+      <Field label="Available" error={errors.available}>
         <NumberInput value={draft.available} onChange={(e) => set({ available: e.target.value })} step="1" min="0" />
       </Field>
-      <Field label="Reorder point">
+      <Field label="Reorder point" error={errors.reorderPoint}>
         <NumberInput value={draft.reorderPoint} onChange={(e) => set({ reorderPoint: e.target.value })} step="1" min="0" />
       </Field>
       <div className="col-span-2">
@@ -72,13 +74,6 @@ function InventoryFields({ draft, set }: { draft: Draft; set: (d: Partial<Draft>
     </div>
   );
 }
-
-const stats = [
-  { title: "Total Products", value: "2,458", change: "+7.2%", note: "vs May 1", positive: true, icon: Package, iconBg: "bg-[#3B82F6]/10", iconColor: "text-[#3B82F6]" },
-  { title: "Total Stock", value: "156,782", change: "+4.6%", note: "vs May 5", positive: true, icon: Layers, iconBg: "bg-[#10B981]/10", iconColor: "text-[#10B981]" },
-  { title: "Low Stock Items", value: "128", change: "-3.7%", note: "vs May 5", positive: false, icon: AlertTriangle, iconBg: "bg-[#F59E0B]/10", iconColor: "text-[#F59E0B]" },
-  { title: "Out of Stock", value: "23", change: "+12.5%", note: "vs May 5", positive: false, icon: XCircle, iconBg: "bg-[#EF4444]/10", iconColor: "text-[#EF4444]" },
-];
 
 const statusTabs: { label: string; value: string }[] = [
   { label: "All", value: "All" },
@@ -124,15 +119,43 @@ export default function InventoryView({ items }: { items: InventoryItem[] }) {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<InventoryItem | null>(null);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const [formErrors, setFormErrors] = useState<DraftErrors>({});
   const [busy, setBusy] = useState(false);
 
   // delete
   const [deleting, setDeleting] = useState<InventoryItem | null>(null);
 
+  // Close any open custom dropdown when Escape is pressed.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setFilterOpen(false);
+        setPageSizeOpen(false);
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+
   const warehouses = useMemo(
     () => [...new Set(items.map((it) => it.warehouse))].sort(),
     [items],
   );
+
+  // Stat cards computed from the real inventory rows: total SKUs, total on-hand
+  // units across all warehouses, low-stock count, and out-of-stock count.
+  const stats = useMemo(() => {
+    const totalSkus = items.length;
+    const totalStock = items.reduce((s, it) => s + it.onHand, 0);
+    const lowStock = items.filter((it) => it.status === "Low Stock").length;
+    const outOfStock = items.filter((it) => it.status === "Out of Stock").length;
+    return [
+      { title: "Total SKUs", value: formatNumber(totalSkus), icon: Package, iconBg: "bg-[#3B82F6]/10", iconColor: "text-[#3B82F6]" },
+      { title: "Total Stock", value: formatNumber(totalStock), icon: Layers, iconBg: "bg-[#10B981]/10", iconColor: "text-[#10B981]" },
+      { title: "Low Stock Items", value: formatNumber(lowStock), icon: AlertTriangle, iconBg: "bg-[#F59E0B]/10", iconColor: "text-[#F59E0B]" },
+      { title: "Out of Stock", value: formatNumber(outOfStock), icon: XCircle, iconBg: "bg-[#EF4444]/10", iconColor: "text-[#EF4444]" },
+    ];
+  }, [items]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -242,12 +265,14 @@ export default function InventoryView({ items }: { items: InventoryItem[] }) {
 
   function openCreate() {
     setEditing(null);
+    setFormErrors({});
     setDraft(emptyDraft);
     setFormOpen(true);
   }
 
   function openEdit(it: InventoryItem) {
     setEditing(it);
+    setFormErrors({});
     setDraft({
       sku: it.sku,
       name: it.name,
@@ -262,10 +287,28 @@ export default function InventoryView({ items }: { items: InventoryItem[] }) {
     setFormOpen(true);
   }
 
+  function validateDraft(): DraftErrors {
+    const errs: DraftErrors = {};
+    if (!draft.sku.trim()) errs.sku = "SKU is required";
+    if (!draft.name.trim()) errs.name = "Product name is required";
+    if (!draft.warehouse.trim()) errs.warehouse = "Warehouse is required";
+    const numKeys: (keyof Draft)[] = ["onHand", "reserved", "available", "reorderPoint"];
+    for (const key of numKeys) {
+      const raw = String(draft[key]);
+      if (raw.trim() === "") continue;
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 0) errs[key] = "Enter a valid non-negative number";
+    }
+    return errs;
+  }
+
   async function saveItem() {
-    if (!draft.sku.trim()) { toast("SKU is required", "error"); return; }
-    if (!draft.name.trim()) { toast("Product name is required", "error"); return; }
-    if (!draft.warehouse.trim()) { toast("Warehouse is required", "error"); return; }
+    const errs = validateDraft();
+    setFormErrors(errs);
+    if (Object.keys(errs).length > 0) {
+      toast("Please fix the highlighted fields", "error");
+      return;
+    }
     setBusy(true);
     const payload = {
       sku: draft.sku.trim(),
@@ -356,7 +399,6 @@ export default function InventoryView({ items }: { items: InventoryItem[] }) {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map((stat) => {
           const Icon = stat.icon;
-          const Arrow = stat.positive ? ArrowUpRight : ArrowDownRight;
           return (
             <div key={stat.title} className="bg-white rounded-xl border border-[#E2E8F0] p-5 shadow-[0_1px_3px_rgba(0,0,0,0.1)]">
               <div className="flex items-center justify-between mb-3">
@@ -367,11 +409,7 @@ export default function InventoryView({ items }: { items: InventoryItem[] }) {
               </div>
               <p className="text-[28px] font-bold text-[#1E293B]">{stat.value}</p>
               <div className="flex items-center gap-1 mt-1">
-                <Arrow className={`w-3.5 h-3.5 ${stat.positive ? "text-[#10B981]" : "text-[#EF4444]"}`} />
-                <span className={`text-[12px] font-medium ${stat.positive ? "text-[#10B981]" : "text-[#EF4444]"}`}>
-                  {stat.change}
-                </span>
-                <span className="text-[11px] text-[#94A3B8]">{stat.note}</span>
+                <span className="text-[11px] text-[#94A3B8]">Across all warehouses</span>
               </div>
             </div>
           );
@@ -658,7 +696,7 @@ export default function InventoryView({ items }: { items: InventoryItem[] }) {
           </>
         }
       >
-        <InventoryFields draft={draft} set={(d) => setDraft((prev) => ({ ...prev, ...d }))} />
+        <InventoryFields draft={draft} set={(d) => setDraft((prev) => ({ ...prev, ...d }))} errors={formErrors} />
       </Modal>
 
       {/* Delete confirm */}

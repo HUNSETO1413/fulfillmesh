@@ -11,10 +11,8 @@ import {
   Search,
   SlidersHorizontal,
   MoreVertical,
-  ArrowUpRight,
   CheckCircle2,
   Share2,
-  Star,
   Archive,
   FolderPlus,
   FileInput,
@@ -39,14 +37,6 @@ import { Field, TextInput, Select, PrimaryButton, SecondaryButton } from "@/comp
 import { useToast } from "@/components/dashboard/Toast";
 import { api } from "@/lib/client";
 import type { DocumentRecord } from "@/types";
-
-const stats = [
-  { title: "Total Documents", value: "1,248", sub: "12.6% vs last 30 days", subColor: "#10B981", icon: Folder, color: "#3B82F6" },
-  { title: "By Me", value: "236", sub: "18.9% of total", subColor: "#94A3B8", icon: CheckCircle2, color: "#10B981" },
-  { title: "Shared with Me", value: "312", sub: "25.0% of total", subColor: "#94A3B8", icon: Share2, color: "#8B5CF6" },
-  { title: "Important", value: "156", sub: "12.5% of total", subColor: "#94A3B8", icon: Star, color: "#F59E0B" },
-  { title: "Archived", value: "544", sub: "43.6% of total", subColor: "#94A3B8", icon: Archive, color: "#64748B" },
-];
 
 type DocType = "PDF" | "XLSX" | "DOCX";
 
@@ -108,26 +98,8 @@ function toDoc(rec: DocumentRecord): Doc {
   };
 }
 
-const byCategory = [
-  { label: "SOP", value: "374", pct: 30, color: "#3B82F6" },
-  { label: "Policy", value: "250", pct: 20, color: "#F59E0B" },
-  { label: "Template", value: "212", pct: 17, color: "#06B6D4" },
-  { label: "Report", value: "187", pct: 15, color: "#10B981" },
-  { label: "Contract", value: "150", pct: 12, color: "#EF4444" },
-  { label: "Checklist", value: "75", pct: 6, color: "#8B5CF6" },
-];
-
-const recentUploads = [
-  { name: "Inbound Shipments SOP.pdf", meta: "ATL1 · SOP", icon: FileText, color: "#EF4444" },
-  { name: "Inventory Template.xlsx", meta: "Global · Template", icon: FileSpreadsheet, color: "#10B981" },
-  { name: "Client Onboarding Checklist.pdf", meta: "MIA1 · Checklist", icon: FileText, color: "#EF4444" },
-];
-
-const storageUsage = [
-  { label: "Documents", value: "6.2 GB", pct: 62, color: "#3B82F6" },
-  { label: "Images", value: "1.5 GB", pct: 15, color: "#10B981" },
-  { label: "Archives", value: "0.9 GB", pct: 9, color: "#F59E0B" },
-];
+// Total plan storage used for the usage gauge (10 GB).
+const STORAGE_QUOTA_BYTES = 10 * 1024 * 1024 * 1024;
 
 function TypeIcon({ type }: { type: string }) {
   const t = type.toUpperCase();
@@ -251,6 +223,16 @@ export default function DocumentsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Close the row "more" menu on Escape (mirrors the outside-click overlay).
+  useEffect(() => {
+    if (!openMenu) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpenMenu(null);
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [openMenu]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return docs.filter((d) => {
@@ -311,12 +293,20 @@ export default function DocumentsPage() {
   function confirmDelete() {
     if (!deleting) return;
     const target = deleting;
+    // Snapshot prior state so we can roll back if the API call fails.
+    const prevDocs = docs;
+    const prevRecycled = recycled;
     setDocs((cur) => cur.filter((d) => d.id !== target.id));
     setRecycled((cur) => [target, ...cur.filter((d) => d.id !== target.id)]);
     setDeleting(null);
     api.del(`/api/documents/${target.id}`)
       .then(() => toast(`"${target.name}" deleted`))
-      .catch(() => toast(`Failed to delete "${target.name}"`, "error"));
+      .catch(() => {
+        // Restore the removed document and undo the recycle-bin entry.
+        setDocs(prevDocs);
+        setRecycled(prevRecycled);
+        toast(`Failed to delete "${target.name}"`, "error");
+      });
   }
 
   function archiveDoc(d: Doc) {
@@ -461,6 +451,45 @@ export default function DocumentsPage() {
     return { totalBytes, byCategory: toRows(byCat), byType: toRows(byType) };
   }, [docs]);
 
+  // Stat cards derived from the loaded documents — counts by status and total storage.
+  const statCards = useMemo(() => {
+    const total = docs.length;
+    const active = docs.filter((d) => d.status === "Active").length;
+    const draft = docs.filter((d) => d.status === "Draft").length;
+    const archived = docs.filter((d) => d.status === "Archived").length;
+    const pct = (n: number) => (total > 0 ? `${Math.round((n / total) * 100)}% of total` : "0% of total");
+    return [
+      { title: "Total Documents", value: total.toLocaleString(), sub: `${docs.length === 1 ? "1 document" : `${total.toLocaleString()} documents`}`, subColor: "#94A3B8", icon: Folder, color: "#3B82F6" },
+      { title: "Active", value: active.toLocaleString(), sub: pct(active), subColor: "#94A3B8", icon: CheckCircle2, color: "#10B981" },
+      { title: "Drafts", value: draft.toLocaleString(), sub: pct(draft), subColor: "#94A3B8", icon: FileText, color: "#8B5CF6" },
+      { title: "Archived", value: archived.toLocaleString(), sub: pct(archived), subColor: "#94A3B8", icon: Archive, color: "#64748B" },
+      { title: "Storage Used", value: formatBytesLong(storageStats.totalBytes), sub: `across ${total.toLocaleString()} file${total === 1 ? "" : "s"}`, subColor: "#94A3B8", icon: HardDrive, color: "#F59E0B" },
+    ];
+  }, [docs, storageStats.totalBytes]);
+
+  // Document counts per category for the donut chart (derived from loaded docs).
+  const categoryBreakdown = useMemo(() => {
+    const total = docs.length;
+    const counts = new Map<string, number>();
+    for (const d of docs) counts.set(d.category, (counts.get(d.category) ?? 0) + 1);
+    return Array.from(counts.entries())
+      .map(([label, count]) => ({
+        label,
+        value: count.toLocaleString(),
+        count,
+        pct: total > 0 ? Math.round((count / total) * 100) : 0,
+        color: CAT_COLORS[label] ?? "#94A3B8",
+      }))
+      .sort((a, b) => b.count - a.count);
+  }, [docs]);
+
+  // Most recent documents for the right-rail "Recent Uploads" panel.
+  // The API returns newest-first and new uploads are prepended, so the head of the list is most recent.
+  const recentDocs = useMemo(() => docs.slice(0, 3), [docs]);
+
+  // Storage usage gauge values against the plan quota.
+  const storageUsedPct = STORAGE_QUOTA_BYTES > 0 ? Math.min(100, Math.round((storageStats.totalBytes / STORAGE_QUOTA_BYTES) * 100)) : 0;
+
   const activeFilters: { label: string; clear: () => void }[] = [
     ...(catFilter ? [{ label: `Category: ${catFilter}`, clear: () => { setCatFilter(""); setPage(1); } }] : []),
     ...(typeFilter ? [{ label: `Type: ${typeFilter}`, clear: () => { setTypeFilter(""); setPage(1); } }] : []),
@@ -513,7 +542,7 @@ export default function DocumentsPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-5 gap-4">
-        {stats.map((s) => {
+        {statCards.map((s) => {
           const Icon = s.icon;
           return (
             <div key={s.title} className="bg-white rounded-xl border border-[#E2E8F0] shadow-[0_1px_3px_rgba(0,0,0,0.1)] p-5">
@@ -525,7 +554,6 @@ export default function DocumentsPage() {
               </div>
               <p className="text-[28px] font-bold text-[#1E293B]">{s.value}</p>
               <div className="flex items-center gap-1 mt-1">
-                {s.subColor === "#10B981" && <ArrowUpRight className="w-3.5 h-3.5 text-[#10B981]" />}
                 <span className="text-[12px] font-medium" style={{ color: s.subColor }}>{s.sub}</span>
               </div>
             </div>
@@ -541,15 +569,15 @@ export default function DocumentsPage() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94A3B8]" />
               <input type="text" value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }} placeholder="Search documents by name, type, or keyword..." className="w-full pl-9 pr-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#1E293B] placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/30 focus:border-[#3B82F6]" />
             </div>
-            <select value={catFilter} onChange={(e) => { setCatFilter(e.target.value); setPage(1); }} className="px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/30">
+            <select aria-label="Filter by category" value={catFilter} onChange={(e) => { setCatFilter(e.target.value); setPage(1); }} className="px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/30">
               <option value="">All Categories</option>
               {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
-            <select value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); setPage(1); }} className="px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/30">
+            <select aria-label="Filter by document type" value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); setPage(1); }} className="px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/30">
               <option value="">All Document Types</option>
               {DOC_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
-            <select value={whFilter} onChange={(e) => { setWhFilter(e.target.value); setPage(1); }} className="px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/30">
+            <select aria-label="Filter by warehouse" value={whFilter} onChange={(e) => { setWhFilter(e.target.value); setPage(1); }} className="px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[13px] text-[#64748B] hover:bg-[#F8FAFC] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/30">
               <option value="">All Warehouses</option>
               {WAREHOUSES.map((w) => <option key={w} value={w}>{w}</option>)}
             </select>
@@ -692,25 +720,29 @@ export default function DocumentsPage() {
               <div className="relative w-[130px] h-[130px]">
                 <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
                   <circle cx="50" cy="50" r="40" fill="none" stroke="#F1F5F9" strokeWidth="12" />
-                  {byCategory.map((c, i) => {
-                    const offset = byCategory.slice(0, i).reduce((s, x) => s + x.pct, 0);
+                  {categoryBreakdown.map((c, i) => {
+                    const offset = categoryBreakdown.slice(0, i).reduce((s, x) => s + x.pct, 0);
                     const dash = `${(c.pct / 100) * C} ${C - (c.pct / 100) * C}`;
-                    return <circle key={i} cx="50" cy="50" r="40" fill="none" stroke={c.color} strokeWidth="12" strokeDasharray={dash} strokeDashoffset={-(offset / 100) * C} />;
+                    return <circle key={c.label} cx="50" cy="50" r="40" fill="none" stroke={c.color} strokeWidth="12" strokeDasharray={dash} strokeDashoffset={-(offset / 100) * C} />;
                   })}
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <p className="text-[18px] font-bold text-[#1E293B]">1,248</p>
+                  <p className="text-[18px] font-bold text-[#1E293B]">{docs.length.toLocaleString()}</p>
                   <p className="text-[10px] text-[#94A3B8]">Total</p>
                 </div>
               </div>
             </div>
             <div className="space-y-2">
-              {byCategory.map((c) => (
-                <div key={c.label} className="flex items-center justify-between text-[12px]">
-                  <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: c.color }} /><span className="text-[#64748B]">{c.label}</span></div>
-                  <span className="font-medium text-[#1E293B]">{c.pct}% ({c.value})</span>
-                </div>
-              ))}
+              {categoryBreakdown.length === 0 ? (
+                <p className="text-center text-[12px] text-[#94A3B8]">No documents yet.</p>
+              ) : (
+                categoryBreakdown.map((c) => (
+                  <div key={c.label} className="flex items-center justify-between text-[12px]">
+                    <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: c.color }} /><span className="text-[#64748B]">{c.label}</span></div>
+                    <span className="font-medium text-[#1E293B]">{c.pct}% ({c.value})</span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 
@@ -721,18 +753,19 @@ export default function DocumentsPage() {
               <button onClick={() => setUploadsOpen(true)} className="text-[12px] font-medium text-[#3B82F6] hover:underline">View all</button>
             </div>
             <div className="space-y-3">
-              {recentUploads.map((u) => {
-                const Icon = u.icon;
-                return (
-                  <div key={u.name} className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: `${u.color}1a` }}><Icon className="w-4 h-4" style={{ color: u.color }} /></div>
+              {recentDocs.length === 0 ? (
+                <p className="text-[12px] text-[#94A3B8]">No uploads yet.</p>
+              ) : (
+                recentDocs.map((u) => (
+                  <div key={u.id} className="flex items-center gap-2.5">
+                    <TypeIcon type={u.type} />
                     <div className="min-w-0">
                       <p className="text-[13px] font-medium text-[#1E293B] truncate">{u.name}</p>
-                      <p className="text-[11px] text-[#94A3B8]">{u.meta}</p>
+                      <p className="text-[11px] text-[#94A3B8] truncate">{u.warehouse} · {u.category}</p>
                     </div>
                   </div>
-                );
-              })}
+                ))
+              )}
             </div>
           </div>
 
@@ -740,17 +773,21 @@ export default function DocumentsPage() {
           <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-[0_1px_3px_rgba(0,0,0,0.1)] p-5">
             <div className="flex items-center justify-between mb-1">
               <h3 className="text-[14px] font-semibold text-[#1E293B]">Storage Usage</h3>
-              <span className="text-[12px] font-medium text-[#1E293B]">86%</span>
+              <span className="text-[12px] font-medium text-[#1E293B]">{storageUsedPct}%</span>
             </div>
-            <p className="text-[12px] text-[#94A3B8] mb-3">8.6 GB of 10 GB used</p>
+            <p className="text-[12px] text-[#94A3B8] mb-3">{formatBytesLong(storageStats.totalBytes)} of {formatBytesLong(STORAGE_QUOTA_BYTES)} used</p>
             <div className="space-y-2.5 mb-4">
-              {storageUsage.map((s) => (
-                <div key={s.label} className="flex items-center gap-2">
-                  <span className="text-[12px] text-[#64748B] w-20 shrink-0">{s.label}</span>
-                  <div className="flex-1 h-2 bg-[#F1F5F9] rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width: `${s.pct}%`, backgroundColor: s.color }} /></div>
-                  <span className="text-[12px] font-medium text-[#1E293B] w-12 text-right shrink-0">{s.value}</span>
-                </div>
-              ))}
+              {storageStats.byCategory.length === 0 ? (
+                <p className="text-[12px] text-[#94A3B8]">No files stored yet.</p>
+              ) : (
+                storageStats.byCategory.slice(0, 4).map((s) => (
+                  <div key={s.label} className="flex items-center gap-2">
+                    <span className="text-[12px] text-[#64748B] w-20 shrink-0 truncate">{s.label}</span>
+                    <div className="flex-1 h-2 bg-[#F1F5F9] rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width: `${s.pct}%`, backgroundColor: CAT_COLORS[s.label] ?? "#3B82F6" }} /></div>
+                    <span className="text-[12px] font-medium text-[#1E293B] w-14 text-right shrink-0">{formatBytesLong(s.bytes)}</span>
+                  </div>
+                ))
+              )}
             </div>
             <button onClick={() => setStorageOpen(true)} className="w-full py-2 bg-[#3B82F6] rounded-lg text-[13px] font-medium text-white hover:bg-[#2563EB]">Manage Storage</button>
           </div>
@@ -802,10 +839,10 @@ export default function DocumentsPage() {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Category">
-              <Select options={CATEGORIES} value={upload.category} onChange={(e) => setUpload((u) => ({ ...u, category: e.target.value }))} />
+              <Select options={CATEGORIES} value={upload.category} onChange={(e) => setUpload((u) => ({ ...u, category: e.target.value }))} aria-label="Document category" />
             </Field>
             <Field label="Warehouse">
-              <Select options={WAREHOUSES} value={upload.warehouse} onChange={(e) => setUpload((u) => ({ ...u, warehouse: e.target.value }))} />
+              <Select options={WAREHOUSES} value={upload.warehouse} onChange={(e) => setUpload((u) => ({ ...u, warehouse: e.target.value }))} aria-label="Document warehouse" />
             </Field>
           </div>
           <button onClick={() => fileInputRef.current?.click()} className="w-full border-2 border-dashed border-[#E2E8F0] rounded-lg px-4 py-5 text-center hover:border-[#3B82F6] hover:bg-[#F8FAFC] transition-colors">

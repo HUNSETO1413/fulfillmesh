@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -8,8 +8,6 @@ import {
   Tag,
   AlertTriangle,
   PieChart as PieIcon,
-  ArrowUpRight,
-  ArrowDownRight,
   Search,
   SlidersHorizontal,
   ChevronDown,
@@ -95,27 +93,29 @@ const emptyDraft: Draft = {
   sku: "", name: "", category: "", price: "", cost: "", stock: "0", status: "In Stock", supplier: "",
 };
 
-function ProductFields({ draft, set, categories }: { draft: Draft; set: (d: Partial<Draft>) => void; categories: string[] }) {
+type DraftErrors = Partial<Record<keyof Draft, string>>;
+
+function ProductFields({ draft, set, categories, errors }: { draft: Draft; set: (d: Partial<Draft>) => void; categories: string[]; errors: DraftErrors }) {
   return (
     <div className="grid grid-cols-2 gap-4">
       <div className="col-span-2">
-        <Field label="Product name" required>
+        <Field label="Product name" required error={errors.name}>
           <TextInput value={draft.name} onChange={(e) => set({ name: e.target.value })} placeholder="Insulated Water Bottle" />
         </Field>
       </div>
-      <Field label="SKU" required>
+      <Field label="SKU" required error={errors.sku}>
         <TextInput value={draft.sku} onChange={(e) => set({ sku: e.target.value })} placeholder="WB-750-SLV" />
       </Field>
-      <Field label="Category" required>
+      <Field label="Category" required error={errors.category}>
         <Select options={categories} value={draft.category} onChange={(e) => set({ category: e.target.value })} />
       </Field>
-      <Field label="Selling price (USD)">
+      <Field label="Selling price (USD)" error={errors.price}>
         <NumberInput value={draft.price} onChange={(e) => set({ price: e.target.value })} placeholder="0.00" step="0.01" min="0" />
       </Field>
-      <Field label="Unit cost (USD)">
+      <Field label="Unit cost (USD)" error={errors.cost}>
         <NumberInput value={draft.cost} onChange={(e) => set({ cost: e.target.value })} placeholder="0.00" step="0.01" min="0" />
       </Field>
-      <Field label="Stock">
+      <Field label="Stock" error={errors.stock}>
         <NumberInput value={draft.stock} onChange={(e) => set({ stock: e.target.value })} placeholder="0" step="1" min="0" />
       </Field>
       <Field label="Status">
@@ -130,21 +130,9 @@ function ProductFields({ draft, set, categories }: { draft: Draft; set: (d: Part
   );
 }
 
-const stats = [
-  { title: "Total Products", value: "5,842", change: "6.3%", positive: true, sub: "vs May 5 – May 11", icon: Package, iconBg: "bg-[#0057D8]/10", iconColor: "text-[#0057D8]" },
-  { title: "Active SKUs", value: "4,968", change: "8.1%", positive: true, sub: "vs May 5 – May 11", icon: Tag, iconBg: "bg-[#00B894]/10", iconColor: "text-[#00B894]" },
-  { title: "Low Stock Alerts", value: "128", change: "12.4%", positive: false, sub: "vs May 5 – May 11", icon: AlertTriangle, iconBg: "bg-[#F59E0B]/10", iconColor: "text-[#F59E0B]" },
-  { title: "Avg Margin", value: "32.7%", change: "2.6pp", positive: true, sub: "vs May 5 – May 11", icon: PieIcon, iconBg: "bg-[#7C6FF6]/10", iconColor: "text-[#7C6FF6]" },
-];
-
-const distribution = [
-  { name: "Electronics", pct: 28.5, color: "#0057D8" },
-  { name: "Home & Kitchen", pct: 22.3, color: "#00B894" },
-  { name: "Apparel", pct: 16.9, color: "#7C6FF6" },
-  { name: "Beauty", pct: 11.0, color: "#7CB7FF" },
-  { name: "Sports", pct: 7.1, color: "#F59E0B" },
-  { name: "Other", pct: 14.2, color: "#D9E5F2" },
-];
+// Distribution slice colors, applied in order to the largest categories.
+const DIST_COLORS = ["#0057D8", "#00B894", "#7C6FF6", "#7CB7FF", "#F59E0B"];
+const DIST_OTHER_COLOR = "#D9E5F2";
 
 const catStyles = [
   "bg-[#0057D8]/10 text-[#0057D8]",
@@ -213,6 +201,7 @@ export default function ProductsView({ items }: { items: Product[] }) {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const [formErrors, setFormErrors] = useState<DraftErrors>({});
   const [busy, setBusy] = useState(false);
 
   // delete
@@ -245,6 +234,61 @@ export default function ProductsView({ items }: { items: Product[] }) {
     () => [...new Set(items.map((p) => p.supplier).filter((s): s is string => !!s))].sort((a, b) => a.localeCompare(b)),
     [items],
   );
+
+  // Stat cards computed from the real catalog: total products, active SKUs
+  // (anything not out of stock), low-stock alerts, and the average gross margin
+  // across products that carry both a price and a cost.
+  const stats = useMemo(() => {
+    const total = items.length;
+    const activeSkus = items.filter((p) => p.status !== "Out of Stock").length;
+    const lowStock = items.filter((p) => p.status === "Low Stock").length;
+    const withMargin = items.filter((p) => p.cost != null && p.price > 0);
+    const avgMargin =
+      withMargin.length > 0
+        ? withMargin.reduce((s, p) => s + ((p.price - (p.cost ?? 0)) / p.price) * 100, 0) / withMargin.length
+        : 0;
+    return [
+      { title: "Total Products", value: formatNumber(total), icon: Package, iconBg: "bg-[#0057D8]/10", iconColor: "text-[#0057D8]" },
+      { title: "Active SKUs", value: formatNumber(activeSkus), icon: Tag, iconBg: "bg-[#00B894]/10", iconColor: "text-[#00B894]" },
+      { title: "Low Stock Alerts", value: formatNumber(lowStock), icon: AlertTriangle, iconBg: "bg-[#F59E0B]/10", iconColor: "text-[#F59E0B]" },
+      { title: "Avg Margin", value: withMargin.length ? `${avgMargin.toFixed(1)}%` : "—", icon: PieIcon, iconBg: "bg-[#7C6FF6]/10", iconColor: "text-[#7C6FF6]" },
+    ];
+  }, [items]);
+
+  // Category share computed from the catalog: the five largest categories keep
+  // their own slice, everything else collapses into "Other".
+  const distribution = useMemo(() => {
+    const total = items.length;
+    if (total === 0) return [] as { name: string; pct: number; color: string }[];
+    const counts = new Map<string, number>();
+    for (const p of items) counts.set(p.category, (counts.get(p.category) ?? 0) + 1);
+    const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+    const top = ranked.slice(0, DIST_COLORS.length);
+    const rest = ranked.slice(DIST_COLORS.length);
+    const slices = top.map(([name, count], i) => ({
+      name,
+      pct: (count / total) * 100,
+      color: DIST_COLORS[i],
+    }));
+    const otherCount = rest.reduce((s, [, count]) => s + count, 0);
+    if (otherCount > 0) {
+      slices.push({ name: "Other", pct: (otherCount / total) * 100, color: DIST_OTHER_COLOR });
+    }
+    return slices;
+  }, [items]);
+
+  // Close any open custom dropdown when Escape is pressed.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setPageSizeOpen(false);
+        setFilterOpen(false);
+        setMoreOpen(false);
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
 
   const moreFiltersActive = priceMin.trim() !== "" || priceMax.trim() !== "" || supplierFilter !== "";
 
@@ -389,12 +433,14 @@ export default function ProductsView({ items }: { items: Product[] }) {
 
   function openCreate() {
     setEditing(null);
+    setFormErrors({});
     setDraft({ ...emptyDraft, category: allCategories[0] ?? "" });
     setFormOpen(true);
   }
 
   function openEdit(p: Product) {
     setEditing(p);
+    setFormErrors({});
     setDraft({
       sku: p.sku,
       name: p.name,
@@ -408,10 +454,29 @@ export default function ProductsView({ items }: { items: Product[] }) {
     setFormOpen(true);
   }
 
+  function validateDraft(): DraftErrors {
+    const errs: DraftErrors = {};
+    if (!draft.name.trim()) errs.name = "Product name is required";
+    if (!draft.sku.trim()) errs.sku = "SKU is required";
+    if (!draft.category.trim()) errs.category = "Category is required";
+    const numField = (raw: string): "empty" | "invalid" | "ok" => {
+      if (raw.trim() === "") return "empty";
+      const n = Number(raw);
+      return Number.isFinite(n) && n >= 0 ? "ok" : "invalid";
+    };
+    if (numField(draft.price) === "invalid") errs.price = "Enter a valid non-negative price";
+    if (numField(draft.cost) === "invalid") errs.cost = "Enter a valid non-negative cost";
+    if (numField(draft.stock) === "invalid") errs.stock = "Enter a valid non-negative quantity";
+    return errs;
+  }
+
   async function saveProduct() {
-    if (!draft.name.trim()) { toast("Product name is required", "error"); return; }
-    if (!draft.sku.trim()) { toast("SKU is required", "error"); return; }
-    if (!draft.category.trim()) { toast("Category is required", "error"); return; }
+    const errs = validateDraft();
+    setFormErrors(errs);
+    if (Object.keys(errs).length > 0) {
+      toast("Please fix the highlighted fields", "error");
+      return;
+    }
     setBusy(true);
     const payload = {
       sku: draft.sku.trim(),
@@ -529,9 +594,7 @@ export default function ProductsView({ items }: { items: Product[] }) {
               </div>
               <p className="text-[28px] font-bold text-[#061A3D] leading-none">{s.value}</p>
               <div className="flex items-center gap-1 mt-2">
-                {s.positive ? <ArrowUpRight className="w-3.5 h-3.5 text-[#00B894]" /> : <ArrowDownRight className="w-3.5 h-3.5 text-[#EF4444]" />}
-                <span className={`text-[12px] font-medium ${s.positive ? "text-[#00B894]" : "text-[#EF4444]"}`}>{s.change}</span>
-                <span className="text-[11px] text-[#9AA8B8]">{s.sub}</span>
+                <span className="text-[11px] text-[#9AA8B8]">Across the catalog</span>
               </div>
             </div>
           );
@@ -682,7 +745,7 @@ export default function ProductsView({ items }: { items: Product[] }) {
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="text-center">
                   <p className="text-[10px] text-[#9AA8B8]">Total</p>
-                  <p className="text-[16px] font-bold text-[#061A3D]">5,842</p>
+                  <p className="text-[16px] font-bold text-[#061A3D]">{formatNumber(items.length)}</p>
                 </div>
               </div>
             </div>
@@ -693,7 +756,7 @@ export default function ProductsView({ items }: { items: Product[] }) {
                     <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
                     <span className="text-[#66758C] truncate">{d.name}</span>
                   </div>
-                  <span className="font-medium text-[#061A3D] shrink-0 ml-2">{d.pct}%</span>
+                  <span className="font-medium text-[#061A3D] shrink-0 ml-2">{d.pct.toFixed(1)}%</span>
                 </div>
               ))}
             </div>
@@ -943,7 +1006,7 @@ export default function ProductsView({ items }: { items: Product[] }) {
           </>
         }
       >
-        <ProductFields draft={draft} set={(d) => setDraft((prev) => ({ ...prev, ...d }))} categories={allCategories} />
+        <ProductFields draft={draft} set={(d) => setDraft((prev) => ({ ...prev, ...d }))} categories={allCategories} errors={formErrors} />
       </Modal>
 
       {/* Add category modal */}

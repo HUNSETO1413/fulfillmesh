@@ -137,6 +137,17 @@ export default function DashboardSidebar({
     };
   }, []);
 
+  // Close the mobile sidebar overlay on Escape (matches the X / overlay-click
+  // affordances). Only active while the mobile menu is open.
+  useEffect(() => {
+    if (!mobileOpen) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onMobileClose();
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [mobileOpen, onMobileClose]);
+
   const isActive = (href: string) => {
     if (href === "/dashboard") return pathname === "/dashboard";
     return pathname === href || pathname.startsWith(href + "/");

@@ -6,7 +6,7 @@ import { api } from "@/lib/client";
 import {
   Mail, Bell, Settings, AlertTriangle, RotateCcw, CreditCard,
   Shield, FileText, ChevronDown, MessageSquare, Clock, Smartphone,
-  Webhook, Package, Truck, CheckCircle2, XCircle, Pause,
+  Package, Truck, CheckCircle2, XCircle, Pause,
 } from "lucide-react";
 
 /* ── types ── */
