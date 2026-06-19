@@ -1,8 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Send, ShieldCheck, Bell, Sparkles, Check, Mail, Loader2, CheckCircle2 } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import {
+  Send,
+  ShieldCheck,
+  Bell,
+  Sparkles,
+  Check,
+  Mail,
+  Loader2,
+  CheckCircle2,
+  XCircle,
+  ArrowRight,
+} from "lucide-react";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 
@@ -15,7 +27,12 @@ const reasons = [
   { icon: Sparkles, title: "Personalized Experience", desc: "Access tailored solutions and recommendations for your business." },
 ];
 
-export default function VerifyEmailPage() {
+type VerifyStatus = "idle" | "verifying" | "success" | "failed";
+
+function VerifyEmailInner() {
+  const searchParams = useSearchParams();
+  const token = searchParams.get("token");
+
   const [email, setEmail] = useState("hello@acmestore.com");
   const [editing, setEditing] = useState(false);
   const [draftEmail, setDraftEmail] = useState("");
@@ -23,6 +40,13 @@ export default function VerifyEmailPage() {
   const [resending, setResending] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const [resentNote, setResentNote] = useState<string | null>(null);
+  const [resendError, setResendError] = useState<string | null>(null);
+  const [devVerifyUrl, setDevVerifyUrl] = useState<string | null>(null);
+
+  // Token confirmation flow.
+  const [status, setStatus] = useState<VerifyStatus>(token ? "verifying" : "idle");
+  const [verifyError, setVerifyError] = useState<string | null>(null);
+  const verifiedRef = useRef(false);
 
   // Tick down the resend cooldown.
   useEffect(() => {
@@ -31,16 +55,66 @@ export default function VerifyEmailPage() {
     return () => window.clearTimeout(t);
   }, [cooldown]);
 
-  async function handleResend() {
-    if (resending || cooldown > 0) return;
+  // If the URL carries a token, confirm it immediately (once).
+  useEffect(() => {
+    if (!token || verifiedRef.current) return;
+    verifiedRef.current = true;
+    setStatus("verifying");
+    setVerifyError(null);
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/verify-email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token }),
+        });
+        const data: { ok?: boolean; error?: string } = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setVerifyError(data.error || "This verification link is invalid or has expired.");
+          setStatus("failed");
+          return;
+        }
+        setStatus("success");
+      } catch {
+        setVerifyError("Network error. Please check your connection and try again.");
+        setStatus("failed");
+      }
+    })();
+  }, [token]);
+
+  const sendVerification = useCallback(async (target: string) => {
     setResending(true);
     setResentNote(null);
-    // No verification-email endpoint exists yet; simulate the send + start a
-    // cooldown so the button is honestly non-spammable.
-    await new Promise((r) => setTimeout(r, 600));
-    setResending(false);
-    setCooldown(RESEND_COOLDOWN);
-    setResentNote(`Verification email resent to ${email}.`);
+    setResendError(null);
+    setDevVerifyUrl(null);
+    try {
+      const res = await fetch("/api/auth/verify-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: target }),
+      });
+      const data: { ok?: boolean; error?: string; devVerifyUrl?: string } = await res
+        .json()
+        .catch(() => ({}));
+      if (!res.ok) {
+        setResendError(data.error || "We couldn't send the email. Please try again.");
+        return false;
+      }
+      setResentNote(`Verification email sent to ${target}.`);
+      setDevVerifyUrl(data.devVerifyUrl ?? null);
+      setCooldown(RESEND_COOLDOWN);
+      return true;
+    } catch {
+      setResendError("Network error. Please check your connection and try again.");
+      return false;
+    } finally {
+      setResending(false);
+    }
+  }, []);
+
+  async function handleResend() {
+    if (resending || cooldown > 0) return;
+    await sendVerification(email);
   }
 
   function startEditing() {
@@ -49,7 +123,7 @@ export default function VerifyEmailPage() {
     setEditing(true);
   }
 
-  function saveEmail(e: React.FormEvent) {
+  async function saveEmail(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = draftEmail.trim();
     if (!EMAIL_RE.test(trimmed)) {
@@ -58,8 +132,7 @@ export default function VerifyEmailPage() {
     }
     setEmail(trimmed);
     setEditing(false);
-    setResentNote(`Verification email sent to ${trimmed}.`);
-    setCooldown(RESEND_COOLDOWN);
+    await sendVerification(trimmed);
   }
 
   return (
@@ -119,6 +192,47 @@ export default function VerifyEmailPage() {
             <p className="mt-4 text-sm text-text-muted max-w-md mx-auto leading-relaxed">
               Please click the link in the email to verify your account and get started with FulfillMesh.
             </p>
+
+            {/* Token confirmation status (only when a ?token= is present) */}
+            {token && status !== "idle" && (
+              <div
+                className={`mt-6 rounded-xl border p-5 max-w-md mx-auto text-center ${
+                  status === "success"
+                    ? "border-teal/30 bg-teal/5"
+                    : status === "failed"
+                      ? "border-red-200 bg-red-50"
+                      : "border-border-soft bg-soft-bg"
+                }`}
+                role="status"
+                aria-live="polite"
+              >
+                {status === "verifying" && (
+                  <p className="inline-flex items-center justify-center gap-2 text-sm font-semibold text-deep-navy">
+                    <Loader2 className="w-4 h-4 animate-spin text-action-blue" />
+                    Verifying your email…
+                  </p>
+                )}
+                {status === "success" && (
+                  <>
+                    <p className="inline-flex items-center justify-center gap-2 text-sm font-semibold text-teal">
+                      <CheckCircle2 className="w-4 h-4" /> Your email has been verified!
+                    </p>
+                    <Link
+                      href="/login"
+                      className="mt-4 inline-flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-lg bg-navy text-white text-sm font-semibold hover:bg-navy/90 transition-colors"
+                    >
+                      Continue to sign in <ArrowRight className="w-4 h-4" />
+                    </Link>
+                  </>
+                )}
+                {status === "failed" && (
+                  <p className="inline-flex items-center justify-center gap-2 text-sm font-medium text-red-600">
+                    <XCircle className="w-4 h-4" />
+                    {verifyError ?? "This verification link is invalid or has expired."}
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Resend card */}
             <div className="mt-10 rounded-xl border border-border-soft bg-soft-bg p-6 max-w-md mx-auto text-center">
@@ -192,6 +306,24 @@ export default function VerifyEmailPage() {
                       <CheckCircle2 className="w-4 h-4" /> {resentNote}
                     </p>
                   )}
+                  {resendError && (
+                    <p className="mt-4 inline-flex items-center justify-center gap-1.5 text-sm font-medium text-red-600" role="alert">
+                      <XCircle className="w-4 h-4" /> {resendError}
+                    </p>
+                  )}
+                  {devVerifyUrl && (
+                    <div className="mt-4 rounded-lg border border-dashed border-action-blue/40 bg-action-blue/5 p-3">
+                      <p className="text-xs font-semibold text-text-muted">
+                        Development convenience — no email is actually sent in this environment.
+                      </p>
+                      <Link
+                        href={devVerifyUrl}
+                        className="mt-1.5 inline-flex items-center gap-1.5 text-sm font-semibold text-action-blue hover:underline"
+                      >
+                        <ArrowRight className="w-4 h-4" /> Open verification link
+                      </Link>
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -227,5 +359,13 @@ export default function VerifyEmailPage() {
 
       <Footer />
     </>
+  );
+}
+
+export default function VerifyEmailPage() {
+  return (
+    <Suspense fallback={null}>
+      <VerifyEmailInner />
+    </Suspense>
   );
 }

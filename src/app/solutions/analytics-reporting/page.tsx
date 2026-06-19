@@ -145,13 +145,12 @@ export default function AnalyticsReportingPage() {
           </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {features.map((f) => (
-              <div key={f.title} className="bg-white rounded-xl p-7 border border-[#E2E8F0] hover:shadow-card transition-all group">
+              <div key={f.title} className="bg-white rounded-xl p-7 border border-[#E2E8F0] hover:shadow-card transition-all">
                 <div className="flex items-start gap-4">
                   <div className="w-12 h-12 rounded-xl bg-action-blue/10 flex items-center justify-center shrink-0"><f.icon className="w-5 h-5 text-action-blue" /></div>
                   <div>
                     <h3 className="text-[16px] font-bold text-deep-navy">{f.title}</h3>
                     <p className="mt-2 text-[14px] text-text-body leading-relaxed">{f.desc}</p>
-                    <span className="mt-4 inline-flex items-center gap-1.5 text-[13px] font-semibold text-action-blue group-hover:gap-2.5 transition-all">Learn more <ArrowRight className="w-3.5 h-3.5" /></span>
                   </div>
                 </div>
               </div>

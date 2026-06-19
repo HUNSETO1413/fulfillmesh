@@ -2,21 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import {
   Check,
-  Clock,
-  Globe,
-  LayoutDashboard,
-  ShoppingCart,
-  Boxes,
-  Warehouse,
-  Truck,
-  Plug,
-  Info,
   ArrowRight,
-  Bell,
   TrendingUp,
   Shield,
 } from "lucide-react";
 import { pageMetadata } from "@/lib/seo";
+import StatusBoard from "./StatusBoard";
+import StatusSubscribe from "./StatusSubscribe";
 
 export const metadata: Metadata = pageMetadata({
   title: "System Status",
@@ -31,33 +23,6 @@ export const metadata: Metadata = pageMetadata({
     "incident history",
   ],
 });
-
-const services = [
-  { name: "Website", icon: Globe },
-  { name: "Customer Dashboard", icon: LayoutDashboard },
-  { name: "Order Management", icon: ShoppingCart },
-  { name: "Inventory Management", icon: Boxes },
-  { name: "Warehousing", icon: Warehouse },
-  { name: "Shipping", icon: Truck },
-  { name: "Integrations (API)", icon: Plug },
-];
-
-function Sparkline() {
-  const heights = [
-    78, 92, 70, 96, 84, 100, 76, 90, 82, 98, 72, 94, 86, 100, 74, 88, 80, 96,
-    70, 92, 84, 100, 76, 90,
-  ];
-  return (
-    <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 20 }}>
-      {heights.map((h, i) => (
-        <span
-          key={i}
-          style={{ width: 2, height: `${h}%`, borderRadius: 1, background: "#00B894", display: "block" }}
-        />
-      ))}
-    </div>
-  );
-}
 
 function HeroChart() {
   return (
@@ -121,51 +86,15 @@ export default function StatusPage() {
             <p className="mt-3 text-[16px] text-text-body">
               Real-time updates on the status of FulfillMesh services.
             </p>
-            <div className="mt-4 flex items-center gap-2 text-[13px] text-text-light">
-              <Clock className="w-3.5 h-3.5" />
-              Last updated: May 12, 2025 10:30 AM (UTC)
-            </div>
           </div>
           <div className="shrink-0 hidden md:flex">
             <HeroChart />
           </div>
         </div>
 
-        {/* Overall banner */}
-        <div className="mt-10 flex items-center gap-4 rounded-lg border border-[#10B981] bg-[#ECFDF5] px-5 py-4">
-          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#10B981] text-white">
-            <Check className="w-5 h-5" strokeWidth={3} />
-          </span>
-          <div>
-            <p className="text-lg font-semibold text-[#059669]">All Systems Operational</p>
-            <p className="text-sm text-[#6B7280]">Everything is functioning as expected. No active incidents.</p>
-          </div>
-        </div>
+        {/* Live status: last-updated, overall banner, and per-service health */}
+        <StatusBoard />
 
-        {/* System Status */}
-        <h2 className="mt-10 text-xl font-semibold text-[#1A202C]">System Status</h2>
-        <div className="mt-4 rounded-lg border border-[#E5E7EB] overflow-hidden">
-          {services.map((s, i) => (
-            <div
-              key={s.name}
-              className={`flex items-center gap-3 px-5 py-3.5 ${
-                i > 0 ? "border-t border-[#E5E7EB]" : ""
-              }`}
-            >
-              <span className="flex h-7 w-7 items-center justify-center rounded bg-[#EFF6FF] text-action-blue">
-                <s.icon className="w-3.5 h-3.5" />
-              </span>
-              <span className="text-sm font-medium text-[#374151]">{s.name}</span>
-              <Info className="w-3.5 h-3.5 text-[#9CA3AF] ml-0.5" />
-              <span className="ml-auto">
-                <span className="inline-flex items-center rounded-full bg-[#10B981] px-2.5 py-0.5 text-xs font-medium text-white">
-                  Operational
-                </span>
-              </span>
-              <Sparkline />
-            </div>
-          ))}
-        </div>
         <div className="mt-4 flex items-center justify-between text-sm">
           <Link href="/resources/help-center" className="inline-flex items-center gap-1.5 font-medium text-action-blue hover:underline">
             <TrendingUp className="w-4 h-4" /> View historical uptime
@@ -190,27 +119,7 @@ export default function StatusPage() {
         </div>
 
         {/* Subscribe */}
-        <div className="mt-4 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-5 py-4">
-          <div className="flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#EFF6FF] text-action-blue">
-              <Bell className="w-4 h-4" />
-            </span>
-            <div>
-              <p className="text-sm font-semibold text-[#1A202C]">Subscribe to Updates</p>
-              <p className="text-sm text-[#6B7280]">Get notified about incidents and maintenance.</p>
-            </div>
-          </div>
-          <div className="mt-3 flex gap-3">
-            <input
-              type="email"
-              placeholder="Enter your email"
-              className="flex-1 rounded-lg border border-[#D1D5DB] bg-white px-4 py-3 text-sm text-[#1F2937] outline-none placeholder:text-[#9CA3AF] focus:border-action-blue"
-            />
-            <button className="rounded-lg bg-action-blue px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-[#2563EB]">
-              Subscribe
-            </button>
-          </div>
-        </div>
+        <StatusSubscribe />
       </div>
     </div>
   );

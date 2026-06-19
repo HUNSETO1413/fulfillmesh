@@ -60,6 +60,7 @@ export default function ForgotPasswordPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [sentTo, setSentTo] = useState<string | null>(null);
+  const [devResetUrl, setDevResetUrl] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -74,11 +75,27 @@ export default function ForgotPasswordPage() {
       return;
     }
     setSubmitting(true);
-    // No password-reset endpoint exists yet, so we resolve client-side and show a
-    // confirmation. The brief flag below keeps the interaction honest about state.
-    await new Promise((r) => setTimeout(r, 600));
-    setSubmitting(false);
-    setSentTo(trimmed);
+    try {
+      const res = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: trimmed }),
+      });
+      const data: { ok?: boolean; error?: string; devResetUrl?: string } = await res
+        .json()
+        .catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "Something went wrong. Please try again.");
+        return;
+      }
+      // Always show the generic success regardless of whether the email exists.
+      setDevResetUrl(data.devResetUrl ?? null);
+      setSentTo(trimmed);
+    } catch {
+      setError("Network error. Please check your connection and try again.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -104,11 +121,25 @@ export default function ForgotPasswordPage() {
                       <span className="font-semibold text-deep-navy">{sentTo}</span>, we&apos;ve sent a secure link to
                       reset your password. The link expires in 1 hour.
                     </p>
+                    {devResetUrl && (
+                      <div className="mt-6 rounded-lg border border-dashed border-action-blue/40 bg-action-blue/5 p-4 text-center">
+                        <p className="text-xs font-semibold text-text-muted">
+                          Development convenience — no email is actually sent in this environment.
+                        </p>
+                        <Link
+                          href={devResetUrl}
+                          className="mt-2 inline-flex items-center gap-1.5 text-sm font-semibold text-action-blue hover:underline"
+                        >
+                          <ArrowRight className="w-4 h-4" /> Open reset link
+                        </Link>
+                      </div>
+                    )}
                     <button
                       type="button"
                       onClick={() => {
                         setSentTo(null);
                         setEmail("");
+                        setDevResetUrl(null);
                       }}
                       className="mt-7 w-full py-3 rounded-lg border border-border-blue text-deep-navy text-base font-semibold hover:bg-soft-bg transition-colors"
                     >

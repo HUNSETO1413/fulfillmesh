@@ -179,7 +179,6 @@ export default function OverseasWarehousingPage() {
                 </div>
                 <h3 className="text-[16px] font-bold text-deep-navy mb-2">{b.title}</h3>
                 <p className="text-[14px] text-text-body leading-relaxed">{b.desc}</p>
-                <span className="mt-3 inline-flex items-center gap-1 text-[13px] font-semibold text-action-blue">Learn more <ArrowRight className="w-3.5 h-3.5" /></span>
               </div>
             ))}
           </div>
@@ -200,7 +199,6 @@ export default function OverseasWarehousingPage() {
                 </div>
                 <h3 className="text-[16px] font-bold text-deep-navy">{f.title}</h3>
                 <p className="mt-2 text-[14px] text-text-body leading-relaxed max-w-[300px]">{f.desc}</p>
-                <span className="mt-3 inline-flex items-center gap-1 text-[13px] font-semibold text-action-blue">Learn more <ArrowRight className="w-3.5 h-3.5" /></span>
               </div>
             ))}
           </div>

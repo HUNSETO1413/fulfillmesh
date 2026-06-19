@@ -3,9 +3,10 @@ import Link from "next/link";
 import {
   ShieldCheck, Microscope, FileSearch, ClipboardCheck, Camera, AlertTriangle,
   Search, FileText, Wrench, Truck, ScanLine, Tag, Lock, Star,
-  CheckCircle2, ArrowRight, ChevronDown, Quote, TrendingUp,
+  CheckCircle2, ArrowRight, Quote, TrendingUp,
 } from "lucide-react";
 import { pageMetadata } from "@/lib/seo";
+import QualityControlFaq from "./QualityControlFaq";
 
 export const metadata: Metadata = pageMetadata({
   title: "Quality Control & Product Inspection Services",
@@ -67,13 +68,6 @@ const stats = [
   { value: "2.6x", label: "Fewer quality issues year over year" },
   { value: "98.6%", label: "Average quality score across all inspections" },
   { value: "100+", label: "Trusted by brands worldwide" },
-];
-
-const faqs = [
-  { q: "What inspection types do you offer?" },
-  { q: "How quickly are reports delivered?" },
-  { q: "Can I customize inspection checklists?" },
-  { q: "What happens if a product fails inspection?" },
 ];
 
 export default function QualityControlPage() {
@@ -191,7 +185,6 @@ export default function QualityControlPage() {
                 </div>
                 <h3 className="text-[15px] font-bold text-deep-navy">{f.title}</h3>
                 <p className="mt-2 text-[13px] text-text-body leading-relaxed">{f.desc}</p>
-                <span className="mt-3 inline-flex items-center gap-1 text-[13px] font-medium text-action-blue">Learn more <ArrowRight className="w-3.5 h-3.5" /></span>
               </div>
             ))}
           </div>
@@ -385,14 +378,7 @@ export default function QualityControlPage() {
       <section className="bg-white">
         <div className="max-w-[1000px] mx-auto px-6 py-20">
           <h2 className="text-[30px] font-bold text-deep-navy text-center mb-12">Questions? We&apos;ve got answers.</h2>
-          <div className="grid sm:grid-cols-2 gap-4">
-            {faqs.map((f) => (
-              <div key={f.q} className="bg-white rounded-xl border border-border-soft px-5 py-4 flex items-center justify-between">
-                <span className="text-[15px] font-semibold text-deep-navy pr-4">{f.q}</span>
-                <ChevronDown className="w-5 h-5 text-text-muted shrink-0" />
-              </div>
-            ))}
-          </div>
+          <QualityControlFaq />
         </div>
       </section>
 

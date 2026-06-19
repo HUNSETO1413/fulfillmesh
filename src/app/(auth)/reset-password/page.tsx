@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   Lock,
   Eye,
@@ -47,7 +48,10 @@ const securityBadges = [
   { icon: ShieldCheck, label: "Regular security assessments" },
 ];
 
-export default function ResetPasswordPage() {
+function ResetPasswordInner() {
+  const searchParams = useSearchParams();
+  const token = searchParams.get("token");
+
   const [show1, setShow1] = useState(false);
   const [show2, setShow2] = useState(false);
   const [password, setPassword] = useState("");
@@ -65,8 +69,14 @@ export default function ResetPasswordPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!allMet) {
-      setError("Your password doesn't meet all the requirements below.");
+    if (!token) {
+      setError("This reset link is invalid or has expired.");
+      return;
+    }
+    // The endpoint only requires ≥8 chars; we keep the richer checklist for UX
+    // but block submit on the minimum so the request always satisfies the API.
+    if (password.length < 8) {
+      setError("Your password must be at least 8 characters.");
       return;
     }
     if (password !== confirm) {
@@ -74,10 +84,23 @@ export default function ResetPasswordPage() {
       return;
     }
     setSubmitting(true);
-    // No reset endpoint exists yet; resolve client-side and confirm success.
-    await new Promise((r) => setTimeout(r, 600));
-    setSubmitting(false);
-    setDone(true);
+    try {
+      const res = await fetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, password }),
+      });
+      const data: { ok?: boolean; error?: string } = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "We couldn't reset your password. Please try again.");
+        return;
+      }
+      setDone(true);
+    } catch {
+      setError("Network error. Please check your connection and try again.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -97,7 +120,32 @@ export default function ResetPasswordPage() {
             {/* ===== Left: Form ===== */}
             <div className="lg:sticky lg:top-24">
               <div className="rounded-2xl border border-border-soft bg-white shadow-card p-8">
-                {done ? (
+                {!token ? (
+                  <div className="text-center">
+                    <div className="flex justify-center mb-6">
+                      <div className="w-14 h-14 rounded-xl bg-red-100 flex items-center justify-center">
+                        <KeyRound className="w-6 h-6 text-red-600" />
+                      </div>
+                    </div>
+                    <h1 className="text-3xl font-bold text-deep-navy">Invalid or expired link</h1>
+                    <p className="mt-3 text-base text-text-body leading-relaxed max-w-sm mx-auto">
+                      This password reset link is missing or no longer valid. Request a new link to
+                      continue.
+                    </p>
+                    <Link
+                      href="/forgot-password"
+                      className="mt-7 inline-flex w-full items-center justify-center py-3 rounded-lg bg-navy text-white text-base font-semibold hover:bg-navy/90 transition-colors"
+                    >
+                      Request a new link
+                    </Link>
+                    <Link
+                      href="/login"
+                      className="mt-3 inline-flex w-full items-center justify-center py-3 rounded-lg border border-border-blue text-deep-navy text-base font-semibold hover:bg-soft-bg transition-colors"
+                    >
+                      Back to sign in
+                    </Link>
+                  </div>
+                ) : done ? (
                   <div className="text-center">
                     <div className="flex justify-center mb-6">
                       <div className="w-14 h-14 rounded-xl bg-teal/10 flex items-center justify-center">
@@ -324,5 +372,13 @@ export default function ResetPasswordPage() {
 
       <Footer />
     </>
+  );
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={null}>
+      <ResetPasswordInner />
+    </Suspense>
   );
 }

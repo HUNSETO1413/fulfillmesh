@@ -2,11 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import {
   Search, Building2, Globe, ShieldCheck, FileText, Headphones, BarChart3,
-  Users, Box, ClipboardCheck, CheckCircle2, Layers, ArrowRight, ChevronDown,
+  Users, Box, ClipboardCheck, CheckCircle2, Layers, ArrowRight,
   Calendar,
 } from "lucide-react";
 import { pageMetadata } from "@/lib/seo";
 import DottedWorldMap from "../shipping-logistics/DottedWorldMap";
+import SupplierMatchingFaq from "./SupplierMatchingFaq";
 
 export const metadata: Metadata = pageMetadata({
   title: "Supplier Matching & China Sourcing",
@@ -67,13 +68,6 @@ const dashRows = [
   { cols: ["Suzhou Advanced Textiles", "China", "Apparel", "94%", "OEM", "18 days", "800", "$3.40"] },
   { cols: ["Qingdao Excellent Plastics", "China", "Plastic", "93%", "OEM, ODM", "16 days", "1,000", "$1.88"] },
   { cols: ["Vietnam Apparel Works", "Vietnam", "Apparel", "92%", "OEM", "22 days", "1,000", "$2.48"] },
-];
-
-const faqs = [
-  { q: "How do you vet your suppliers?" },
-  { q: "How much does Supplier Matching cost?" },
-  { q: "What if I don't find the right supplier?" },
-  { q: "Can you help with sampling and quality checks?" },
 ];
 
 const heroNodes = [
@@ -201,7 +195,6 @@ export default function SupplierMatchingPage() {
                   <div>
                     <h3 className="text-[15px] font-bold text-deep-navy">{f.title}</h3>
                     <p className="mt-2 text-[13px] text-text-body leading-relaxed">{f.desc}</p>
-                    <span className="mt-3 inline-flex items-center gap-1 text-[13px] font-medium text-action-blue">Learn more <ArrowRight className="w-3.5 h-3.5" /></span>
                   </div>
                 </div>
               </div>
@@ -291,7 +284,7 @@ export default function SupplierMatchingPage() {
                       </tbody>
                     </table>
                   </div>
-                  <button className="mt-3 text-[11px] font-semibold text-white bg-navy border border-transparent rounded-md px-3 py-1.5 hover:bg-deep-navy transition-colors">View Full Shortlist</button>
+                  <Link href="/book-a-demo" className="mt-3 inline-block text-[11px] font-semibold text-white bg-navy border border-transparent rounded-md px-3 py-1.5 hover:bg-deep-navy transition-colors">View Full Shortlist</Link>
                 </div>
               </div>
             </div>
@@ -332,14 +325,7 @@ export default function SupplierMatchingPage() {
       <section className="bg-white">
         <div className="max-w-[1000px] mx-auto px-6 py-20">
           <h2 className="text-[30px] font-bold text-deep-navy text-center mb-12">Questions? We&apos;ve got answers.</h2>
-          <div className="grid sm:grid-cols-2 gap-4">
-            {faqs.map((f) => (
-              <div key={f.q} className="bg-white rounded-xl border border-border-soft px-5 py-4 flex items-center justify-between">
-                <span className="text-[15px] font-semibold text-deep-navy pr-4">{f.q}</span>
-                <ChevronDown className="w-5 h-5 text-text-muted shrink-0" />
-              </div>
-            ))}
-          </div>
+          <SupplierMatchingFaq />
         </div>
       </section>
 

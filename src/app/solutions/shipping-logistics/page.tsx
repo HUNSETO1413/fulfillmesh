@@ -195,10 +195,7 @@ export default function ShippingLogisticsPage() {
                   <f.icon className="w-5 h-5 text-action-blue" />
                 </div>
                 <h3 className="text-[16px] font-bold text-deep-navy mb-1.5">{f.title}</h3>
-                <p className="text-[13px] text-text-body leading-relaxed mb-3">{f.desc}</p>
-                <span className="inline-flex items-center gap-1 text-[13px] font-medium text-action-blue">
-                  Learn more <ChevronRight className="w-3.5 h-3.5" />
-                </span>
+                <p className="text-[13px] text-text-body leading-relaxed">{f.desc}</p>
               </div>
             ))}
           </div>

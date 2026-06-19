@@ -159,7 +159,6 @@ export default function InventoryVisibilityPage() {
                   <div>
                     <h3 className="text-[15px] font-bold text-deep-navy">{f.title}</h3>
                     <p className="mt-2 text-[13px] text-text-body leading-relaxed">{f.desc}</p>
-                    <span className="mt-3 inline-flex items-center gap-1 text-[13px] font-medium text-action-blue">Learn more <ArrowRight className="w-3.5 h-3.5" /></span>
                   </div>
                 </div>
               </div>

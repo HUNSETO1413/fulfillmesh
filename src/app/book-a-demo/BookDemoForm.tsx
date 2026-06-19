@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { CheckCircle, Loader2, Lock } from "lucide-react";
 
 const inputBase =
@@ -12,8 +12,33 @@ const selectBase =
 
 const labelBase = "block text-[13px] font-medium text-text-primary mb-1.5";
 const req = <span className="text-red-500">*</span>;
+const errCls = "mt-1.5 text-[12px] font-medium text-red-600";
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function isValidUrl(value: string): boolean {
+  try {
+    const u = new URL(value.includes("://") ? value : `https://${value}`);
+    return !!u.hostname && u.hostname.includes(".");
+  } catch {
+    return false;
+  }
+}
+
+// Local YYYY-MM-DD for today (used for the date input's min + past-date check).
+function todayStr(): string {
+  const d = new Date();
+  const m = `${d.getMonth() + 1}`.padStart(2, "0");
+  const day = `${d.getDate()}`.padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+type FieldKey = "fullName" | "email" | "company" | "storeUrl" | "platform" | "volume" | "preferredDate" | "challenge";
+type FieldErrors = Partial<Record<FieldKey, string>>;
 
 export default function BookDemoForm() {
+  const today = todayStr();
+
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [company, setCompany] = useState("");
@@ -25,11 +50,47 @@ export default function BookDemoForm() {
   const [challenge, setChallenge] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errors, setErrors] = useState<FieldErrors>({});
   const [success, setSuccess] = useState(false);
+
+  const fieldRefs = useRef<Partial<Record<FieldKey, HTMLElement | null>>>({});
+
+  const clearError = (key: FieldKey) =>
+    setErrors((prev) => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+
+  function validate(): FieldErrors {
+    const next: FieldErrors = {};
+    if (!fullName.trim()) next.fullName = "Full name is required.";
+    if (!email.trim()) next.email = "Work email is required.";
+    else if (!EMAIL_RE.test(email.trim())) next.email = "Enter a valid email address.";
+    if (!company.trim()) next.company = "Company name is required.";
+    if (!storeUrl.trim()) next.storeUrl = "Store URL is required.";
+    else if (!isValidUrl(storeUrl.trim())) next.storeUrl = "Enter a valid store URL.";
+    if (!platform) next.platform = "Select your e-commerce platform.";
+    if (!volume) next.volume = "Select your average monthly orders.";
+    if (preferredDate && preferredDate < today) next.preferredDate = "Choose today or a future date.";
+    if (!challenge.trim()) next.challenge = "Let us know your main fulfillment challenge.";
+    return next;
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    const fieldErrors = validate();
+    if (Object.keys(fieldErrors).length > 0) {
+      setErrors(fieldErrors);
+      const firstKey = (Object.keys(fieldErrors) as FieldKey[])[0];
+      const el = fieldRefs.current[firstKey];
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      el?.focus({ preventScroll: true });
+      return;
+    }
+    setErrors({});
     setLoading(true);
     try {
       const res = await fetch("/api/forms/demo", {
@@ -76,36 +137,78 @@ export default function BookDemoForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-2xl border border-border-soft p-7 shadow-soft">
+    <form onSubmit={handleSubmit} noValidate className="rounded-2xl border border-border-soft p-7 shadow-soft">
       <h2 className="text-[20px] font-bold text-navy">Schedule your demo</h2>
       <p className="mt-1 text-[13px] text-text-muted mb-6">Fill out the form and we&apos;ll confirm your demo time.</p>
 
       <div className="grid sm:grid-cols-2 gap-4">
         <div>
           <label className={labelBase}>Full Name {req}</label>
-          <input type="text" required value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Enter your full name" className={inputBase} />
+          <input
+            ref={(el) => { fieldRefs.current.fullName = el; }}
+            type="text"
+            value={fullName}
+            onChange={(e) => { setFullName(e.target.value); clearError("fullName"); }}
+            placeholder="Enter your full name"
+            aria-invalid={!!errors.fullName}
+            className={inputBase}
+          />
+          {errors.fullName && <p className={errCls}>{errors.fullName}</p>}
         </div>
         <div>
           <label className={labelBase}>Work Email {req}</label>
-          <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@company.com" className={inputBase} />
+          <input
+            ref={(el) => { fieldRefs.current.email = el; }}
+            type="email"
+            value={email}
+            onChange={(e) => { setEmail(e.target.value); clearError("email"); }}
+            placeholder="name@company.com"
+            aria-invalid={!!errors.email}
+            className={inputBase}
+          />
+          {errors.email && <p className={errCls}>{errors.email}</p>}
         </div>
       </div>
 
       <div className="mt-4 grid sm:grid-cols-2 gap-4">
         <div>
           <label className={labelBase}>Company Name {req}</label>
-          <input type="text" required value={company} onChange={(e) => setCompany(e.target.value)} placeholder="Your company name" className={inputBase} />
+          <input
+            ref={(el) => { fieldRefs.current.company = el; }}
+            type="text"
+            value={company}
+            onChange={(e) => { setCompany(e.target.value); clearError("company"); }}
+            placeholder="Your company name"
+            aria-invalid={!!errors.company}
+            className={inputBase}
+          />
+          {errors.company && <p className={errCls}>{errors.company}</p>}
         </div>
         <div>
           <label className={labelBase}>Store URL {req}</label>
-          <input type="url" required value={storeUrl} onChange={(e) => setStoreUrl(e.target.value)} placeholder="https://yourstore.com" className={inputBase} />
+          <input
+            ref={(el) => { fieldRefs.current.storeUrl = el; }}
+            type="url"
+            value={storeUrl}
+            onChange={(e) => { setStoreUrl(e.target.value); clearError("storeUrl"); }}
+            placeholder="https://yourstore.com"
+            aria-invalid={!!errors.storeUrl}
+            className={inputBase}
+          />
+          {errors.storeUrl && <p className={errCls}>{errors.storeUrl}</p>}
         </div>
       </div>
 
       <div className="mt-4 grid sm:grid-cols-2 gap-4">
         <div>
           <label className={labelBase}>E-commerce Platform {req}</label>
-          <select required value={platform} onChange={(e) => setPlatform(e.target.value)} className={`${selectBase} ${platform ? "" : "text-text-light"}`}>
+          <select
+            ref={(el) => { fieldRefs.current.platform = el; }}
+            value={platform}
+            onChange={(e) => { setPlatform(e.target.value); clearError("platform"); }}
+            aria-invalid={!!errors.platform}
+            className={`${selectBase} ${platform ? "" : "text-text-light"}`}
+          >
             <option value="">Select your platform</option>
             <option>Shopify</option>
             <option>WooCommerce</option>
@@ -114,10 +217,17 @@ export default function BookDemoForm() {
             <option>Magento</option>
             <option>Custom / Other</option>
           </select>
+          {errors.platform && <p className={errCls}>{errors.platform}</p>}
         </div>
         <div>
           <label className={labelBase}>Average Monthly Orders {req}</label>
-          <select required value={volume} onChange={(e) => setVolume(e.target.value)} className={`${selectBase} ${volume ? "" : "text-text-light"}`}>
+          <select
+            ref={(el) => { fieldRefs.current.volume = el; }}
+            value={volume}
+            onChange={(e) => { setVolume(e.target.value); clearError("volume"); }}
+            aria-invalid={!!errors.volume}
+            className={`${selectBase} ${volume ? "" : "text-text-light"}`}
+          >
             <option value="">Select order volume</option>
             <option>Under 100</option>
             <option>100 - 500</option>
@@ -125,13 +235,23 @@ export default function BookDemoForm() {
             <option>2,000 - 10,000</option>
             <option>10,000+</option>
           </select>
+          {errors.volume && <p className={errCls}>{errors.volume}</p>}
         </div>
       </div>
 
       <div className="mt-4 grid sm:grid-cols-2 gap-4">
         <div>
           <label className={labelBase}>Preferred Date</label>
-          <input type="date" value={preferredDate} onChange={(e) => setPreferredDate(e.target.value)} className={`${inputBase} ${preferredDate ? "" : "text-text-light"}`} />
+          <input
+            ref={(el) => { fieldRefs.current.preferredDate = el; }}
+            type="date"
+            min={today}
+            value={preferredDate}
+            onChange={(e) => { setPreferredDate(e.target.value); clearError("preferredDate"); }}
+            aria-invalid={!!errors.preferredDate}
+            className={`${inputBase} ${preferredDate ? "" : "text-text-light"}`}
+          />
+          {errors.preferredDate && <p className={errCls}>{errors.preferredDate}</p>}
         </div>
         <div>
           <label className={labelBase}>Preferred Time</label>
@@ -146,7 +266,16 @@ export default function BookDemoForm() {
 
       <div className="mt-4">
         <label className={labelBase}>What&apos;s your main fulfillment challenge? {req}</label>
-        <textarea rows={3} required value={challenge} onChange={(e) => setChallenge(e.target.value)} placeholder="Tell us your biggest challenge and goals..." className={inputBase} />
+        <textarea
+          ref={(el) => { fieldRefs.current.challenge = el; }}
+          rows={3}
+          value={challenge}
+          onChange={(e) => { setChallenge(e.target.value); clearError("challenge"); }}
+          placeholder="Tell us your biggest challenge and goals..."
+          aria-invalid={!!errors.challenge}
+          className={inputBase}
+        />
+        {errors.challenge && <p className={errCls}>{errors.challenge}</p>}
       </div>
 
       {error && (

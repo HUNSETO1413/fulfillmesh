@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, CheckCircle2 } from "lucide-react";
 
@@ -14,6 +14,18 @@ const inputBase =
   "w-full rounded-xl border border-border-soft bg-white px-4 py-3 text-sm text-text-primary placeholder:text-text-light focus:outline-none focus:border-teal focus:ring-1 focus:ring-teal transition-colors";
 const selectBase =
   "w-full rounded-xl border border-border-soft bg-white px-4 py-3 text-sm text-text-body focus:outline-none focus:border-teal focus:ring-1 focus:ring-teal transition-colors";
+const errCls = "mt-1.5 text-xs font-medium text-red-600";
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function isValidUrl(value: string): boolean {
+  try {
+    const u = new URL(value.includes("://") ? value : `https://${value}`);
+    return !!u.hostname && u.hostname.includes(".");
+  } catch {
+    return false;
+  }
+}
 
 const SOLUTIONS = ["Supplier Matching", "Quality Control", "Packaging", "Shipping", "Warehousing", "Returns", "Analytics"];
 
@@ -29,6 +41,16 @@ type FormData = {
   timeline: string;
 };
 
+type FieldKey = keyof FormData;
+type FieldErrors = Partial<Record<FieldKey, string>>;
+
+// Which fields are validated on each step.
+const stepFields: FieldKey[][] = [
+  ["company", "email", "website"],
+  [],
+  ["solutions"],
+];
+
 const initial: FormData = {
   company: "", email: "", website: "", platform: "",
   category: "", volume: "", destinations: "", solutions: [], timeline: "",
@@ -39,22 +61,96 @@ export default function GetStartedForm() {
   const [data, setData] = useState<FormData>(initial);
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [error, setError] = useState("");
+  const [errors, setErrors] = useState<FieldErrors>({});
+
+  const fieldRefs = useRef<Partial<Record<FieldKey, HTMLElement | null>>>({});
 
   function set<K extends keyof FormData>(key: K, value: FormData[K]) {
     setData((d) => ({ ...d, [key]: value }));
+    clearError(key);
   }
+
+  const clearError = (key: FieldKey) =>
+    setErrors((prev) => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
 
   function toggleSolution(s: string) {
     setData((d) => ({
       ...d,
       solutions: d.solutions.includes(s) ? d.solutions.filter((x) => x !== s) : [...d.solutions, s],
     }));
+    clearError("solutions");
+  }
+
+  // Validate a single field for the given form snapshot.
+  function fieldError(key: FieldKey, d: FormData): string | undefined {
+    switch (key) {
+      case "company":
+        return d.company.trim() ? undefined : "Company name is required.";
+      case "email":
+        if (!d.email.trim()) return "Work email is required.";
+        return EMAIL_RE.test(d.email.trim()) ? undefined : "Enter a valid email address.";
+      case "website":
+        return d.website.trim() && !isValidUrl(d.website.trim()) ? "Enter a valid website URL." : undefined;
+      case "solutions":
+        return d.solutions.length > 0 ? undefined : "Select at least one solution.";
+      default:
+        return undefined;
+    }
+  }
+
+  // Validate the fields owned by a step; focus/scroll to first invalid.
+  function validateStep(step: number): boolean {
+    const next: FieldErrors = {};
+    for (const key of stepFields[step]) {
+      const msg = fieldError(key, data);
+      if (msg) next[key] = msg;
+    }
+    setErrors(next);
+    const firstKey = (Object.keys(next) as FieldKey[])[0];
+    if (firstKey) {
+      const el = fieldRefs.current[firstKey];
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      el?.focus?.({ preventScroll: true });
+      return false;
+    }
+    return true;
+  }
+
+  function goNext() {
+    if (!validateStep(currentStep)) return;
+    setCurrentStep((s) => Math.min(steps.length - 1, s + 1));
   }
 
   async function submit() {
-    if (!data.company.trim() || !data.email.trim()) {
-      setError("Please provide your company name and email.");
-      setCurrentStep(0);
+    // Re-validate every required field across steps before submitting.
+    const next: FieldErrors = {};
+    let firstStep = -1;
+    stepFields.forEach((keys, step) => {
+      for (const key of keys) {
+        const msg = fieldError(key, data);
+        if (msg) {
+          next[key] = msg;
+          if (firstStep === -1) firstStep = step;
+        }
+      }
+    });
+    if (Object.keys(next).length > 0) {
+      setErrors(next);
+      setError("");
+      if (firstStep !== -1 && firstStep !== currentStep) {
+        setCurrentStep(firstStep);
+      }
+      const firstKey = (Object.keys(next) as FieldKey[])[0];
+      window.setTimeout(() => {
+        const el = fieldRefs.current[firstKey];
+        el?.scrollIntoView({ behavior: "smooth", block: "center" });
+        el?.focus?.({ preventScroll: true });
+      }, 0);
       return;
     }
     setStatus("loading");
@@ -123,15 +219,42 @@ export default function GetStartedForm() {
             <h2 className="text-xl font-bold text-navy">Tell us about your business</h2>
             <div>
               <label className="block text-sm font-medium text-text-primary mb-1.5">Company name</label>
-              <input type="text" className={inputBase} placeholder="Your company name" value={data.company} onChange={(e) => set("company", e.target.value)} />
+              <input
+                ref={(el) => { fieldRefs.current.company = el; }}
+                type="text"
+                className={inputBase}
+                placeholder="Your company name"
+                value={data.company}
+                onChange={(e) => set("company", e.target.value)}
+                aria-invalid={!!errors.company}
+              />
+              {errors.company && <p className={errCls}>{errors.company}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-text-primary mb-1.5">Work email</label>
-              <input type="email" className={inputBase} placeholder="you@company.com" value={data.email} onChange={(e) => set("email", e.target.value)} />
+              <input
+                ref={(el) => { fieldRefs.current.email = el; }}
+                type="email"
+                className={inputBase}
+                placeholder="you@company.com"
+                value={data.email}
+                onChange={(e) => set("email", e.target.value)}
+                aria-invalid={!!errors.email}
+              />
+              {errors.email && <p className={errCls}>{errors.email}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-text-primary mb-1.5">Website</label>
-              <input type="url" className={inputBase} placeholder="https://yourstore.com" value={data.website} onChange={(e) => set("website", e.target.value)} />
+              <input
+                ref={(el) => { fieldRefs.current.website = el; }}
+                type="url"
+                className={inputBase}
+                placeholder="https://yourstore.com"
+                value={data.website}
+                onChange={(e) => set("website", e.target.value)}
+                aria-invalid={!!errors.website}
+              />
+              {errors.website && <p className={errCls}>{errors.website}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-text-primary mb-1.5">Platform</label>
@@ -185,7 +308,7 @@ export default function GetStartedForm() {
         {currentStep === 2 && (
           <div className="space-y-5">
             <h2 className="text-xl font-bold text-navy">What do you need help with?</h2>
-            <div>
+            <div ref={(el) => { fieldRefs.current.solutions = el; }}>
               <label className="block text-sm font-medium text-text-primary mb-3">Select solutions you&apos;re interested in</label>
               <div className="grid grid-cols-2 gap-2">
                 {SOLUTIONS.map((s) => (
@@ -195,6 +318,7 @@ export default function GetStartedForm() {
                   </label>
                 ))}
               </div>
+              {errors.solutions && <p className={errCls}>{errors.solutions}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-text-primary mb-1.5">When do you need to start?</label>
@@ -209,7 +333,7 @@ export default function GetStartedForm() {
           </div>
         )}
 
-        {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
+        {error && <p className="mt-4 text-sm text-red-600" role="alert">{error}</p>}
 
         {/* Navigation */}
         <div className="mt-8 flex items-center justify-between">
@@ -221,7 +345,7 @@ export default function GetStartedForm() {
           </button>
           {currentStep < steps.length - 1 ? (
             <button
-              onClick={() => setCurrentStep(currentStep + 1)}
+              onClick={goNext}
               className="inline-flex items-center gap-2 px-7 py-3 text-base font-semibold text-white rounded-xl gradient-cta hover:shadow-button transition-all"
             >
               Next <ArrowRight className="w-4 h-4" />
