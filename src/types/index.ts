@@ -107,6 +107,9 @@ export interface Supplier {
   status: SupplierStatus;
   leadTimeDays?: number;
   productsSupplied?: number;
+  // Scorecard metrics (supplier detail page)
+  onTimePct?: number; // 0-100
+  avgResponseHours?: number;
 }
 
 export interface Shipment {
@@ -131,6 +134,10 @@ export interface ReturnRecord {
   requestedDate: string;
   items: number;
   refundAmount?: number;
+  // Cost breakdown (return detail page)
+  shippingCost?: number;
+  restockingFee?: number;
+  recoveryValue?: number;
 }
 
 export interface Quote {
@@ -154,6 +161,14 @@ export interface Invoice {
   amount: number;
 }
 
+export type QcCheckResult = "Pass" | "Fail" | "N/A";
+
+export interface QcChecklistItem {
+  label: string;
+  result: QcCheckResult;
+  notes?: string;
+}
+
 export interface QcInspection {
   id: string;
   product: string;
@@ -164,6 +179,7 @@ export interface QcInspection {
   scheduledDate: string;
   defectRate?: number;
   sampleSize?: number;
+  checklist?: QcChecklistItem[];
 }
 
 export type UserRole = "Admin" | "Manager" | "Operator" | "Viewer";
@@ -211,6 +227,66 @@ export interface ApiKey {
   createdAt: string;
   lastUsed?: string;
   status: ApiKeyStatus;
+}
+
+// ---------- Attachments (uploaded files, stored as data URLs) ----------
+
+// Files are stored inline as base64 data URLs (no external object storage in
+// this environment). Keep uploads small (images/PDFs); callers cap the size.
+export interface Attachment {
+  id: string;
+  entityType: string; // "return" | "qc" | "order" | "product" | ...
+  entityId: string;
+  name: string;
+  mime: string;
+  dataUrl: string; // data:<mime>;base64,....
+  size: number; // bytes
+  uploadedBy?: string;
+  createdAt: string;
+}
+
+// ---------- Inventory movements (stock ledger) ----------
+
+export type MovementType = "Inbound" | "Outbound" | "Adjustment";
+
+export interface InventoryMovement {
+  id: string;
+  sku: string;
+  name?: string;
+  warehouse?: string;
+  type: MovementType;
+  quantity: number; // signed: positive in, negative out
+  reason?: string;
+  reference?: string;
+  date: string;
+}
+
+// ---------- Quote supplier bids (multi-supplier comparison) ----------
+
+export interface QuoteBid {
+  id: string;
+  quoteId: string;
+  supplier: string;
+  unitPrice: number;
+  leadTimeDays: number;
+  moq: number; // minimum order quantity
+  landedCost: number;
+  recommended: boolean;
+  notes?: string;
+}
+
+// ---------- Auth tokens (password reset / email verification) ----------
+
+export type AuthTokenKind = "reset" | "verify";
+
+export interface AuthToken {
+  id: string;
+  userId: string;
+  kind: AuthTokenKind;
+  token: string;
+  expiresAt: string; // ISO
+  used: boolean;
+  createdAt: string;
 }
 
 // ---------- Settings (key/value store) ----------

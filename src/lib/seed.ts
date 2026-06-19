@@ -41,6 +41,11 @@ export async function ensureSeed(db: Pool): Promise<void> {
   await seedDocuments(db);
   await seedMessages(db);
   await seedIntegrations(db);
+  await seedInventoryMovements(db);
+  await seedQuoteBids(db);
+  await backfillSupplierMetrics(db);
+  await backfillReturnCosts(db);
+  await backfillQcChecklists(db);
 }
 
 async function seedUsers(db: Pool) {
@@ -424,6 +429,107 @@ async function seedMessages(db: Pool) {
     ["MSG-006", "Carrier — DHL Express", "Customs hold on SHP-3220", "Shipment requires additional documentation to clear customs.", "System", "Unread", "2025-05-14T09:18:00Z"],
   ];
   for (const r of rows) await db.query(sql, r);
+}
+
+// Deterministic small int from a string, for stable seeded variety.
+function hashInt(s: string, mod: number): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h % mod;
+}
+
+async function seedInventoryMovements(db: Pool) {
+  if (await count(db, "inventory_movements") > 0) return;
+  const inv = await db.query<{ sku: string; name: string; warehouse: string; on_hand: number }>(
+    "SELECT sku, name, warehouse, on_hand FROM inventory",
+  );
+  const sql = `INSERT INTO inventory_movements (id, sku, name, warehouse, type, quantity, reason, reference, date) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`;
+  let n = 1;
+  for (const it of inv.rows) {
+    const base = it.on_hand || 100;
+    const rows: [string, number, string, string, string][] = [
+      ["Inbound", Math.max(20, Math.round(base * 0.6)), "Purchase order receipt", "PO-" + (50000 + hashInt(it.sku, 900)), "2025-05-02"],
+      ["Outbound", -Math.max(5, Math.round(base * 0.15)), "Order fulfillment", "ORD-" + (5000 + hashInt(it.sku + "o", 900)), "2025-05-09"],
+      ["Outbound", -Math.max(3, Math.round(base * 0.1)), "Order fulfillment", "ORD-" + (5000 + hashInt(it.sku + "p", 900)), "2025-05-14"],
+      ["Adjustment", (hashInt(it.sku, 2) === 0 ? -1 : 1) * (1 + hashInt(it.sku, 5)), "Cycle count correction", "CC-" + (100 + hashInt(it.sku, 90)), "2025-05-16"],
+    ];
+    for (const [type, qty, reason, ref, date] of rows) {
+      await db.query(sql, [`MOV-${String(n).padStart(4, "0")}`, it.sku, it.name, it.warehouse, type, qty, reason, ref, date]);
+      n++;
+    }
+  }
+}
+
+async function seedQuoteBids(db: Pool) {
+  if (await count(db, "quote_bids") > 0) return;
+  const quotes = await db.query<{ id: string; total: number }>("SELECT id, total FROM quotes");
+  const supplierPool = ["Shenzhen Tech Co.", "Guangzhou Manufacturing", "Dongguan Precision", "Ningbo Export Group", "Yiwu Trading Ltd."];
+  const sql = `INSERT INTO quote_bids (id, quote_id, supplier, unit_price, lead_time_days, moq, landed_cost, recommended, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`;
+  let n = 1;
+  for (const q of quotes.rows) {
+    const baseUnit = Math.max(2, (q.total || 1000) / 500);
+    const bids = [0, 1, 2].map((i) => {
+      const supplier = supplierPool[(hashInt(q.id + i, supplierPool.length))];
+      const unit = +(baseUnit * (1 + (i - 1) * 0.12 + hashInt(q.id + i, 7) / 100)).toFixed(2);
+      const lead = 12 + i * 4 + hashInt(q.id + i, 6);
+      const moq = 500 + i * 250;
+      const landed = +(unit * 1.18 + i * 0.4).toFixed(2);
+      return { supplier, unit, lead, moq, landed };
+    });
+    // de-dupe suppliers
+    const seen = new Set<string>();
+    const uniq = bids.filter((b) => (seen.has(b.supplier) ? false : (seen.add(b.supplier), true)));
+    const best = uniq.reduce((a, b) => (b.landed < a.landed ? b : a), uniq[0]);
+    for (const b of uniq) {
+      await db.query(sql, [`BID-${String(n).padStart(4, "0")}`, q.id, b.supplier, b.unit, b.lead, b.moq, b.landed, b === best, null]);
+      n++;
+    }
+  }
+}
+
+async function backfillSupplierMetrics(db: Pool) {
+  const rows = await db.query<{ id: string; rating: number }>("SELECT id, rating FROM suppliers WHERE on_time_pct IS NULL");
+  for (const s of rows.rows) {
+    const onTime = Math.min(99.5, 88 + (s.rating ?? 4) * 2 + hashInt(s.id, 30) / 10);
+    const resp = 2 + hashInt(s.id, 20);
+    await db.query("UPDATE suppliers SET on_time_pct = $1, avg_response_hours = $2 WHERE id = $3",
+      [+onTime.toFixed(1), resp, s.id]);
+  }
+}
+
+async function backfillReturnCosts(db: Pool) {
+  const rows = await db.query<{ id: string; refund_amount: number; items: number }>(
+    "SELECT id, refund_amount, items FROM returns WHERE shipping_cost IS NULL",
+  );
+  for (const r of rows.rows) {
+    const refund = r.refund_amount ?? 50;
+    const shipping = +(8 + (r.items ?? 1) * 2.5 + hashInt(r.id, 12)).toFixed(2);
+    const restock = +(refund * 0.1).toFixed(2);
+    const recovery = +(refund * (0.4 + hashInt(r.id, 30) / 100)).toFixed(2);
+    await db.query("UPDATE returns SET shipping_cost = $1, restocking_fee = $2, recovery_value = $3 WHERE id = $4",
+      [shipping, restock, recovery, r.id]);
+  }
+}
+
+async function backfillQcChecklists(db: Pool) {
+  const rows = await db.query<{ id: string; status: string }>("SELECT id, status FROM qc_inspections WHERE checklist IS NULL");
+  const labels = [
+    "Dimensions within tolerance",
+    "Material matches spec",
+    "Color/finish consistent",
+    "Functional test passed",
+    "Packaging integrity",
+    "Labeling & barcodes correct",
+  ];
+  for (const q of rows.rows) {
+    const items = labels.map((label, i) => {
+      let result: "Pass" | "Fail" | "N/A" = "Pass";
+      if (q.status === "Failed" && hashInt(q.id + i, 3) === 0) result = "Fail";
+      else if (q.status === "Scheduled" || q.status === "In Progress") result = hashInt(q.id + i, 4) === 0 ? "N/A" : "Pass";
+      return { label, result, notes: result === "Fail" ? "Out of tolerance — flagged for rework" : undefined };
+    });
+    await db.query("UPDATE qc_inspections SET checklist = $1 WHERE id = $2", [JSON.stringify(items), q.id]);
+  }
 }
 
 async function seedIntegrations(db: Pool) {

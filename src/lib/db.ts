@@ -248,6 +248,60 @@ CREATE TABLE IF NOT EXISTS settings (
   value TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS auth_tokens (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  token TEXT NOT NULL UNIQUE,
+  expires_at TEXT NOT NULL,
+  used BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS attachments (
+  id TEXT PRIMARY KEY,
+  entity_type TEXT NOT NULL,
+  entity_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  data_url TEXT NOT NULL,
+  size INTEGER NOT NULL DEFAULT 0,
+  uploaded_by TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS inventory_movements (
+  id TEXT PRIMARY KEY,
+  sku TEXT NOT NULL,
+  name TEXT,
+  warehouse TEXT,
+  type TEXT NOT NULL DEFAULT 'Adjustment',
+  quantity INTEGER NOT NULL DEFAULT 0,
+  reason TEXT,
+  reference TEXT,
+  date TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS quote_bids (
+  id TEXT PRIMARY KEY,
+  quote_id TEXT NOT NULL,
+  supplier TEXT NOT NULL,
+  unit_price DOUBLE PRECISION NOT NULL DEFAULT 0,
+  lead_time_days INTEGER NOT NULL DEFAULT 0,
+  moq INTEGER NOT NULL DEFAULT 0,
+  landed_cost DOUBLE PRECISION NOT NULL DEFAULT 0,
+  recommended BOOLEAN NOT NULL DEFAULT FALSE,
+  notes TEXT
+);
+
+-- Detail-page extension columns added idempotently for existing databases.
+ALTER TABLE qc_inspections ADD COLUMN IF NOT EXISTS checklist TEXT;
+ALTER TABLE returns ADD COLUMN IF NOT EXISTS shipping_cost DOUBLE PRECISION;
+ALTER TABLE returns ADD COLUMN IF NOT EXISTS restocking_fee DOUBLE PRECISION;
+ALTER TABLE returns ADD COLUMN IF NOT EXISTS recovery_value DOUBLE PRECISION;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS on_time_pct DOUBLE PRECISION;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS avg_response_hours DOUBLE PRECISION;
+
 CREATE TABLE IF NOT EXISTS audit_logs (
   id TEXT PRIMARY KEY,
   actor TEXT NOT NULL,

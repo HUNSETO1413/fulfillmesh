@@ -4,6 +4,7 @@ import type {
   ReturnRecord, Quote, Invoice, QcInspection, User, Submission,
   Warehouse, StorageType, TransferOrder, CycleCount, AppNotification, Task,
   WarehouseLocation, ApiKey, AuditLog, DocumentRecord, Message, IntegrationRecord,
+  AuthToken, InventoryMovement, QuoteBid, Attachment,
 } from "@/types";
 
 // Async repository layer over PostgreSQL. Each entity exposes list/get/create/
@@ -204,6 +205,8 @@ function mapSupplier(r: Row): Supplier {
     category: (r.category as string) ?? undefined, rating: r.rating as number,
     status: r.status as Supplier["status"], leadTimeDays: (r.lead_time_days as number) ?? undefined,
     productsSupplied: (r.products_supplied as number) ?? undefined,
+    onTimePct: (r.on_time_pct as number) ?? undefined,
+    avgResponseHours: (r.avg_response_hours as number) ?? undefined,
   };
 }
 export const suppliers = {
@@ -216,10 +219,11 @@ export const suppliers = {
   async create(s: Partial<Supplier>): Promise<Supplier> {
     const id = s.id || genId("SUP");
     await query(
-      `INSERT INTO suppliers (id, name, contact, email, country, category, rating, status, lead_time_days, products_supplied)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      `INSERT INTO suppliers (id, name, contact, email, country, category, rating, status, lead_time_days, products_supplied, on_time_pct, avg_response_hours)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
       [id, s.name ?? "", s.contact ?? null, s.email ?? null, s.country ?? "China", s.category ?? null,
-        s.rating ?? 0, s.status ?? "Active", s.leadTimeDays ?? null, s.productsSupplied ?? null],
+        s.rating ?? 0, s.status ?? "Active", s.leadTimeDays ?? null, s.productsSupplied ?? null,
+        s.onTimePct ?? null, s.avgResponseHours ?? null],
     );
     return (await this.get(id))!;
   },
@@ -228,8 +232,8 @@ export const suppliers = {
     if (!existing) return null;
     const m = { ...existing, ...s };
     await query(
-      `UPDATE suppliers SET name=$1, contact=$2, email=$3, country=$4, category=$5, rating=$6, status=$7, lead_time_days=$8, products_supplied=$9 WHERE id=$10`,
-      [m.name, m.contact ?? null, m.email ?? null, m.country, m.category ?? null, m.rating, m.status, m.leadTimeDays ?? null, m.productsSupplied ?? null, id],
+      `UPDATE suppliers SET name=$1, contact=$2, email=$3, country=$4, category=$5, rating=$6, status=$7, lead_time_days=$8, products_supplied=$9, on_time_pct=$10, avg_response_hours=$11 WHERE id=$12`,
+      [m.name, m.contact ?? null, m.email ?? null, m.country, m.category ?? null, m.rating, m.status, m.leadTimeDays ?? null, m.productsSupplied ?? null, m.onTimePct ?? null, m.avgResponseHours ?? null, id],
     );
     return this.get(id);
   },
@@ -287,6 +291,9 @@ function mapReturn(r: Row): ReturnRecord {
     reason: r.reason as string, status: r.status as ReturnRecord["status"],
     requestedDate: r.requested_date as string, items: r.items as number,
     refundAmount: (r.refund_amount as number) ?? undefined,
+    shippingCost: (r.shipping_cost as number) ?? undefined,
+    restockingFee: (r.restocking_fee as number) ?? undefined,
+    recoveryValue: (r.recovery_value as number) ?? undefined,
   };
 }
 export const returns = {
@@ -299,10 +306,11 @@ export const returns = {
   async create(r: Partial<ReturnRecord>): Promise<ReturnRecord> {
     const id = r.id || genId("RET");
     await query(
-      `INSERT INTO returns (id, order_id, customer, reason, status, requested_date, items, refund_amount)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      `INSERT INTO returns (id, order_id, customer, reason, status, requested_date, items, refund_amount, shipping_cost, restocking_fee, recovery_value)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
       [id, r.orderId ?? "", r.customer ?? "", r.reason ?? null, r.status ?? "Requested",
-        r.requestedDate ?? new Date().toISOString().slice(0, 10), r.items ?? 1, r.refundAmount ?? null],
+        r.requestedDate ?? new Date().toISOString().slice(0, 10), r.items ?? 1, r.refundAmount ?? null,
+        r.shippingCost ?? null, r.restockingFee ?? null, r.recoveryValue ?? null],
     );
     return (await this.get(id))!;
   },
@@ -311,8 +319,8 @@ export const returns = {
     if (!existing) return null;
     const m = { ...existing, ...r };
     await query(
-      `UPDATE returns SET order_id=$1, customer=$2, reason=$3, status=$4, requested_date=$5, items=$6, refund_amount=$7 WHERE id=$8`,
-      [m.orderId, m.customer, m.reason, m.status, m.requestedDate, m.items, m.refundAmount ?? null, id],
+      `UPDATE returns SET order_id=$1, customer=$2, reason=$3, status=$4, requested_date=$5, items=$6, refund_amount=$7, shipping_cost=$8, restocking_fee=$9, recovery_value=$10 WHERE id=$11`,
+      [m.orderId, m.customer, m.reason, m.status, m.requestedDate, m.items, m.refundAmount ?? null, m.shippingCost ?? null, m.restockingFee ?? null, m.recoveryValue ?? null, id],
     );
     return this.get(id);
   },
@@ -409,6 +417,7 @@ function mapQc(r: Row): QcInspection {
     supplier: r.supplier as string, inspector: (r.inspector as string) ?? undefined,
     status: r.status as QcInspection["status"], scheduledDate: r.scheduled_date as string,
     defectRate: (r.defect_rate as number) ?? undefined, sampleSize: (r.sample_size as number) ?? undefined,
+    checklist: r.checklist ? JSON.parse(r.checklist as string) : undefined,
   };
 }
 export const qcInspections = {
@@ -421,10 +430,11 @@ export const qcInspections = {
   async create(q: Partial<QcInspection>): Promise<QcInspection> {
     const id = q.id || genId("QC");
     await query(
-      `INSERT INTO qc_inspections (id, product, sku, supplier, inspector, status, scheduled_date, defect_rate, sample_size)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      `INSERT INTO qc_inspections (id, product, sku, supplier, inspector, status, scheduled_date, defect_rate, sample_size, checklist)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
       [id, q.product ?? "", q.sku ?? null, q.supplier ?? "", q.inspector ?? null,
-        q.status ?? "Scheduled", q.scheduledDate ?? new Date().toISOString().slice(0, 10), q.defectRate ?? null, q.sampleSize ?? null],
+        q.status ?? "Scheduled", q.scheduledDate ?? new Date().toISOString().slice(0, 10), q.defectRate ?? null, q.sampleSize ?? null,
+        q.checklist ? JSON.stringify(q.checklist) : null],
     );
     return (await this.get(id))!;
   },
@@ -433,8 +443,8 @@ export const qcInspections = {
     if (!existing) return null;
     const m = { ...existing, ...q };
     await query(
-      `UPDATE qc_inspections SET product=$1, sku=$2, supplier=$3, inspector=$4, status=$5, scheduled_date=$6, defect_rate=$7, sample_size=$8 WHERE id=$9`,
-      [m.product, m.sku ?? null, m.supplier, m.inspector ?? null, m.status, m.scheduledDate, m.defectRate ?? null, m.sampleSize ?? null, id],
+      `UPDATE qc_inspections SET product=$1, sku=$2, supplier=$3, inspector=$4, status=$5, scheduled_date=$6, defect_rate=$7, sample_size=$8, checklist=$9 WHERE id=$10`,
+      [m.product, m.sku ?? null, m.supplier, m.inspector ?? null, m.status, m.scheduledDate, m.defectRate ?? null, m.sampleSize ?? null, m.checklist ? JSON.stringify(m.checklist) : null, id],
     );
     return this.get(id);
   },
@@ -484,6 +494,170 @@ export const users = {
   },
   async remove(id: string): Promise<boolean> {
     return (await query("DELETE FROM users WHERE id = $1 RETURNING id", [id])).length > 0;
+  },
+  // Set a new password hash (used by the password-reset flow). Caller hashes.
+  async setPassword(id: string, passwordHash: string): Promise<boolean> {
+    return (await query("UPDATE users SET password_hash = $1 WHERE id = $2 RETURNING id", [passwordHash, id])).length > 0;
+  },
+};
+
+// ---------- Auth tokens (password reset / email verification) ----------
+function mapAuthToken(r: Row): AuthToken {
+  return {
+    id: r.id as string,
+    userId: r.user_id as string,
+    kind: r.kind as AuthToken["kind"],
+    token: r.token as string,
+    expiresAt: r.expires_at as string,
+    used: r.used as boolean,
+    createdAt: r.created_at as string,
+  };
+}
+export const authTokens = {
+  // The token string itself is generated by the caller (Node route handler, via
+  // crypto.randomBytes) and passed in.
+  async create(input: { userId: string; kind: AuthToken["kind"]; token: string; ttlMinutes: number }): Promise<AuthToken> {
+    const id = genId("ATK");
+    const now = new Date();
+    const expires = new Date(now.getTime() + input.ttlMinutes * 60_000);
+    await query(
+      `INSERT INTO auth_tokens (id, user_id, kind, token, expires_at, used, created_at)
+       VALUES ($1,$2,$3,$4,$5,FALSE,$6)`,
+      [id, input.userId, input.kind, input.token, expires.toISOString(), now.toISOString()],
+    );
+    return (await one("SELECT * FROM auth_tokens WHERE id = $1", [id], mapAuthToken))!;
+  },
+  // Returns the token row only if it exists, matches the kind, is unused and not expired.
+  async findValid(token: string, kind: AuthToken["kind"]): Promise<AuthToken | null> {
+    const row = await one("SELECT * FROM auth_tokens WHERE token = $1 AND kind = $2", [token, kind], mapAuthToken);
+    if (!row || row.used) return null;
+    if (new Date(row.expiresAt).getTime() < Date.now()) return null;
+    return row;
+  },
+  async markUsed(token: string): Promise<void> {
+    await query("UPDATE auth_tokens SET used = TRUE WHERE token = $1", [token]);
+  },
+};
+
+// ---------- Attachments ----------
+function mapAttachment(r: Row): Attachment {
+  return {
+    id: r.id as string,
+    entityType: r.entity_type as string,
+    entityId: r.entity_id as string,
+    name: r.name as string,
+    mime: r.mime as string,
+    dataUrl: r.data_url as string,
+    size: r.size as number,
+    uploadedBy: (r.uploaded_by as string) ?? undefined,
+    createdAt: r.created_at as string,
+  };
+}
+export const attachments = {
+  async listByEntity(entityType: string, entityId: string): Promise<Attachment[]> {
+    return (await query(
+      "SELECT * FROM attachments WHERE entity_type = $1 AND entity_id = $2 ORDER BY created_at DESC, id DESC",
+      [entityType, entityId],
+    )).map(mapAttachment);
+  },
+  async get(id: string): Promise<Attachment | null> {
+    return one("SELECT * FROM attachments WHERE id = $1", [id], mapAttachment);
+  },
+  async create(a: Partial<Attachment>): Promise<Attachment> {
+    const id = a.id || genId("ATT");
+    await query(
+      `INSERT INTO attachments (id, entity_type, entity_id, name, mime, data_url, size, uploaded_by, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [id, a.entityType ?? "", a.entityId ?? "", a.name ?? "file", a.mime ?? "application/octet-stream",
+        a.dataUrl ?? "", a.size ?? 0, a.uploadedBy ?? null, a.createdAt ?? new Date().toISOString()],
+    );
+    return (await this.get(id))!;
+  },
+  async remove(id: string): Promise<boolean> {
+    return (await query("DELETE FROM attachments WHERE id = $1 RETURNING id", [id])).length > 0;
+  },
+};
+
+// ---------- Inventory movements (stock ledger) ----------
+function mapMovement(r: Row): InventoryMovement {
+  return {
+    id: r.id as string,
+    sku: r.sku as string,
+    name: (r.name as string) ?? undefined,
+    warehouse: (r.warehouse as string) ?? undefined,
+    type: r.type as InventoryMovement["type"],
+    quantity: r.quantity as number,
+    reason: (r.reason as string) ?? undefined,
+    reference: (r.reference as string) ?? undefined,
+    date: r.date as string,
+  };
+}
+export const inventoryMovements = {
+  async list(): Promise<InventoryMovement[]> {
+    return (await query("SELECT * FROM inventory_movements ORDER BY date DESC, id DESC")).map(mapMovement);
+  },
+  async listBySku(sku: string): Promise<InventoryMovement[]> {
+    return (await query("SELECT * FROM inventory_movements WHERE sku = $1 ORDER BY date DESC, id DESC", [sku])).map(mapMovement);
+  },
+  async create(m: Partial<InventoryMovement>): Promise<InventoryMovement> {
+    const id = m.id || genId("MOV");
+    await query(
+      `INSERT INTO inventory_movements (id, sku, name, warehouse, type, quantity, reason, reference, date)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [id, m.sku ?? "", m.name ?? null, m.warehouse ?? null, m.type ?? "Adjustment",
+        m.quantity ?? 0, m.reason ?? null, m.reference ?? null,
+        m.date ?? new Date().toISOString().slice(0, 10)],
+    );
+    return (await query("SELECT * FROM inventory_movements WHERE id = $1", [id])).map(mapMovement)[0];
+  },
+};
+
+// ---------- Quote supplier bids ----------
+function mapBid(r: Row): QuoteBid {
+  return {
+    id: r.id as string,
+    quoteId: r.quote_id as string,
+    supplier: r.supplier as string,
+    unitPrice: r.unit_price as number,
+    leadTimeDays: r.lead_time_days as number,
+    moq: r.moq as number,
+    landedCost: r.landed_cost as number,
+    recommended: r.recommended as boolean,
+    notes: (r.notes as string) ?? undefined,
+  };
+}
+export const quoteBids = {
+  async list(): Promise<QuoteBid[]> {
+    return (await query("SELECT * FROM quote_bids ORDER BY landed_cost ASC")).map(mapBid);
+  },
+  async listByQuote(quoteId: string): Promise<QuoteBid[]> {
+    return (await query("SELECT * FROM quote_bids WHERE quote_id = $1 ORDER BY landed_cost ASC", [quoteId])).map(mapBid);
+  },
+  async get(id: string): Promise<QuoteBid | null> {
+    return one("SELECT * FROM quote_bids WHERE id = $1", [id], mapBid);
+  },
+  async create(b: Partial<QuoteBid>): Promise<QuoteBid> {
+    const id = b.id || genId("BID");
+    await query(
+      `INSERT INTO quote_bids (id, quote_id, supplier, unit_price, lead_time_days, moq, landed_cost, recommended, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [id, b.quoteId ?? "", b.supplier ?? "", b.unitPrice ?? 0, b.leadTimeDays ?? 0, b.moq ?? 0,
+        b.landedCost ?? 0, b.recommended ?? false, b.notes ?? null],
+    );
+    return (await this.get(id))!;
+  },
+  async update(id: string, b: Partial<QuoteBid>): Promise<QuoteBid | null> {
+    const existing = await this.get(id);
+    if (!existing) return null;
+    const m = { ...existing, ...b };
+    await query(
+      `UPDATE quote_bids SET supplier=$1, unit_price=$2, lead_time_days=$3, moq=$4, landed_cost=$5, recommended=$6, notes=$7 WHERE id=$8`,
+      [m.supplier, m.unitPrice, m.leadTimeDays, m.moq, m.landedCost, m.recommended, m.notes ?? null, id],
+    );
+    return this.get(id);
+  },
+  async remove(id: string): Promise<boolean> {
+    return (await query("DELETE FROM quote_bids WHERE id = $1 RETURNING id", [id])).length > 0;
   },
 };
 

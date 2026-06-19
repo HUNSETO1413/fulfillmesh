@@ -5,12 +5,29 @@
 // themselves, so we must NOT bounce the browser to /login for this endpoint.
 const AUTH_PROBE_URL = "/api/auth/me";
 
+// Requests that hang longer than this are aborted so the UI never spins forever
+// on a stalled connection. Callers surface the thrown error via their catch.
+const REQUEST_TIMEOUT_MS = 20000;
+
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
-  const res = await fetch(url, {
-    method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error("Request timed out. Please try again.");
+    }
+    throw err instanceof Error ? err : new Error("Network request failed");
+  } finally {
+    clearTimeout(timer);
+  }
   if (!res.ok) {
     // Global 401 handling: an expired/missing session should bounce the user to
     // the login page instead of surfacing a raw error to the UI. The auth probe
