@@ -208,6 +208,7 @@ export default function UsersPage() {
         </div>
         <div className="relative">
           <select
+            aria-label="Filter by role"
             value={roleFilter}
             onChange={(e) => setRoleFilter(e.target.value)}
             className="appearance-none pl-3 pr-9 py-2.5 bg-white border border-[#D1D5DB] rounded-md text-[14px] text-[#374151] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/20"
@@ -221,6 +222,7 @@ export default function UsersPage() {
         </div>
         <div className="relative">
           <select
+            aria-label="Filter by status"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
             className="appearance-none pl-3 pr-9 py-2.5 bg-white border border-[#D1D5DB] rounded-md text-[14px] text-[#374151] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/20"
@@ -248,6 +250,7 @@ export default function UsersPage() {
 
       {/* Table */}
       <div className="mt-5 bg-white border border-[#E5E7EB] rounded-lg overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.1)]">
+        <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
             <tr className="bg-[#F9FAFB] border-b border-[#E5E7EB]">
@@ -335,6 +338,7 @@ export default function UsersPage() {
             )}
           </tbody>
         </table>
+        </div>
 
         {/* Pagination Footer */}
         <div className="flex items-center justify-between px-5 py-3 border-t border-[#E5E7EB]">
@@ -348,6 +352,7 @@ export default function UsersPage() {
               <button
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
+                aria-label="Previous page"
                 className="w-8 h-8 flex items-center justify-center rounded-md border border-[#D1D5DB] text-[#6B7280] hover:bg-[#F9FAFB] disabled:text-[#9CA3AF] disabled:cursor-not-allowed disabled:hover:bg-transparent"
               >
                 <ChevronLeft className="w-4 h-4" />
@@ -366,6 +371,7 @@ export default function UsersPage() {
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={currentPage === totalPages}
+                aria-label="Next page"
                 className="w-8 h-8 flex items-center justify-center rounded-md border border-[#D1D5DB] text-[#6B7280] hover:bg-[#F9FAFB] disabled:text-[#9CA3AF] disabled:cursor-not-allowed disabled:hover:bg-transparent"
               >
                 <ChevronRight className="w-4 h-4" />
@@ -373,6 +379,7 @@ export default function UsersPage() {
             </div>
             <div className="relative ml-2">
               <select
+                aria-label="Rows per page"
                 value={`${pageSize} / page`}
                 onChange={(e) => { setPageSize(Number(e.target.value.split(" ")[0])); setPage(1); }}
                 className="appearance-none pl-3 pr-8 py-1.5 bg-white border border-[#D1D5DB] rounded-md text-[12px] text-[#6B7280] focus:outline-none"

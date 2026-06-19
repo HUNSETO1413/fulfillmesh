@@ -215,7 +215,7 @@ export default function GeneralSettingsPage() {
           <div>
             <label className={fieldLabel}>Industry</label>
             <div className="relative">
-              <select value={form.industry} onChange={(e) => set({ industry: e.target.value })} className={selectCls}>
+              <select aria-label="Industry" value={form.industry} onChange={(e) => set({ industry: e.target.value })} className={selectCls}>
                 <option>Logistics & Fulfillment</option>
                 <option>E-commerce</option>
                 <option>Manufacturing</option>
@@ -240,7 +240,7 @@ export default function GeneralSettingsPage() {
           <div>
             <label className={fieldLabel}>Time Zone</label>
             <div className="relative">
-              <select value={form.timezone} onChange={(e) => set({ timezone: e.target.value })} className={selectCls}>
+              <select aria-label="Time Zone" value={form.timezone} onChange={(e) => set({ timezone: e.target.value })} className={selectCls}>
                 <option>(UTC-05:00) Eastern Time (US &amp; Canada)</option>
                 <option>(UTC-08:00) Pacific Time (US &amp; Canada)</option>
                 <option>(UTC-07:00) Mountain Time (US &amp; Canada)</option>
@@ -257,7 +257,7 @@ export default function GeneralSettingsPage() {
           <div>
             <label className={fieldLabel}>Date Format</label>
             <div className="relative">
-              <select value={form.dateFormat} onChange={(e) => set({ dateFormat: e.target.value })} className={selectCls}>
+              <select aria-label="Date Format" value={form.dateFormat} onChange={(e) => set({ dateFormat: e.target.value })} className={selectCls}>
                 <option>May 18, 2025 (MMMM D, YYYY)</option>
                 <option>05/18/2025 (MM/DD/YYYY)</option>
                 <option>18/05/2025 (DD/MM/YYYY)</option>
@@ -269,7 +269,7 @@ export default function GeneralSettingsPage() {
           <div>
             <label className={fieldLabel}>Time Format</label>
             <div className="relative">
-              <select value={form.timeFormat} onChange={(e) => set({ timeFormat: e.target.value })} className={selectCls}>
+              <select aria-label="Time Format" value={form.timeFormat} onChange={(e) => set({ timeFormat: e.target.value })} className={selectCls}>
                 <option>12-hour (AM/PM)</option>
                 <option>24-hour</option>
               </select>
@@ -279,7 +279,7 @@ export default function GeneralSettingsPage() {
           <div>
             <label className={fieldLabel}>Currency</label>
             <div className="relative">
-              <select value={form.currency} onChange={(e) => set({ currency: e.target.value })} className={selectCls}>
+              <select aria-label="Currency" value={form.currency} onChange={(e) => set({ currency: e.target.value })} className={selectCls}>
                 <option>USD - US Dollar ($)</option>
                 <option>EUR - Euro (&euro;)</option>
                 <option>GBP - British Pound (&pound;)</option>
@@ -294,7 +294,7 @@ export default function GeneralSettingsPage() {
           <div>
             <label className={fieldLabel}>Language</label>
             <div className="relative">
-              <select value={form.language} onChange={(e) => set({ language: e.target.value })} className={selectCls}>
+              <select aria-label="Language" value={form.language} onChange={(e) => set({ language: e.target.value })} className={selectCls}>
                 <option>English</option>
                 <option>中文 (Chinese)</option>
                 <option>日本語 (Japanese)</option>
@@ -308,7 +308,7 @@ export default function GeneralSettingsPage() {
           <div>
             <label className={fieldLabel}>Number Format</label>
             <div className="relative">
-              <select value={form.numberFormat} onChange={(e) => set({ numberFormat: e.target.value })} className={selectCls}>
+              <select aria-label="Number Format" value={form.numberFormat} onChange={(e) => set({ numberFormat: e.target.value })} className={selectCls}>
                 <option>1,234.56</option>
                 <option>1.234,56</option>
                 <option>1 234.56</option>
@@ -319,7 +319,7 @@ export default function GeneralSettingsPage() {
           <div>
             <label className={fieldLabel}>Week Starts On</label>
             <div className="relative">
-              <select value={form.weekStart} onChange={(e) => set({ weekStart: e.target.value })} className={selectCls}>
+              <select aria-label="Week Starts On" value={form.weekStart} onChange={(e) => set({ weekStart: e.target.value })} className={selectCls}>
                 <option>Monday</option>
                 <option>Sunday</option>
                 <option>Saturday</option>
@@ -330,7 +330,7 @@ export default function GeneralSettingsPage() {
           <div>
             <label className={fieldLabel}>Fiscal Year Start</label>
             <div className="relative">
-              <select value={form.fiscalYearStart} onChange={(e) => set({ fiscalYearStart: e.target.value })} className={selectCls}>
+              <select aria-label="Fiscal Year Start" value={form.fiscalYearStart} onChange={(e) => set({ fiscalYearStart: e.target.value })} className={selectCls}>
                 {["January","February","March","April","May","June","July","August","September","October","November","December"].map((m) => (
                   <option key={m}>{m}</option>
                 ))}
@@ -356,7 +356,7 @@ export default function GeneralSettingsPage() {
           <div>
             <label className={fieldLabel}>Default Warehouse</label>
             <div className="relative">
-              <select value={form.defaultWarehouse} onChange={(e) => set({ defaultWarehouse: e.target.value })} className={selectCls}>
+              <select aria-label="Default Warehouse" value={form.defaultWarehouse} onChange={(e) => set({ defaultWarehouse: e.target.value })} className={selectCls}>
                 <option>ATL-1 (Atlanta)</option>
                 <option>LAX-1 (Los Angeles)</option>
                 <option>DFW-1 (Dallas)</option>
@@ -369,7 +369,7 @@ export default function GeneralSettingsPage() {
           <div>
             <label className={fieldLabel}>Data Retention</label>
             <div className="relative">
-              <select value={form.dataRetention} onChange={(e) => set({ dataRetention: e.target.value })} className={selectCls}>
+              <select aria-label="Data Retention" value={form.dataRetention} onChange={(e) => set({ dataRetention: e.target.value })} className={selectCls}>
                 <option>12 months</option>
                 <option>18 months</option>
                 <option>24 months</option>

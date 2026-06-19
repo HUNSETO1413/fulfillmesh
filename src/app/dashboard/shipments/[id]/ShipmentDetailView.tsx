@@ -519,6 +519,7 @@ export default function ShipmentDetailView({ shipment }: { shipment: Shipment })
               </button>
             </div>
           </div>
+          <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b border-[#E6EDF5]">
@@ -539,6 +540,7 @@ export default function ShipmentDetailView({ shipment }: { shipment: Shipment })
               ))}
             </tbody>
           </table>
+          </div>
           <button
             onClick={() => exportToCsv(`${shipment.id}-tracking-history`, trackingEvents, [
               { key: "date", header: "Date & Time" },

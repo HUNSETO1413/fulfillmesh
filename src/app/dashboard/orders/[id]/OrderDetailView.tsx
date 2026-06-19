@@ -561,6 +561,7 @@ export default function OrderDetailView({ order }: { order: Order }) {
         <div id="items" className="bg-white rounded-xl border border-[#E2E8F0] shadow-[0_1px_3px_rgba(0,0,0,0.1)] overflow-hidden scroll-mt-4">
           <h3 className="text-[14px] font-semibold text-[#1E293B] px-5 py-3 bg-[#F8FAFC] border-b border-[#E2E8F0]">Order Items <span className="text-[12px] font-normal text-[#94A3B8]">({skuCount} SKUs, {itemCount} items)</span></h3>
           <div className="p-5">
+            <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-[#E2E8F0]">
@@ -593,6 +594,7 @@ export default function OrderDetailView({ order }: { order: Order }) {
                 )}
               </tbody>
             </table>
+            </div>
             <a href="#items" onClick={(e) => { e.preventDefault(); scrollToId("items"); }} className="inline-flex items-center gap-1 text-[12px] font-medium text-[#3B82F6] mt-3 hover:underline">View all items <ArrowRight className="w-3 h-3" /></a>
           </div>
         </div>
@@ -781,6 +783,7 @@ export default function OrderDetailView({ order }: { order: Order }) {
             </div>
           </div>
           <div className="p-5">
+            <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-[#E2E8F0]">
@@ -804,6 +807,7 @@ export default function OrderDetailView({ order }: { order: Order }) {
                 )}
               </tbody>
             </table>
+            </div>
             <a href="#timeline" onClick={(e) => { e.preventDefault(); scrollToId("timeline"); }} className="inline-flex items-center gap-1 text-[12px] font-medium text-[#3B82F6] mt-3 hover:underline">View all activity <ArrowRight className="w-3 h-3" /></a>
           </div>
         </div>

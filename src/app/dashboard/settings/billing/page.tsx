@@ -407,6 +407,7 @@ export default function BillingPage() {
           </button>
         </div>
         <div className="bg-white border border-[#E5E7EB] rounded-xl overflow-hidden">
+          <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="bg-[#F9FAFB] border-b border-[#E5E7EB]">
@@ -439,6 +440,7 @@ export default function BillingPage() {
               ))}
             </tbody>
           </table>
+          </div>
           <div className="text-center py-3 border-t border-[#E5E7EB]">
             <button
               onClick={() => setShowAllInvoices((v) => !v)}

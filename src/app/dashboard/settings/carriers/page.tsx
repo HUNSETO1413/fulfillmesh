@@ -46,10 +46,13 @@ function ConnBadge({ conn }: { conn: Conn }) {
   );
 }
 
-function ToggleSwitch({ enabled, onClick }: { enabled: boolean; onClick: () => void }) {
+function ToggleSwitch({ enabled, onClick, label }: { enabled: boolean; onClick: () => void; label: string }) {
   return (
     <button
       onClick={onClick}
+      role="switch"
+      aria-checked={enabled}
+      aria-label={label}
       className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
         enabled ? "bg-[#10B981]" : "bg-[#E2E8F0]"
       }`}
@@ -220,6 +223,7 @@ export default function CarriersPage() {
 
       {/* Table */}
       <div className="mt-5 border border-[#E2E8F0] rounded-lg overflow-hidden">
+        <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
             <tr className="bg-[#F5F7FA] border-b border-[#E2E8F0]">
@@ -249,12 +253,13 @@ export default function CarriersPage() {
                   </span>
                 </td>
                 <td className="px-4 py-3.5 text-center">
-                  <ToggleSwitch enabled={c.tracking} onClick={() => toggleTracking(c.name)} />
+                  <ToggleSwitch enabled={c.tracking} onClick={() => toggleTracking(c.name)} label={`Toggle tracking sync for ${c.name}`} />
                 </td>
                 <td className="px-4 py-3.5 text-right">
                   <div className="relative inline-block" ref={menuFor === c.name ? menuRef : undefined}>
                     <button
                       onClick={() => setMenuFor(menuFor === c.name ? null : c.name)}
+                      aria-label={`Actions for ${c.name}`}
                       className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0] transition-colors"
                     >
                       <MoreVertical className="w-4 h-4" />
@@ -290,6 +295,7 @@ export default function CarriersPage() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Footer / Pagination */}

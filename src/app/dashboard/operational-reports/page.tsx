@@ -36,48 +36,7 @@ const reportCats = [
 const ALL_WAREHOUSES = "All Warehouses";
 const ALL_CHANNELS = "All Channels";
 
-/* ---- deterministic datasets per category + granularity ---- */
-
-type Gran = "Daily" | "Weekly" | "Monthly";
-const GRANS: Gran[] = ["Daily", "Weekly", "Monthly"];
-
-const GRAN_POINTS: Record<Gran, number> = { Daily: 12, Weekly: 5, Monthly: 3 };
-const GRAN_XLABELS: Record<Gran, string[]> = {
-  Daily: ["May 1", "May 8", "May 16", "May 24", "May 31"],
-  Weekly: ["Week 1", "Week 2", "Week 3", "Week 4", "Week 5"],
-  Monthly: ["Mar", "Apr", "May"],
-};
-const GRAN_YLABELS: Record<Gran, string[]> = {
-  Daily: ["1.2K", "0.9K", "0.6K", "0.3K", "0"],
-  Weekly: ["8K", "6K", "4K", "2K", "0"],
-  Monthly: ["32K", "24K", "16K", "8K", "0"],
-};
-
-const CATEGORY_SERIES: Record<string, string[]> = {
-  "Order Performance": ["Orders", "Shipped", "Delivered"],
-  "Inventory Performance": ["Received", "Picked", "Adjusted"],
-  "Shipping Performance": ["Shipments", "On Time", "Delayed"],
-  "Warehouse Performance": ["Tasks", "Completed", "Backlog"],
-  "Returns Performance": ["Returns", "Processed", "Refunded"],
-  "Financial Performance": ["Revenue", "Costs", "Margin"],
-  "Customer Performance": ["New", "Returning", "Churned"],
-  "Custom Reports": ["Metric A", "Metric B", "Metric C"],
-};
-const SERIES_COLORS = ["#3B82F6", "#10B981", "#8B5CF6"];
-
-// Deterministic pseudo-random series: same key always yields the same values.
-function seededSeries(key: string, n: number, min: number, max: number): number[] {
-  let h = 2166136261;
-  for (let i = 0; i < key.length; i++) {
-    h ^= key.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return Array.from({ length: n }, () => {
-    h ^= h << 13; h ^= h >>> 17; h ^= h << 5; h |= 0;
-    const u = ((h >>> 0) % 1000) / 1000;
-    return Math.round(min + u * (max - min));
-  });
-}
+const SERIES_COLORS = ["#3B82F6", "#10B981"] as const;
 
 // A real, channel-level row built from the live order-performance report.
 type ChannelRow = {
@@ -88,10 +47,6 @@ type ChannelRow = {
   revenue: string;
   aov: string;
 };
-
-function slugify(s: string): string {
-  return s.toLowerCase().replace(/\s+/g, "-");
-}
 
 type Schedule = { frequency: "Daily" | "Weekly" | "Monthly"; day: string; time: string; recipients: string };
 const FREQUENCIES = ["Daily", "Weekly", "Monthly"] as const;
@@ -132,7 +87,6 @@ export default function OperationalReportsPage() {
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState("May 1 – May 31, 2025");
   const [activeCat, setActiveCat] = useState("Order Performance");
-  const [gran, setGran] = useState<Gran>("Daily");
   const [whFilter, setWhFilter] = useState(ALL_WAREHOUSES);
   const [chFilter, setChFilter] = useState(ALL_CHANNELS);
 
@@ -256,35 +210,52 @@ export default function OperationalReportsPage() {
     ];
   }, [report]);
 
-  function cycleGran() {
-    setGran(GRANS[(GRANS.indexOf(gran) + 1) % GRANS.length]);
-  }
-
   const W = 760, H = 230, padL = 30, padB = 24, padT = 10, yMax = 120;
 
-  // Current chart dataset, deterministically derived from category + granularity.
-  const series = useMemo(() => {
-    const n = GRAN_POINTS[gran];
-    return CATEGORY_SERIES[activeCat].map((name, i) => ({
-      name,
-      color: SERIES_COLORS[i],
-      pts: seededSeries(`op-chart-${activeCat}-${gran}-${name}`, n, 30 - i * 8, 110 - i * 12),
-    }));
-  }, [activeCat, gran]);
+  // Real monthly series straight from the order-performance report. The
+  // per-category-over-time dimension has no real backing in the analytics
+  // payload, so the trend chart shows the genuine Orders + Revenue series
+  // over the actual month buckets instead of synthetic per-category lines.
+  const monthly = useMemo(
+    () =>
+      (orderPerf?.revenueByMonth ?? []).map((p) => ({
+        label: monthLabel(p.month),
+        orders: p.orders,
+        revenue: p.revenue,
+      })),
+    [orderPerf],
+  );
 
-  const nPts = GRAN_POINTS[gran];
+  // Two real, independently-scaled series (orders + revenue) rendered on the
+  // shared plotting space. Each series keeps its own max so both remain
+  // readable; the axis labels reflect the orders scale (the primary series).
+  const ordersMax = useMemo(() => monthly.reduce((m, p) => Math.max(m, p.orders), 0), [monthly]);
+  const revenueMax = useMemo(() => monthly.reduce((m, p) => Math.max(m, p.revenue), 0), [monthly]);
+
+  const chartSeries = useMemo(
+    () => [
+      { name: "Orders", color: SERIES_COLORS[0], values: monthly.map((p) => p.orders), max: ordersMax },
+      { name: "Revenue", color: SERIES_COLORS[1], values: monthly.map((p) => p.revenue), max: revenueMax },
+    ],
+    [monthly, ordersMax, revenueMax],
+  );
+
+  const nPts = monthly.length;
+  const xLabels = useMemo(() => monthly.map((p) => p.label), [monthly]);
+  const yLabels = useMemo(
+    () => Array.from({ length: 5 }, (_, i) => fmtInt(Math.round((ordersMax * (4 - i)) / 4))),
+    [ordersMax],
+  );
+
   const x = (i: number) => padL + (i * (W - padL - 10)) / Math.max(1, nPts - 1);
-  const y = (v: number) => padT + (1 - v / yMax) * (H - padT - padB);
+  const yFor = (v: number, max: number) => padT + (1 - v / Math.max(1, max)) * yMax;
 
   // Real monthly order-volume trend, used for the trend sparkline below.
   const trend = useMemo(() => {
-    const points = (orderPerf?.revenueByMonth ?? []).map((p) => ({
-      label: monthLabel(p.month),
-      value: p.orders,
-    }));
+    const points = monthly.map((p) => ({ label: p.label, value: p.orders }));
     const max = points.reduce((m, p) => Math.max(m, p.value), 0);
     return { points, max };
-  }, [orderPerf]);
+  }, [monthly]);
 
   function exportCurrent() {
     exportToCsv("orders-by-channel", channelRows, [
@@ -298,16 +269,13 @@ export default function OperationalReportsPage() {
   }
 
   function exportSeries() {
-    const rows = Array.from({ length: nPts }, (_, i) => {
-      const row: Record<string, string | number> = { point: `${gran} ${i + 1}` };
-      for (const s of series) row[s.name] = s.pts[i];
-      return row;
-    });
-    exportToCsv(`${slugify(activeCat)}-${gran.toLowerCase()}-series`, rows, [
-      { key: "point", header: "Period" },
-      ...series.map((s) => ({ key: s.name, header: s.name })),
+    const rows = monthly.map((p) => ({ month: p.label, orders: p.orders, revenue: p.revenue }));
+    exportToCsv("monthly-orders-revenue", rows, [
+      { key: "month", header: "Month" },
+      { key: "orders", header: "Orders" },
+      { key: "revenue", header: "Revenue" },
     ]);
-    toast(`Exported displayed ${gran.toLowerCase()} series for ${activeCat}`);
+    toast(`Exported monthly orders & revenue (${monthly.length} months) to CSV`);
   }
 
   function openSchedule() {
@@ -326,7 +294,7 @@ export default function OperationalReportsPage() {
     toast(`${activeCat} report scheduled ${schedDraft.frequency.toLowerCase()}`);
   }
 
-  const chartTitle = activeCat === "Order Performance" ? "Order Volume Over Time" : `${activeCat} Over Time`;
+  const chartTitle = "Orders & Revenue Over Time";
 
   return (
     <div className="space-y-6">
@@ -420,31 +388,32 @@ export default function OperationalReportsPage() {
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-[16px] font-semibold text-[#1E293B]">{chartTitle}</h3>
             <div className="flex items-center gap-2">
-              <button onClick={exportSeries} className="inline-flex items-center gap-1.5 text-[12px] text-[#64748B] border border-[#E2E8F0] px-2.5 py-1 rounded-lg hover:bg-[#F8FAFC]"><Download className="w-3.5 h-3.5 text-[#94A3B8]" />Export</button>
-              <button onClick={cycleGran} className="inline-flex items-center gap-1.5 text-[12px] text-[#64748B] border border-[#E2E8F0] px-2.5 py-1 rounded-lg hover:bg-[#F8FAFC]">{gran} <ChevronDown className="w-3.5 h-3.5 text-[#94A3B8]" /></button>
+              <button onClick={exportSeries} aria-label="Export monthly orders and revenue series to CSV" className="inline-flex items-center gap-1.5 text-[12px] text-[#64748B] border border-[#E2E8F0] px-2.5 py-1 rounded-lg hover:bg-[#F8FAFC]"><Download className="w-3.5 h-3.5 text-[#94A3B8]" />Export</button>
+              <span className="inline-flex items-center text-[12px] text-[#64748B] border border-[#E2E8F0] px-2.5 py-1 rounded-lg">Monthly</span>
             </div>
           </div>
           <div className="flex items-center gap-5 mb-3">
-            {series.map((s) => (
+            {chartSeries.map((s) => (
               <div key={s.name} className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.color }} /><span className="text-[11px] text-[#64748B]">{s.name}</span></div>
             ))}
           </div>
-          <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 230 }}>
+          <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 230 }} role="img" aria-label="Monthly orders and revenue trend">
             {[0, 1, 2, 3, 4].map((i) => (
               <line key={i} x1={padL} y1={padT + i * ((H - padT - padB) / 4)} x2={W - 10} y2={padT + i * ((H - padT - padB) / 4)} stroke="#F1F5F9" strokeWidth="1" />
             ))}
-            {GRAN_YLABELS[gran].map((l, i) => (
+            {yLabels.map((l, i) => (
               <text key={i} x={padL - 6} y={padT + i * ((H - padT - padB) / 4) + 3} textAnchor="end" fontSize="9" fill="#94A3B8">{l}</text>
             ))}
-            {series.map((s, si) => (
+            {chartSeries.map((s, si) => (
               <g key={si}>
-                <polyline fill="none" stroke={s.color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" points={s.pts.map((v, i) => `${x(i)},${y(v)}`).join(" ")} />
-                {s.pts.map((v, i) => <circle key={i} cx={x(i)} cy={y(v)} r="2.5" fill="white" stroke={s.color} strokeWidth="1.5" />)}
+                <polyline fill="none" stroke={s.color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" points={s.values.map((v, i) => `${x(i)},${yFor(v, s.max)}`).join(" ")} />
+                {s.values.map((v, i) => <circle key={i} cx={x(i)} cy={yFor(v, s.max)} r="2.5" fill="white" stroke={s.color} strokeWidth="1.5" />)}
               </g>
             ))}
-            {GRAN_XLABELS[gran].map((l, i) => (
-              <text key={i} x={padL + i * ((W - padL - 10) / Math.max(1, GRAN_XLABELS[gran].length - 1))} y={H - 6} textAnchor="middle" fontSize="9" fill="#94A3B8">{l}</text>
+            {xLabels.map((l, i) => (
+              <text key={i} x={x(i)} y={H - 6} textAnchor="middle" fontSize="9" fill="#94A3B8">{l}</text>
             ))}
+            {nPts === 0 && !loading && <text x={W / 2} y={H / 2} textAnchor="middle" fontSize="11" fill="#94A3B8">No monthly data yet</text>}
           </svg>
         </div>
 

@@ -50,12 +50,17 @@ const defaultChecklist: QcChecklistItem[] = [
   { label: "Quantity Verification", result: "Pass" },
 ];
 
-const reports_static = [
-  { name: "QC_Report.pdf", size: "2.4 MB", icon: FileText, color: "text-[#EF4444]" },
-  { name: "Inspection_Checklist.pdf", size: "1.12 MB", icon: FileText, color: "text-[#EF4444]" },
-  { name: "Defect_Detail_Log.xlsx", size: "324 KB", icon: FileSpreadsheet, color: "text-[#10B981]" },
-  { name: "Photo_Appendix.zip", size: "8.6 MB", icon: FileArchive, color: "text-[#F59E0B]" },
-];
+/** Pick an icon + accent color for a report based on its mime / file extension. */
+function reportVisual(name: string, mime: string): { icon: typeof FileText; color: string } {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  if (mime.includes("spreadsheet") || mime === "text/csv" || ext === "xlsx" || ext === "xls" || ext === "csv") {
+    return { icon: FileSpreadsheet, color: "text-[#10B981]" };
+  }
+  if (mime.includes("zip") || mime.includes("compressed") || ext === "zip" || ext === "rar" || ext === "7z") {
+    return { icon: FileArchive, color: "text-[#F59E0B]" };
+  }
+  return { icon: FileText, color: "text-[#EF4444]" };
+}
 
 const timeline = [
   { title: "Inspection Created", time: "May 18, 2025 08:30 AM", user: "Emily Chen", icon: FileText, color: "bg-[#0057D8]" },
@@ -112,7 +117,14 @@ export default function QcDetailView({ inspection }: { inspection: QcInspection 
   const [uploading, setUploading] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Attachment | null>(null);
   const [deletingAttachment, setDeletingAttachment] = useState(false);
+  const [uploadingReport, setUploadingReport] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const reportInputRef = useRef<HTMLInputElement>(null);
+
+  // Images render as "photos"; everything else (PDFs, docs, spreadsheets, zips) as "reports".
+  // Both are real attachments persisted via /api/attachments.
+  const photos = useMemo(() => attachments.filter((a) => a.mime.startsWith("image/")), [attachments]);
+  const reports = useMemo(() => attachments.filter((a) => !a.mime.startsWith("image/")), [attachments]);
 
   useEffect(() => {
     let cancelled = false;
@@ -129,15 +141,14 @@ export default function QcDetailView({ inspection }: { inspection: QcInspection 
     return () => { cancelled = true; };
   }, [inspection.id, toast]);
 
-  async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = ""; // allow re-selecting the same file
-    if (!file) return;
+  // Upload a real File to the attachments backend, recording its actual byte size.
+  async function uploadFile(file: File, kind: "photo" | "report"): Promise<void> {
     if (file.size > MAX_UPLOAD_BYTES) {
       toast("File is too large (max 3MB)", "error");
       return;
     }
-    setUploading(true);
+    const setBusyState = kind === "photo" ? setUploading : setUploadingReport;
+    setBusyState(true);
     try {
       const dataUrl = await readFileAsDataUrl(file);
       const created = await api.post<Attachment>("/api/attachments", {
@@ -146,15 +157,27 @@ export default function QcDetailView({ inspection }: { inspection: QcInspection 
         name: file.name,
         mime: file.type || "application/octet-stream",
         dataUrl,
-        size: file.size,
+        size: file.size, // real file size in bytes — no fabrication
       });
       setAttachments((prev) => [...prev, created]);
-      toast("File uploaded");
+      toast(kind === "photo" ? "Photo uploaded" : `Report "${file.name}" uploaded`);
     } catch (err) {
       toast(err instanceof Error ? err.message : "Failed to upload file", "error");
     } finally {
-      setUploading(false);
+      setBusyState(false);
     }
+  }
+
+  async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file
+    if (file) await uploadFile(file, "photo");
+  }
+
+  async function handleReportSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file
+    if (file) await uploadFile(file, "report");
   }
 
   async function confirmDeleteAttachment() {
@@ -174,9 +197,6 @@ export default function QcDetailView({ inspection }: { inspection: QcInspection 
       setDeletingAttachment(false);
     }
   }
-
-  // Reports state (simulated uploads)
-  const [reports, setReports] = useState(reports_static.map((r) => ({ ...r })));
 
   // Inspector comments — session-local; appended via the "Add comment" modal.
   const [comments, setComments] = useState<InspectorComment[]>([{
@@ -255,40 +275,17 @@ export default function QcDetailView({ inspection }: { inspection: QcInspection 
     }
   }
 
-  function uploadReport() {
-    const names = ["Supplementary_Report.pdf", "Corrective_Action.xlsx", "Re_inspection_Notes.pdf", "Photo_Evidence.zip"];
-    const name = names[reports.length % names.length];
-    const ext = name.split(".").pop();
-    const icon = ext === "xlsx" ? FileSpreadsheet : ext === "zip" ? FileArchive : FileText;
-    const color = ext === "xlsx" ? "text-[#10B981]" : ext === "zip" ? "text-[#F59E0B]" : "text-[#EF4444]";
-    setReports((prev) => [...prev, { name, size: `${(Math.random() * 5 + 0.1).toFixed(1)} MB`, icon, color }]);
-    toast(`Report "${name}" uploaded`);
+  // Trigger a browser download for a real uploaded report from its stored data URL.
+  function triggerDownload(report: Attachment) {
+    const a = document.createElement("a");
+    a.href = report.dataUrl;
+    a.download = report.name;
+    a.click();
   }
 
-  function downloadIndividualReport(reportName: string) {
-    const content = [
-      `Report: ${reportName}`,
-      `Inspection ID: ${inspection.id}`,
-      `Product: ${inspection.product}`,
-      `Supplier: ${inspection.supplier}`,
-      `Inspector: ${inspection.inspector ?? "Unassigned"}`,
-      `Date: ${formatDate(inspection.scheduledDate)}`,
-      `Status: ${inspection.status}`,
-      `Defect Rate: ${inspection.defectRate ?? "—"}%`,
-      "",
-      "Checklist Results:",
-      ...checklist.map((c) => `  ${c.label}: ${c.result}${c.notes?.trim() ? ` (${c.notes.trim()})` : ""}`),
-      "",
-      `Generated: ${new Date().toISOString()}`,
-    ].join("\n");
-    const blob = new Blob([content], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = reportName.replace(/\.\w+$/, ".txt");
-    a.click();
-    URL.revokeObjectURL(url);
-    toast(`Downloaded ${reportName}`);
+  function downloadReportAttachment(report: Attachment) {
+    triggerDownload(report);
+    toast(`Downloaded ${report.name}`);
   }
 
   function sendToSupplierModal() {
@@ -334,11 +331,12 @@ export default function QcDetailView({ inspection }: { inspection: QcInspection 
   }
 
   function downloadAll() {
-    exportToCsv(`qc-reports-${inspection.id}`, reports, [
-      { key: "name", header: "File" },
-      { key: "size", header: "Size" },
-    ]);
-    toast("Report manifest downloaded");
+    if (reports.length === 0) {
+      toast("No reports to download", "error");
+      return;
+    }
+    reports.forEach(triggerDownload);
+    toast(`Downloaded ${reports.length} report${reports.length === 1 ? "" : "s"}`);
   }
 
 
@@ -479,11 +477,11 @@ export default function QcDetailView({ inspection }: { inspection: QcInspection 
         {/* Photos & Files */}
         <div className="bg-white rounded-xl border border-border-soft shadow-[0_1px_3px_rgba(0,0,0,0.08)] overflow-hidden">
           <div className="flex items-center justify-between px-5 py-3 bg-soft-bg border-b border-border-soft">
-            <h3 className="text-[15px] font-semibold text-text-primary">Inspection Photos <span className="text-[11px] font-normal text-text-light">({attachments.length})</span></h3>
+            <h3 className="text-[15px] font-semibold text-text-primary">Inspection Photos <span className="text-[11px] font-normal text-text-light">({photos.length})</span></h3>
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*,application/pdf"
+              accept="image/*"
               className="hidden"
               onChange={handleFileSelected}
             />
@@ -502,29 +500,21 @@ export default function QcDetailView({ inspection }: { inspection: QcInspection 
                 <Loader2 className="w-5 h-5 animate-spin mb-2" />
                 <p className="text-[11px]">Loading photos…</p>
               </div>
-            ) : attachments.length === 0 ? (
+            ) : photos.length === 0 ? (
               <div className="flex flex-col items-center justify-center text-center py-6 rounded-lg border border-dashed border-border-soft bg-soft-bg">
                 <ImageOff className="w-6 h-6 text-text-light mb-2" />
                 <p className="text-[12px] font-medium text-text-body">No photos uploaded</p>
-                <p className="text-[11px] text-text-light mt-0.5">Use Add photo to attach images or PDFs.</p>
+                <p className="text-[11px] text-text-light mt-0.5">Use Add photo to attach inspection images.</p>
               </div>
             ) : (
               <div className="grid grid-cols-3 gap-2">
-                {attachments.map((a) => {
-                  const isImage = a.mime.startsWith("image/");
+                {photos.map((a) => {
                   return (
                     <div key={a.id} className="group relative">
-                      {isImage ? (
-                        <a href={a.dataUrl} target="_blank" rel="noopener noreferrer" className="block">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={a.dataUrl} alt={a.name} className="aspect-square w-full rounded-lg object-cover border border-border-soft bg-soft-bg" />
-                        </a>
-                      ) : (
-                        <a href={a.dataUrl} target="_blank" rel="noopener noreferrer" className="flex aspect-square w-full flex-col items-center justify-center rounded-lg border border-border-soft bg-soft-bg p-1 text-center">
-                          <FileIcon className="w-6 h-6 text-text-light mb-1" />
-                          <span className="text-[9px] text-text-muted truncate w-full px-0.5">{a.name}</span>
-                        </a>
-                      )}
+                      <a href={a.dataUrl} target="_blank" rel="noopener noreferrer" className="block">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={a.dataUrl} alt={a.name} className="aspect-square w-full rounded-lg object-cover border border-border-soft bg-soft-bg" />
+                      </a>
                       <button
                         onClick={() => setPendingDelete(a)}
                         className="absolute top-1 right-1 rounded-md bg-white/90 p-1 text-[#EF4444] opacity-0 shadow-sm transition-opacity group-hover:opacity-100 hover:bg-white"
@@ -570,23 +560,51 @@ export default function QcDetailView({ inspection }: { inspection: QcInspection 
         {/* Attached Reports */}
         <div className="bg-white rounded-xl border border-border-soft shadow-[0_1px_3px_rgba(0,0,0,0.08)] overflow-hidden">
           <div className="flex items-center justify-between px-5 py-3 bg-soft-bg border-b border-border-soft">
-            <h3 className="text-[15px] font-semibold text-text-primary">Attached Reports</h3>
-            <button onClick={uploadReport} className="text-[12px] font-medium text-action-blue inline-flex items-center gap-1 hover:underline"><Plus className="w-3 h-3" />Upload report</button>
+            <h3 className="text-[15px] font-semibold text-text-primary">Attached Reports <span className="text-[11px] font-normal text-text-light">({reports.length})</span></h3>
+            <input
+              ref={reportInputRef}
+              type="file"
+              accept="application/pdf,.doc,.docx,.xls,.xlsx,.csv,.zip,.rar,.7z,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,application/zip"
+              className="hidden"
+              onChange={handleReportSelected}
+            />
+            <button
+              onClick={() => reportInputRef.current?.click()}
+              disabled={uploadingReport}
+              className="text-[12px] font-medium text-action-blue inline-flex items-center gap-1 hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {uploadingReport ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+              {uploadingReport ? "Uploading…" : "Upload report"}
+            </button>
           </div>
           <div className="p-5">
-            <div className="space-y-2.5">
-              {reports.map((r) => {
-                const Icon = r.icon;
-                return (
-                  <div key={r.name} className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-lg bg-[#EF4444]/10 flex items-center justify-center shrink-0"><Icon className={`w-4 h-4 ${r.color}`} /></div>
-                    <div className="min-w-0 flex-1"><p className="text-[12px] font-medium text-text-primary truncate">{r.name}</p><p className="text-[10px] text-text-muted">{r.size}</p></div>
-                    <button onClick={() => downloadIndividualReport(r.name)} className="text-text-muted hover:text-text-body shrink-0" aria-label={`Download ${r.name}`}><Download className="w-4 h-4" /></button>
-                  </div>
-                );
-              })}
-            </div>
-            <button onClick={downloadAll} className="w-full mt-4 py-2 border border-border-soft rounded-lg text-[12px] font-medium text-text-body inline-flex items-center justify-center gap-1.5 hover:bg-soft-bg"><Download className="w-3.5 h-3.5" />Download All</button>
+            {attachmentsLoading ? (
+              <div className="flex flex-col items-center justify-center text-center py-6 text-text-light">
+                <Loader2 className="w-5 h-5 animate-spin mb-2" />
+                <p className="text-[11px]">Loading reports…</p>
+              </div>
+            ) : reports.length === 0 ? (
+              <div className="flex flex-col items-center justify-center text-center py-6 rounded-lg border border-dashed border-border-soft bg-soft-bg">
+                <FileIcon className="w-6 h-6 text-text-light mb-2" />
+                <p className="text-[12px] font-medium text-text-body">No reports attached</p>
+                <p className="text-[11px] text-text-light mt-0.5">Use Upload report to attach PDFs, docs or spreadsheets.</p>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {reports.map((r) => {
+                  const { icon: Icon, color } = reportVisual(r.name, r.mime);
+                  return (
+                    <div key={r.id} className="group flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-[#EF4444]/10 flex items-center justify-center shrink-0"><Icon className={`w-4 h-4 ${color}`} /></div>
+                      <div className="min-w-0 flex-1"><p className="text-[12px] font-medium text-text-primary truncate" title={r.name}>{r.name}</p><p className="text-[10px] text-text-muted">{formatBytes(r.size)}</p></div>
+                      <button onClick={() => downloadReportAttachment(r)} className="text-text-muted hover:text-text-body shrink-0" aria-label={`Download ${r.name}`}><Download className="w-4 h-4" /></button>
+                      <button onClick={() => setPendingDelete(r)} className="text-text-muted hover:text-[#EF4444] shrink-0 opacity-0 transition-opacity group-hover:opacity-100" aria-label={`Delete ${r.name}`}><Trash2 className="w-4 h-4" /></button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <button onClick={downloadAll} disabled={reports.length === 0} className="w-full mt-4 py-2 border border-border-soft rounded-lg text-[12px] font-medium text-text-body inline-flex items-center justify-center gap-1.5 hover:bg-soft-bg disabled:opacity-50 disabled:cursor-not-allowed"><Download className="w-3.5 h-3.5" />Download All</button>
           </div>
         </div>
 
@@ -702,7 +720,7 @@ export default function QcDetailView({ inspection }: { inspection: QcInspection 
         open={pendingDelete !== null}
         onClose={() => { if (!deletingAttachment) setPendingDelete(null); }}
         onConfirm={confirmDeleteAttachment}
-        title="Delete photo"
+        title="Delete attachment"
         message={`Remove "${pendingDelete?.name ?? ""}" from this inspection? This cannot be undone.`}
         confirmLabel="Delete"
         destructive

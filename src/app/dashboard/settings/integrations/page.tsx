@@ -261,6 +261,7 @@ export default function IntegrationsPage() {
 
       {/* Table */}
       <div className="border border-border-soft rounded-lg overflow-hidden">
+        <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
             <tr className="bg-soft-bg border-b border-border-soft">
@@ -355,6 +356,7 @@ export default function IntegrationsPage() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Footer note */}

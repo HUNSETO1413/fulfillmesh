@@ -299,6 +299,7 @@ export default function WarehousesPage() {
 
       {/* Table */}
       <div className="mt-5 border border-[#E2E8F0] rounded-lg overflow-hidden">
+        <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
             <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
@@ -424,6 +425,7 @@ export default function WarehousesPage() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Footer */}

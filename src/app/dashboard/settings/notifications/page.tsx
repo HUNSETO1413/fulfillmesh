@@ -109,7 +109,7 @@ interface NotificationState {
   smsPhone: string;
 }
 
-function Toggle({ on, onClick, size = "md" }: { on: boolean; onClick: () => void; size?: "sm" | "md" }) {
+function Toggle({ on, onClick, size = "md", label }: { on: boolean; onClick: () => void; size?: "sm" | "md"; label: string }) {
   const h = size === "sm" ? 20 : 24;
   const w = size === "sm" ? 36 : 44;
   const dot = size === "sm" ? 16 : 18;
@@ -117,6 +117,9 @@ function Toggle({ on, onClick, size = "md" }: { on: boolean; onClick: () => void
   return (
     <button
       onClick={onClick}
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
       className={`shrink-0 relative inline-flex h-[${h}px] w-[${w}px] items-center rounded-full transition-colors duration-200 ${
         on ? "bg-[#3B82F6]" : "bg-[#CBD5E1]"
       }`}
@@ -269,7 +272,7 @@ export default function NotificationsPage() {
                   <p className="text-[14px] font-semibold text-[#1E293B]">{ch.label}</p>
                   <p className="text-[12px] text-[#64748B] mt-0.5">{ch.desc}</p>
                 </div>
-                <Toggle on={on} onClick={() => toggleChannel(ch.key)} />
+                <Toggle on={on} onClick={() => toggleChannel(ch.key)} label={`Toggle ${ch.label} channel`} />
               </div>
             );
           })}
@@ -314,7 +317,7 @@ export default function NotificationsPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-[12px] text-[#64748B]">Immediate</span>
-                    <Toggle on={cat.immediate} onClick={() => toggleCatImmediate(key)} size="sm" />
+                    <Toggle on={cat.immediate} onClick={() => toggleCatImmediate(key)} size="sm" label={`Toggle immediate delivery for ${cat.label}`} />
                   </div>
                 </div>
                 {/* Channel toggles */}
@@ -369,14 +372,14 @@ export default function NotificationsPage() {
             <h3 className={sectionTitle}>Quiet Hours</h3>
             <p className="text-[13px] text-[#64748B] mt-1">Suppress non-critical notifications during specified hours.</p>
           </div>
-          <Toggle on={quietPreset !== "Disabled"} onClick={() => setQuietPreset((p) => p === "Disabled" ? "10 PM – 7 AM" : "Disabled")} />
+          <Toggle on={quietPreset !== "Disabled"} onClick={() => setQuietPreset((p) => p === "Disabled" ? "10 PM – 7 AM" : "Disabled")} label="Toggle quiet hours" />
         </div>
         {quietPreset !== "Disabled" && (
           <div className="grid grid-cols-3 gap-4">
             <div>
               <label className={fieldLabel}>Preset</label>
               <div className="relative">
-                <select value={quietPreset} onChange={(e) => setQuietPreset(e.target.value)} className={selectCls}>
+                <select aria-label="Quiet hours preset" value={quietPreset} onChange={(e) => setQuietPreset(e.target.value)} className={selectCls}>
                   {QUIET_PRESETS.map((p) => <option key={p.label} value={p.label}>{p.label}</option>)}
                 </select>
                 <ChevronDown className="w-4 h-4 text-[#94A3B8] absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -429,7 +432,7 @@ export default function NotificationsPage() {
             <h3 className={sectionTitle}>Email Digest</h3>
             <p className="text-[13px] text-[#64748B] mt-1">Receive a consolidated summary email instead of individual notifications.</p>
           </div>
-          <Toggle on={digest.enabled} onClick={() => setDigest((d) => ({ ...d, enabled: !d.enabled }))} />
+          <Toggle on={digest.enabled} onClick={() => setDigest((d) => ({ ...d, enabled: !d.enabled }))} label="Toggle email digest" />
         </div>
         {digest.enabled && (
           <div className="space-y-5">
@@ -438,6 +441,7 @@ export default function NotificationsPage() {
                 <label className={fieldLabel}>Frequency</label>
                 <div className="relative">
                   <select
+                    aria-label="Email digest frequency"
                     value={digest.frequency}
                     onChange={(e) => setDigest((d) => ({ ...d, frequency: e.target.value as "daily" | "weekly" }))}
                     className={selectCls}
@@ -452,7 +456,7 @@ export default function NotificationsPage() {
                 <div>
                   <label className={fieldLabel}>Day of Week</label>
                   <div className="relative">
-                    <select value={digest.day} onChange={(e) => setDigest((d) => ({ ...d, day: e.target.value }))} className={selectCls}>
+                    <select aria-label="Email digest day of week" value={digest.day} onChange={(e) => setDigest((d) => ({ ...d, day: e.target.value }))} className={selectCls}>
                       {["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map((d) => (
                         <option key={d}>{d}</option>
                       ))}

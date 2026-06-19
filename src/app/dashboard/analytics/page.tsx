@@ -267,6 +267,7 @@ export default function AnalyticsPage() {
           <div className="relative">
             <button
               onClick={() => setMenuOpen((v) => !v)}
+              aria-label="More options"
               className="w-9 h-9 flex items-center justify-center bg-white border border-[#E2E8F0] rounded-lg text-[#64748B] hover:bg-[#F8FAFC] shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
             >
               <MoreVertical className="w-4 h-4" />

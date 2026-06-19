@@ -654,6 +654,7 @@ export default function CustomerDetailView({ customer }: { customer: Customer })
               <p className="text-[12px] text-[#9AA8B8]">No orders for this customer yet.</p>
             </div>
           ) : (
+            <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-[#E6EDF5]">
@@ -676,6 +677,7 @@ export default function CustomerDetailView({ customer }: { customer: Customer })
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
 
@@ -693,6 +695,7 @@ export default function CustomerDetailView({ customer }: { customer: Customer })
               <p className="text-[12px] text-[#9AA8B8]">No shipments linked to this customer&apos;s orders.</p>
             </div>
           ) : (
+            <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-[#E6EDF5]">
@@ -715,6 +718,7 @@ export default function CustomerDetailView({ customer }: { customer: Customer })
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
 
@@ -769,6 +773,7 @@ export default function CustomerDetailView({ customer }: { customer: Customer })
               <p className="text-[12px] text-[#9AA8B8]">No returns on record for this customer.</p>
             </div>
           ) : (
+            <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-[#E6EDF5]">
@@ -791,6 +796,7 @@ export default function CustomerDetailView({ customer }: { customer: Customer })
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
 

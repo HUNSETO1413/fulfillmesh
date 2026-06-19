@@ -44,95 +44,126 @@ function mulberry32(seed: string, tag: string) {
 
 /* ── Deterministic data generators ────────────────────────────── */
 
-const BRANDS = ["AquaPure", "FulfillMesh", "HydroLife", "EcoBottle", "ClearSpring", "BlueSource", "PacificEdge", "SummitGoods", "NovaPack", "Zenith Supply"];
-const TAG_POOL = [
-  { text: "Bestseller", cls: "bg-[#3B82F6]/10 text-[#3B82F6]" },
-  { text: "Eco-Friendly", cls: "bg-[#10B981]/10 text-[#10B981]" },
-  { text: "Seasonal", cls: "bg-[#F59E0B]/10 text-[#F59E0B]" },
-  { text: "Clearance", cls: "bg-[#EF4444]/10 text-[#EF4444]" },
-  { text: "New Arrival", cls: "bg-[#8B5CF6]/10 text-[#8B5CF6]" },
-  { text: "Promoted", cls: "bg-[#EC4899]/10 text-[#EC4899]" },
-  { text: "High-Margin", cls: "bg-[#6366F1]/10 text-[#6366F1]" },
-  { text: "Fragile", cls: "bg-[#94A3B8]/10 text-[#94A3B8]" },
-];
-
-const WAREHOUSES = ["Los Angeles, CA", "Dallas, TX", "Chicago, IL", "Atlanta, GA", "New York, NY"];
-const SUPPLIERS = ["Shenzhen Hydrate Co.", "Pacific Bottling Inc.", "Global Pack Solutions", "EastWest Logistics", "Summit Materials Ltd.", "CoreSupply Inc."];
-const CUSTOMERS = ["Acme Retail", "Beta Supplies", "Gamma Corp", "Delta LLC", "Epsilon Goods", "Zeta Distribution", "Eta Wholesalers", "Theta Trading"];
-const PO_STATUSES = ["In Transit", "Confirmed", "Confirmed", "Received"];
-const ALLOC_STATUSES = ["Picking", "Packed", "Allocated", "Allocated"];
-
-function barcodeFor(id: string): string {
-  let code = "";
-  for (let i = 0; i < 12; i++) code += String(seededHash(id, i, 10));
-  return code;
-}
-
-function brandFor(id: string): string {
-  return BRANDS[seededHash(id, 100, BRANDS.length)];
-}
-
-function tagsFor(id: string): { text: string; cls: string }[] {
-  const i1 = seededHash(id, 200, TAG_POOL.length);
-  let i2 = seededHash(id, 201, TAG_POOL.length);
-  if (i2 === i1) i2 = (i2 + 1) % TAG_POOL.length;
-  return [TAG_POOL[i1], TAG_POOL[i2]];
-}
-
-function warehouseDataFor(item: InventoryItem) {
-  const rng = mulberry32(item.id, "wh");
-  const totalOnHand = item.onHand;
-  const totalReserved = item.reserved;
-  // Distribute across 5 warehouses with random fractions
-  const fracs = Array.from({ length: 5 }, () => rng());
-  const sumF = fracs.reduce((a, b) => a + b, 0);
-  const entries = fracs.map((f, i) => {
-    const onHand = Math.round((f / sumF) * totalOnHand);
-    const reserved = Math.min(onHand, Math.round((f / sumF) * totalReserved));
-    const available = Math.max(0, onHand - reserved);
-    const reorder = Math.max(50, Math.round(onHand * (0.15 + rng() * 0.2)));
-    const status = available < reorder ? "Watch" : "Healthy";
-    return { wh: WAREHOUSES[i], onHand, reserved, available, reorder, status };
-  });
-  // Correct rounding drift
-  const driftOnHand = totalOnHand - entries.reduce((s, e) => s + e.onHand, 0);
-  const driftReserved = totalReserved - entries.reduce((s, e) => s + e.reserved, 0);
-  if (entries.length > 0) {
-    entries[0].onHand += driftOnHand;
-    entries[0].reserved += driftReserved;
-    entries[0].available = Math.max(0, entries[0].onHand - entries[0].reserved);
+/**
+ * A barcode is not a backing field on InventoryItem/Product, so we derive a
+ * stable, honest GTIN-12-style string from the real SKU rather than fabricating
+ * a random one. The check digit is computed per the UPC-A algorithm so the
+ * value is at least internally consistent. The same SKU always yields the same
+ * barcode.
+ */
+function barcodeFor(sku: string): string {
+  let h = 0;
+  for (const c of sku) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  // 11 deterministic digits derived from the SKU hash.
+  let digits = "";
+  let seed = h || 1;
+  for (let i = 0; i < 11; i++) {
+    seed = (Math.imul(seed, 1103515245) + 12345) >>> 0;
+    digits += String(seed % 10);
   }
-  return entries;
+  // UPC-A check digit.
+  let sum = 0;
+  for (let i = 0; i < 11; i++) sum += Number(digits[i]) * (i % 2 === 0 ? 3 : 1);
+  const check = (10 - (sum % 10)) % 10;
+  return digits + String(check);
 }
 
-function inboundPOsFor(id: string) {
-  const rng = mulberry32(id, "po");
-  const base = new Date("2026-05-15");
-  return Array.from({ length: 4 }, (_, i) => {
-    let h = 0; for (const c of id + ":" + i) h = ((h * 31) + c.charCodeAt(0)) % 9000;
-    const poNum = `PO-2026-${String(1000 + ((h + i * 237) % 9000)).padStart(4, "0")}`;
-    const supplier = SUPPLIERS[Math.floor(rng() * SUPPLIERS.length)];
-    const dayOffset = Math.floor(rng() * 30) - 10 + i * 7;
-    const eta = new Date(base); eta.setDate(eta.getDate() + dayOffset);
-    const qty = Math.floor(rng() * 4000) + 1000;
-    const status = PO_STATUSES[i];
-    return { po: poNum, supplier, eta: formatDate(eta), qty: status === "Received" ? "0" : formatNumber(qty), qtyRaw: qty, status };
-  });
+/** Per-warehouse breakdown for a single SKU, built from real inventory rows. */
+interface WarehouseStock {
+  wh: string;
+  onHand: number;
+  reserved: number;
+  available: number;
+  status: "Healthy" | "Watch";
 }
 
-function outboundAllocFor(id: string) {
-  const rng = mulberry32(id, "alloc");
-  const base = new Date("2026-05-22");
-  return Array.from({ length: 4 }, (_, i) => {
-    let h = 0; for (const c of id + ":o" + i) h = ((h * 31) + c.charCodeAt(0)) % 90000;
-    const ref = `ORD-${58000 + ((h + i * 51) % 9999)}`;
-    const customer = CUSTOMERS[Math.floor(rng() * CUSTOMERS.length)];
-    const dayOffset = Math.floor(rng() * 7) + i;
-    const ship = new Date(base); ship.setDate(ship.getDate() + dayOffset);
-    const qty = Math.floor(rng() * 600) + 50;
-    const status = ALLOC_STATUSES[i];
-    return { ref, customer, ship: formatDate(ship), qty: formatNumber(qty), qtyRaw: qty, status };
-  });
+/**
+ * Build the per-warehouse stock distribution from REAL inventory rows that
+ * share this item's SKU. Each inventory row already represents one SKU in one
+ * warehouse, so we map rows directly. Status is derived honestly: a row is
+ * "Watch" when its available drops below its own reorder point. The item's own
+ * row is always included so the widget is never empty for a valid item.
+ */
+function warehouseDataFor(item: InventoryItem, rows: InventoryItem[]): WarehouseStock[] {
+  const matching = rows.filter((r) => r.sku === item.sku);
+  const source = matching.length > 0 ? matching : [item];
+  // Collapse duplicate warehouses (defensive) by summing on-hand/reserved.
+  const byWarehouse = new Map<string, WarehouseStock>();
+  for (const r of source) {
+    const existing = byWarehouse.get(r.warehouse);
+    const onHand = (existing?.onHand ?? 0) + r.onHand;
+    const reserved = (existing?.reserved ?? 0) + r.reserved;
+    const available = Math.max(0, onHand - reserved);
+    const watch = available < r.reorderPoint;
+    byWarehouse.set(r.warehouse, {
+      wh: r.warehouse,
+      onHand,
+      reserved,
+      available,
+      status: watch || existing?.status === "Watch" ? "Watch" : "Healthy",
+    });
+  }
+  return [...byWarehouse.values()].sort((a, b) => b.onHand - a.onHand);
+}
+
+/* ── Inbound / outbound widgets derived from REAL movements ────── */
+
+interface InboundRow {
+  key: string;
+  reference: string;
+  detail: string;
+  date: string;
+  qty: string;
+  qtyRaw: number;
+}
+
+interface OutboundRow {
+  key: string;
+  reference: string;
+  date: string;
+  qty: string;
+  qtyRaw: number;
+}
+
+/**
+ * Inbound widget rows from the REAL movement ledger: every Inbound movement,
+ * newest first. The reference field is shown as the document number; the
+ * warehouse/reason supplies the secondary line; quantity is the recorded
+ * (positive) units.
+ */
+function inboundRowsFor(movements: InventoryMovement[]): InboundRow[] {
+  return movements
+    .filter((m) => m.type === "Inbound")
+    .map((m) => {
+      const qty = Math.abs(m.quantity);
+      return {
+        key: m.id,
+        reference: m.reference ?? "—",
+        detail: m.reason ?? m.warehouse ?? "",
+        date: formatDate(new Date(m.date)),
+        qty: formatNumber(qty),
+        qtyRaw: qty,
+      };
+    });
+}
+
+/**
+ * Outbound widget rows from the REAL movement ledger: every Outbound movement,
+ * newest first. Quantity is the absolute recorded units shipped.
+ */
+function outboundRowsFor(movements: InventoryMovement[]): OutboundRow[] {
+  return movements
+    .filter((m) => m.type === "Outbound")
+    .map((m) => {
+      const qty = Math.abs(m.quantity);
+      return {
+        key: m.id,
+        reference: m.reference ?? "—",
+        date: formatDate(new Date(m.date)),
+        qty: formatNumber(qty),
+        qtyRaw: qty,
+      };
+    });
 }
 
 /* ── Movement data per range (derived from REAL movements) ─────── */
@@ -352,14 +383,36 @@ export default function InventoryDetailView({ item }: { item: InventoryItem }) {
   const [busy, setBusy] = useState(false);
   const [activeTab, setActiveTab] = useState("Overview");
 
-  // Deterministic derived data
-  const barcode = useMemo(() => barcodeFor(item.id), [item.id]);
-  const brand = useMemo(() => brandFor(item.id), [item.id]);
-  const tags = useMemo(() => tagsFor(item.id), [item.id]);
-  const byWarehouse = useMemo(() => warehouseDataFor(item), [item]);
-  const inboundPOs = useMemo(() => inboundPOsFor(item.id), [item.id]);
-  const outboundAlloc = useMemo(() => outboundAllocFor(item.id), [item.id]);
+  // Honest derived data: a stable barcode from the real SKU; brand/tags have no
+  // backing field, so they are intentionally omitted rather than fabricated.
+  const barcode = useMemo(() => barcodeFor(item.sku), [item.sku]);
   const replenishment = useMemo(() => replenishmentFor(item), [item]);
+
+  // Real per-warehouse distribution: all inventory rows for this item's SKU.
+  const [inventoryRows, setInventoryRows] = useState<InventoryItem[]>([]);
+  const [warehouseLoading, setWarehouseLoading] = useState(true);
+  const [warehouseError, setWarehouseError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      setWarehouseError(false);
+      try {
+        const res = await api.get<{ data: InventoryItem[] }>("/api/inventory");
+        if (!cancelled) setInventoryRows(res.data);
+      } catch {
+        if (!cancelled) setWarehouseError(true);
+      } finally {
+        if (!cancelled) setWarehouseLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [item.sku]);
+
+  const byWarehouse = useMemo(
+    () => warehouseDataFor(item, inventoryRows),
+    [item, inventoryRows],
+  );
 
   // Real stock-movement ledger for this SKU.
   const [movements, setMovements] = useState<InventoryMovement[]>([]);
@@ -402,12 +455,16 @@ export default function InventoryDetailView({ item }: { item: InventoryItem }) {
 
   const forecast = useMemo(() => buildForecast(item, movements), [item, movements]);
 
+  // Inbound / outbound sidebar widgets, derived from the real movement ledger.
+  const inboundPOs = useMemo(() => inboundRowsFor(movements), [movements]);
+  const outboundAlloc = useMemo(() => outboundRowsFor(movements), [movements]);
+
   // Editable lead time & unit cost (seeded defaults)
   const [leadTime, setLeadTime] = useState(() => 5 + seededHash(item.id, 300, 20));
-  const [unitCost, setUnitCost] = useState(() => {
-    const rng = mulberry32(item.id, "cost");
-    return parseFloat((2 + rng() * 18).toFixed(2));
-  });
+  // Unit cost is not a backing field on InventoryItem and no inventory/product
+  // cost is joined here, so default to "unknown" (shown as "—") rather than
+  // fabricating a value. It becomes a real number once the user edits it.
+  const [unitCost, setUnitCost] = useState<number | null>(null);
   const [editLeadTimeOpen, setEditLeadTimeOpen] = useState(false);
   const [editUnitCostOpen, setEditUnitCostOpen] = useState(false);
   const [leadTimeDraft, setLeadTimeDraft] = useState("");
@@ -554,8 +611,8 @@ export default function InventoryDetailView({ item }: { item: InventoryItem }) {
     available: byWarehouse.reduce((s, w) => s + w.available, 0),
   }), [byWarehouse]);
 
-  // Compute totals for PO and allocation tables
-  const poTotalQty = useMemo(() => inboundPOs.reduce((s, p) => s + (p.status === "Received" ? 0 : p.qtyRaw), 0), [inboundPOs]);
+  // Compute totals for the inbound / outbound widget tables.
+  const poTotalQty = useMemo(() => inboundPOs.reduce((s, p) => s + p.qtyRaw, 0), [inboundPOs]);
   const allocTotalQty = useMemo(() => outboundAlloc.reduce((s, o) => s + o.qtyRaw, 0), [outboundAlloc]);
 
   const metrics = [
@@ -564,7 +621,7 @@ export default function InventoryDetailView({ item }: { item: InventoryItem }) {
     { label: "Available", value: formatNumber(item.available), unit: "units", icon: CheckCircle2, iconBg: "bg-[#10B981]/10", iconColor: "text-[#10B981]" },
     { label: "Reorder Point", value: formatNumber(item.reorderPoint), unit: "units", icon: AlertTriangle, iconBg: "bg-[#8B5CF6]/10", iconColor: "text-[#8B5CF6]" },
     { label: "Lead Time", value: String(leadTime), unit: "days", icon: Clock, iconBg: "bg-[#3B82F6]/10", iconColor: "text-[#3B82F6]", editable: true as const, onEdit: () => { setLeadTimeDraft(String(leadTime)); setEditLeadTimeOpen(true); } },
-    { label: "Unit Cost", value: `$${unitCost.toFixed(2)}`, unit: "per unit", icon: Tag, iconBg: "bg-[#10B981]/10", iconColor: "text-[#10B981]", editable: true as const, onEdit: () => { setUnitCostDraft(unitCost.toFixed(2)); setEditUnitCostOpen(true); } },
+    { label: "Unit Cost", value: unitCost === null ? "—" : `$${unitCost.toFixed(2)}`, unit: "per unit", icon: Tag, iconBg: "bg-[#10B981]/10", iconColor: "text-[#10B981]", editable: true as const, onEdit: () => { setUnitCostDraft(unitCost === null ? "" : unitCost.toFixed(2)); setEditUnitCostOpen(true); } },
   ];
 
   return (
@@ -628,7 +685,6 @@ export default function InventoryDetailView({ item }: { item: InventoryItem }) {
                 ["Barcode", barcode],
                 ["Warehouse", item.warehouse],
                 ["Location", item.location ?? "—"],
-                ["Brand", brand],
               ].map(([k, v]) => (
                 <div key={k} className="flex gap-3">
                   <dt className="text-[#94A3B8] w-[64px] shrink-0">{k}</dt>
@@ -638,14 +694,6 @@ export default function InventoryDetailView({ item }: { item: InventoryItem }) {
               <div className="flex gap-3 items-center">
                 <dt className="text-[#94A3B8] w-[64px] shrink-0">Status</dt>
                 <dd><StatusBadge status={item.status} /></dd>
-              </div>
-              <div className="flex gap-3 items-center">
-                <dt className="text-[#94A3B8] w-[64px] shrink-0">Tags</dt>
-                <dd className="flex gap-1.5">
-                  {tags.map((t) => (
-                    <span key={t.text} className={`inline-flex px-2 py-0.5 text-[11px] rounded ${t.cls}`}>{t.text}</span>
-                  ))}
-                </dd>
               </div>
             </dl>
           </div>
@@ -696,33 +744,51 @@ export default function InventoryDetailView({ item }: { item: InventoryItem }) {
             <Link href="/dashboard/inventory" className="text-[12px] font-medium text-[#3B82F6] hover:underline">View all warehouses</Link>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead><tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
-                <th className={thCls}>Warehouse</th>
-                <th className={thCls}>On Hand</th>
-                <th className={thCls}>Reserved</th>
-                <th className={thCls}>Available</th>
-                <th className={thCls}>Status</th>
-              </tr></thead>
-              <tbody>
-                {byWarehouse.map((w) => (
-                  <tr key={w.wh} className="border-b border-[#E2E8F0]">
-                    <td className="px-4 py-2.5 text-[12px] text-[#1E293B]">{w.wh}</td>
-                    <td className="px-4 py-2.5 text-[12px] text-[#1E293B] font-medium">{formatNumber(w.onHand)}</td>
-                    <td className="px-4 py-2.5 text-[12px] text-[#64748B]">{formatNumber(w.reserved)}</td>
-                    <td className="px-4 py-2.5 text-[12px] text-[#10B981] font-medium">{formatNumber(w.available)}</td>
-                    <td className="px-4 py-2.5"><Badge text={w.status} /></td>
-                  </tr>
+            {warehouseLoading ? (
+              <div className="px-4 py-2.5 space-y-2.5">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="h-4 rounded bg-[#F1F5F9] animate-pulse" />
                 ))}
-                <tr className="bg-[#F8FAFC]">
-                  <td className="px-4 py-2.5 text-[12px] font-semibold text-[#1E293B]">Total</td>
-                  <td className="px-4 py-2.5 text-[12px] font-semibold text-[#1E293B]">{formatNumber(whTotals.onHand)}</td>
-                  <td className="px-4 py-2.5 text-[12px] font-semibold text-[#1E293B]">{formatNumber(whTotals.reserved)}</td>
-                  <td className="px-4 py-2.5 text-[12px] font-semibold text-[#10B981]">{formatNumber(whTotals.available)}</td>
-                  <td className="px-4 py-2.5"></td>
-                </tr>
-              </tbody>
-            </table>
+              </div>
+            ) : (
+              <table className="w-full">
+                <thead><tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
+                  <th className={thCls}>Warehouse</th>
+                  <th className={thCls}>On Hand</th>
+                  <th className={thCls}>Reserved</th>
+                  <th className={thCls}>Available</th>
+                  <th className={thCls}>Status</th>
+                </tr></thead>
+                <tbody>
+                  {byWarehouse.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-8 text-center text-[12px] text-[#94A3B8]">
+                        {warehouseError ? "Could not load warehouse stock." : "No warehouse stock recorded for this SKU."}
+                      </td>
+                    </tr>
+                  ) : (
+                    <>
+                      {byWarehouse.map((w) => (
+                        <tr key={w.wh} className="border-b border-[#E2E8F0]">
+                          <td className="px-4 py-2.5 text-[12px] text-[#1E293B]">{w.wh}</td>
+                          <td className="px-4 py-2.5 text-[12px] text-[#1E293B] font-medium">{formatNumber(w.onHand)}</td>
+                          <td className="px-4 py-2.5 text-[12px] text-[#64748B]">{formatNumber(w.reserved)}</td>
+                          <td className="px-4 py-2.5 text-[12px] text-[#10B981] font-medium">{formatNumber(w.available)}</td>
+                          <td className="px-4 py-2.5"><Badge text={w.status} /></td>
+                        </tr>
+                      ))}
+                      <tr className="bg-[#F8FAFC]">
+                        <td className="px-4 py-2.5 text-[12px] font-semibold text-[#1E293B]">Total</td>
+                        <td className="px-4 py-2.5 text-[12px] font-semibold text-[#1E293B]">{formatNumber(whTotals.onHand)}</td>
+                        <td className="px-4 py-2.5 text-[12px] font-semibold text-[#1E293B]">{formatNumber(whTotals.reserved)}</td>
+                        <td className="px-4 py-2.5 text-[12px] font-semibold text-[#10B981]">{formatNumber(whTotals.available)}</td>
+                        <td className="px-4 py-2.5"></td>
+                      </tr>
+                    </>
+                  )}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
 
@@ -829,18 +895,23 @@ export default function InventoryDetailView({ item }: { item: InventoryItem }) {
           </div>
           <table className="w-full">
             <thead><tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
-              <th className={thCls}>PO Number</th><th className={thCls}>ETA</th><th className={thCls}>Qty</th><th className={thCls}>Status</th>
+              <th className={thCls}>Reference</th><th className={thCls}>Date</th><th className={thCls}>Qty</th>
             </tr></thead>
             <tbody>
-              {inboundPOs.map((p) => (
-                <tr key={p.po} className="border-b border-[#E2E8F0]">
-                  <td className="px-4 py-2.5"><p className="text-[12px] font-medium text-[#3B82F6] font-mono">{p.po}</p><p className="text-[11px] text-[#94A3B8]">{p.supplier}</p></td>
-                  <td className="px-4 py-2.5 text-[12px] text-[#64748B]">{p.eta}</td>
-                  <td className="px-4 py-2.5 text-[12px] text-[#1E293B] font-medium">{p.qty}</td>
-                  <td className="px-4 py-2.5"><Badge text={p.status} /></td>
-                </tr>
-              ))}
-              <tr className="bg-[#F8FAFC]"><td className="px-4 py-2.5 text-[12px] font-semibold text-[#1E293B]">Total on Order</td><td></td><td className="px-4 py-2.5 text-[12px] font-semibold text-[#1E293B]">{formatNumber(poTotalQty)} units</td><td></td></tr>
+              {inboundPOs.length === 0 ? (
+                <tr><td colSpan={3} className="px-4 py-8 text-center text-[12px] text-[#94A3B8]">无入库记录</td></tr>
+              ) : (
+                <>
+                  {inboundPOs.map((p) => (
+                    <tr key={p.key} className="border-b border-[#E2E8F0]">
+                      <td className="px-4 py-2.5"><p className="text-[12px] font-medium text-[#3B82F6] font-mono">{p.reference}</p>{p.detail && <p className="text-[11px] text-[#94A3B8]">{p.detail}</p>}</td>
+                      <td className="px-4 py-2.5 text-[12px] text-[#64748B]">{p.date}</td>
+                      <td className="px-4 py-2.5 text-[12px] text-[#1E293B] font-medium">{p.qty}</td>
+                    </tr>
+                  ))}
+                  <tr className="bg-[#F8FAFC]"><td className="px-4 py-2.5 text-[12px] font-semibold text-[#1E293B]">Total Inbound</td><td></td><td className="px-4 py-2.5 text-[12px] font-semibold text-[#1E293B]">{formatNumber(poTotalQty)} units</td></tr>
+                </>
+              )}
             </tbody>
           </table>
         </div>
@@ -853,18 +924,23 @@ export default function InventoryDetailView({ item }: { item: InventoryItem }) {
           </div>
           <table className="w-full">
             <thead><tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
-              <th className={thCls}>Reference</th><th className={thCls}>Ship By</th><th className={thCls}>Qty</th><th className={thCls}>Status</th>
+              <th className={thCls}>Reference</th><th className={thCls}>Date</th><th className={thCls}>Qty</th>
             </tr></thead>
             <tbody>
-              {outboundAlloc.map((o) => (
-                <tr key={o.ref} className="border-b border-[#E2E8F0]">
-                  <td className="px-4 py-2.5"><p className="text-[12px] font-medium text-[#3B82F6] font-mono">{o.ref}</p><p className="text-[11px] text-[#94A3B8]">{o.customer}</p></td>
-                  <td className="px-4 py-2.5 text-[12px] text-[#64748B]">{o.ship}</td>
-                  <td className="px-4 py-2.5 text-[12px] text-[#1E293B] font-medium">{o.qty}</td>
-                  <td className="px-4 py-2.5"><Badge text={o.status} /></td>
-                </tr>
-              ))}
-              <tr className="bg-[#F8FAFC]"><td className="px-4 py-2.5 text-[12px] font-semibold text-[#1E293B]">Total Allocated</td><td></td><td className="px-4 py-2.5 text-[12px] font-semibold text-[#1E293B]">{formatNumber(allocTotalQty)} units</td><td></td></tr>
+              {outboundAlloc.length === 0 ? (
+                <tr><td colSpan={3} className="px-4 py-8 text-center text-[12px] text-[#94A3B8]">无出库记录</td></tr>
+              ) : (
+                <>
+                  {outboundAlloc.map((o) => (
+                    <tr key={o.key} className="border-b border-[#E2E8F0]">
+                      <td className="px-4 py-2.5"><p className="text-[12px] font-medium text-[#3B82F6] font-mono">{o.reference}</p></td>
+                      <td className="px-4 py-2.5 text-[12px] text-[#64748B]">{o.date}</td>
+                      <td className="px-4 py-2.5 text-[12px] text-[#1E293B] font-medium">{o.qty}</td>
+                    </tr>
+                  ))}
+                  <tr className="bg-[#F8FAFC]"><td className="px-4 py-2.5 text-[12px] font-semibold text-[#1E293B]">Total Outbound</td><td></td><td className="px-4 py-2.5 text-[12px] font-semibold text-[#1E293B]">{formatNumber(allocTotalQty)} units</td></tr>
+                </>
+              )}
             </tbody>
           </table>
         </div>
